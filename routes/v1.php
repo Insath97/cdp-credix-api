@@ -12,6 +12,9 @@ use App\Http\Controllers\V1\BranchController;
 use App\Http\Controllers\V1\DesignationController;
 use App\Http\Controllers\V1\CountryController;
 use App\Http\Controllers\V1\GroupController;
+use App\Http\Controllers\V1\CustomerController;
+use App\Http\Controllers\V1\CustomerBankDetailController;
+use App\Http\Controllers\V1\GuarantorController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -90,4 +93,22 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::get('list', [GroupController::class, 'getActiveList']);
         Route::patch('{id}/toggle-status', [GroupController::class, 'toggleStatus']);
     });
+
+    // Customers
+    Route::apiResource('customers', CustomerController::class);
+    Route::prefix('customers')->group(function () {
+        Route::patch('{id}/toggle-status', [CustomerController::class, 'toggleStatus']);
+        Route::post('{id}/restore', [CustomerController::class, 'restore']);
+        Route::delete('{id}/force-delete', [CustomerController::class, 'forceDelete']);
+        Route::get('list/public/{customer_code?}', [CustomerController::class, 'getPublicDetails']);
+    });
+
+    // Customer Bank Details
+    Route::apiResource('customer-bank-details', CustomerBankDetailController::class);
+    Route::prefix('customer-bank-details')->group(function () {
+        Route::patch('{id}/toggle-status', [CustomerBankDetailController::class, 'toggleStatus']);
+    });
+
+    // Guarantors
+    Route::apiResource('guarantors', GuarantorController::class);
 });

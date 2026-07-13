@@ -88,6 +88,28 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Group Update', 'group_name' => 'Group Management Permissions'],
             ['name' => 'Group Delete', 'group_name' => 'Group Management Permissions'],
             ['name' => 'Group Toggle Status', 'group_name' => 'Group Management Permissions'],
+
+            /* Customer Management */
+            ['name' => 'Customer Index', 'group_name' => 'Customer Management Permissions'],
+            ['name' => 'Customer Create', 'group_name' => 'Customer Management Permissions'],
+            ['name' => 'Customer Update', 'group_name' => 'Customer Management Permissions'],
+            ['name' => 'Customer Delete', 'group_name' => 'Customer Management Permissions'],
+            ['name' => 'Customer Restore', 'group_name' => 'Customer Management Permissions'],
+            ['name' => 'Customer Force Delete', 'group_name' => 'Customer Management Permissions'],
+            ['name' => 'Customer Toggle Status', 'group_name' => 'Customer Management Permissions'],
+
+            /* Customer Bank Detail Management */
+            ['name' => 'Customer Bank Detail Index', 'group_name' => 'Customer Bank Detail Management Permissions'],
+            ['name' => 'Customer Bank Detail Create', 'group_name' => 'Customer Bank Detail Management Permissions'],
+            ['name' => 'Customer Bank Detail Update', 'group_name' => 'Customer Bank Detail Management Permissions'],
+            ['name' => 'Customer Bank Detail Delete', 'group_name' => 'Customer Bank Detail Management Permissions'],
+            ['name' => 'Customer Bank Detail Toggle Status', 'group_name' => 'Customer Bank Detail Management Permissions'],
+
+            /* Guarantor Management */
+            ['name' => 'Guarantor Index', 'group_name' => 'Guarantor Management Permissions'],
+            ['name' => 'Guarantor Create', 'group_name' => 'Guarantor Management Permissions'],
+            ['name' => 'Guarantor Update', 'group_name' => 'Guarantor Management Permissions'],
+            ['name' => 'Guarantor Delete', 'group_name' => 'Guarantor Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {

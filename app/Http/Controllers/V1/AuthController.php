@@ -19,6 +19,10 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         try {
+            if (!$request->has('login') && $request->has('email')) {
+                $request->merge(['login' => $request->input('email')]);
+            }
+
             $validator = Validator::make($request->all(), [
                 'login' => 'required|string',
                 'password' => 'required|string'
