@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-class UpdateCustomerBankDetailRequest extends FormRequest
+class UpdateFixedAssetsRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -16,18 +16,27 @@ class UpdateCustomerBankDetailRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Get the validation rules that apply to the request.
+     *
+     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     */
     public function rules(): array
     {
+        $id = $this->route('id');
+
         return [
-            'customer_id'    => 'required|string|exists:customers,customer_id',
-            'bank_name'      => 'required|string|max:200',
-            'branch_name'    => 'nullable|string|max:200',
-            'account_number' => 'required|string|max:200',
-            'payment_method' => 'required|in:cash,bank_transfer,cheque',
+            'customer_id' => 'required|string|exists:customers,customer_id',
+            'owner_name' => 'required|string|max:255',
+            'property_location' => 'required|string|max:255',
+            'extent' => 'required|string|max:255',
+            'market_value' => 'required|string|max:255',
+            'is_mortaged' => 'nullable|boolean',
+            'is_active' => 'nullable|boolean',
         ];
     }
 
-    protected function failedValidation(Validator $validator)
+     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
 

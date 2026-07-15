@@ -11,15 +11,16 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('guarantors', function (Blueprint $table) {
+        Schema::create('fixed_assests', function (Blueprint $table) {
             $table->id();
             $table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();
-            $table->string('full_name');
-            $table->string('type')->nullable();
-            $table->string('id_type')->nullable();
-            $table->string('id_number')->nullable();
-            $table->string('phone_primary')->nullable();
-            $table->string('id_image')->nullable();
+            $table->string('owner_name');
+            $table->string('property_location')->nullable();
+            $table->string('extent')->nullable();
+            $table->decimal('market_value', 15, 2)->nullable();
+            $table->boolean('is_mortaged')->default(false);
+            $table->boolean('is_active')->default(true);
+            $table->softDeletes();
             $table->timestamps();
         });
     }
@@ -29,6 +30,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('guarantors');
+        Schema::dropIfExists('fixed_assests');
     }
 };

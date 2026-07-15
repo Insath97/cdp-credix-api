@@ -19,7 +19,7 @@ class CreateCustomerBankDetailRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'customer_id'    => 'required|string|exists:customers,id',
+            'customer_id'    => 'required|string|exists:customers,customer_id',
             'bank_name'      => 'required|string|max:200',
             'branch_name'    => 'required|string|max:200',
             'account_number' => 'required|string|max:200',

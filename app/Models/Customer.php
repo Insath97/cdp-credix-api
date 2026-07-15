@@ -5,6 +5,9 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Customer extends Model
 {
@@ -12,11 +15,12 @@ class Customer extends Model
 
     protected $fillable = [
         'customer_id',
+        'customer_code',
         'full_name',
         'name_with_initials',
-        'customer_code',
         'id_type',
         'id_number',
+        'date_of_birth',
         'address_line_1',
         'address_line_2',
         'landmark',
@@ -24,13 +28,14 @@ class Customer extends Model
         'state',
         'country',
         'postal_code',
-        'date_of_birth',
         'phone_primary',
         'phone_secondary',
         'email',
         'have_whatsapp',
         'whatsapp_number',
         'preferred_language',
+
+        // employment
         'employment_status',
         'occupation',
         'employer_name',
@@ -42,6 +47,9 @@ class Customer extends Model
         'employer_postal_code',
         'employer_phone',
         'employer_email',
+        'monthly_income',
+
+        // business
         'business_name',
         'business_registration_number',
         'business_nature',
@@ -53,17 +61,45 @@ class Customer extends Model
         'business_postal_code',
         'business_phone',
         'business_email',
+
+        // current application snapshot
+        'branch_id',
+        'applicant_role',
+        'current_application_id',
+        'fixed_allowances',
+        'other_allowances',
+        'other_income',
+        'total_monthly_income',
+        'other_expenses',
+        'total_monthly_expenses',
         'is_active',
     ];
 
-     protected $casts = [
+    protected $casts = [
+        'branch_id' => 'integer',
         'is_active' => 'boolean',
         'date_of_birth' => 'date',
         'have_whatsapp' => 'boolean',
+        'monthly_income' => 'decimal:2',
+        'fixed_allowances' => 'decimal:2',
+        'other_allowances' => 'decimal:2',
+        'other_income' => 'decimal:2',
+        'total_monthly_income' => 'decimal:2',
+        'other_expenses' => 'decimal:2',
+        'total_monthly_expenses' => 'decimal:2',
     ];
 
-    public function scopeSearch($query, $search)
+    public function scopeActive(Builder $query): Builder
     {
+        return $query->where('is_active', true);
+    }
+
+    public function scopeSearch(Builder $query, ?string $search): Builder
+    {
+        if (empty($search)) {
+            return $query;
+        }
+
         return $query->where(function ($q) use ($search) {
             $q->where('full_name', 'like', "%$search%")
                 ->orWhere('customer_code', 'like', "%$search%")
@@ -73,19 +109,43 @@ class Customer extends Model
         });
     }
 
-    public function user()
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'customer_id');
     }
 
-    public function bankDetails()
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function currentApplication(): BelongsTo
+    {
+        return $this->belongsTo(Application::class, 'current_application_id');
+    }
+
+    public function bankDetails(): HasMany
     {
         return $this->hasMany(CustomerBankDetail::class);
     }
 
-    public function guarantors()
+    public function guarantors(): HasMany
     {
         return $this->hasMany(Guarantor::class);
     }
 
+    public function fixedAssets(): HasMany
+    {
+        return $this->hasMany(FixedAssests::class, 'customer_id');
+    }
+
+    public function movingAssets(): HasMany
+    {
+        return $this->hasMany(MovingAssests::class, 'customer_id');
+    }
+
+    public function applicationHistories(): HasMany
+    {
+        return $this->hasMany(ApplicationHistory::class);
+    }
 }

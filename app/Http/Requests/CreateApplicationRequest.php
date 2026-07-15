@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-class UpdateCustomerBankDetailRequest extends FormRequest
+class CreateApplicationRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -16,14 +16,21 @@ class UpdateCustomerBankDetailRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Get the validation rules that apply to the request.
+     */
     public function rules(): array
     {
         return [
-            'customer_id'    => 'required|string|exists:customers,customer_id',
-            'bank_name'      => 'required|string|max:200',
-            'branch_name'    => 'nullable|string|max:200',
-            'account_number' => 'required|string|max:200',
-            'payment_method' => 'required|in:cash,bank_transfer,cheque',
+            'application_no' => 'required|string|max:255|unique:applications,application_no',
+            'application_type' => 'required|string|in:loan,lease',
+            'branch' => 'nullable|string|max:255',
+            'loan_type' => 'nullable|string|max:255',
+            'requested_amount' => 'required|numeric|min:0',
+            'purpose' => 'nullable|string',
+            'repayment_period_months' => 'nullable|integer|min:1',
+            'monthly_repayment_date' => 'nullable|string|max:50',
+            'status' => 'nullable|string|max:100',
         ];
     }
 

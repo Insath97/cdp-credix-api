@@ -15,6 +15,10 @@ use App\Http\Controllers\V1\GroupController;
 use App\Http\Controllers\V1\CustomerController;
 use App\Http\Controllers\V1\CustomerBankDetailController;
 use App\Http\Controllers\V1\GuarantorController;
+use App\Http\Controllers\V1\ApplicationController;
+use App\Http\Controllers\V1\ApplicationHistoryController;
+use App\Http\Controllers\V1\FixedAssestsController;
+use App\Http\Controllers\V1\MovingAssestsController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -111,4 +115,16 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Guarantors
     Route::apiResource('guarantors', GuarantorController::class);
+
+    // Applications
+    Route::apiResource('applications', ApplicationController::class);
+
+    // Application Histories
+    Route::apiResource('application-histories', ApplicationHistoryController::class);
+
+    // Fixed Assets
+    Route::apiResource('fixed-assests', FixedAssestsController::class);
+
+    // Moving Assets
+    Route::apiResource('moving-assests', MovingAssestsController::class);
 });

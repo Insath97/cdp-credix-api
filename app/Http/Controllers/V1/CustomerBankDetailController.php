@@ -68,6 +68,10 @@ class CustomerBankDetailController extends Controller
             DB::beginTransaction();
 
             $data = $request->validated();
+            $customer = Customer::where('customer_id', $data['customer_id'])->first();
+            if ($customer) {
+                $data['customer_id'] = $customer->id;
+            }
             $customerbankdetail = CustomerBankDetail::create($data);
 
             DB::commit();
@@ -131,6 +135,10 @@ class CustomerBankDetailController extends Controller
             }
 
             $data = $request->validated();
+            $customer = Customer::where('customer_id', $data['customer_id'])->first();
+            if ($customer) {
+                $data['customer_id'] = $customer->id;
+            }
             $customerbankdetail->update($data);
 
             $this->logActivity('Update', 'Customer bank detail', 'Customer bank detail updated', [

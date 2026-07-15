@@ -17,8 +17,9 @@ return new class extends Migration
             $table->string('username')->unique();
             $table->string('email')->nullable()->unique();
             $table->string('password');
-            $table->enum('user_type', ['admin', 'staff'])->default('admin');
+            $table->enum('user_type', ['admin', 'staff','customer'])->default('admin');
             $table->foreignId('employee_id')->nullable()->constrained('employees')->nullOnDelete();
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
             $table->boolean('is_active')->default(true);
             $table->boolean('can_login')->default(true);
             $table->timestamp('last_login_at')->nullable();

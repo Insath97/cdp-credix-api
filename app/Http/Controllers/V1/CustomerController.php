@@ -12,7 +12,6 @@ use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
-
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
@@ -48,11 +47,24 @@ class CustomerController extends Controller implements HasMiddleware
                 $query->where('customer_id', $request->customer_id);
             }
 
+            // Filter by specific branch if requested
+            if ($request->has('branch_id')) {
+                $query->where('branch_id', $request->branch_id);
+            }
+
+            // Automatically restrict staff members to their own branch
+            $currentUser = Auth::guard('api')->user();
+            if ($currentUser && $currentUser->user_type === 'staff') {
+                if ($currentUser->employee && $currentUser->employee->branch_id) {
+                    $query->where('branch_id', $currentUser->employee->branch_id);
+                }
+            }
+
             $customers = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
             $this->logActivity('Index', 'Customer', 'Customers index accessed', [
                 'user_id' => Auth::id(),
-                'filters' => $request->only(['search', 'customer_id']),
+                'filters' => $request->only(['search', 'customer_id', 'branch_id']),
                 'count' => $customers->count()
             ]);
 
@@ -76,7 +88,6 @@ class CustomerController extends Controller implements HasMiddleware
             $currentUser = Auth::guard('api')->user();
             $data = $request->validated();
 
-            // Generate Customer Code if not provided
             if (empty($data['customer_code'])) {
                 $lastCustomer = Customer::orderBy('id', 'desc')->first();
                 $lastId = $lastCustomer ? $lastCustomer->id : 0;

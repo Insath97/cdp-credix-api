@@ -59,6 +59,12 @@ class GuarantorController extends Controller
     {
         try {
             $data = $request->validated();
+            $customer = \App\Models\Customer::where('customer_id', $data['customer_id'])
+                ->orWhere('customer_code', $data['customer_id'])
+                ->first();
+            if ($customer) {
+                $data['customer_id'] = $customer->id;
+            }
             $guarantor = Guarantor::create($data);
 
             $this->logActivity('CREATE', 'Guarantor', "Created guarantor: {$guarantor->full_name}", $data);
@@ -116,6 +122,12 @@ class GuarantorController extends Controller
             }
 
             $data = $request->validated();
+            $customer = \App\Models\Customer::where('customer_id', $data['customer_id'])
+                ->orWhere('customer_code', $data['customer_id'])
+                ->first();
+            if ($customer) {
+                $data['customer_id'] = $customer->id;
+            }
             $guarantor->update($data);
 
             $this->logActivity('Update', 'Guarantor', 'Guarantor updated', [

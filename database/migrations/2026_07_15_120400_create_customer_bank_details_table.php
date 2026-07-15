@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('bank_name');
             $table->string('branch_name')->nullable();
             $table->string('account_number');
-            $table->enum('payment_method', ['cash', 'bank_transfer', 'cheque'])->default('bank_transfer');
+            $table->string('payment_method')->default('bank_transfer'); // e.g. cash, bank_transfer, cheque
             $table->boolean('is_active')->default(true);
             $table->softDeletes();
             $table->timestamps();

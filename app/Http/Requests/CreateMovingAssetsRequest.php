@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-class UpdateCustomerBankDetailRequest extends FormRequest
+class CreateMovingAssetsRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -16,14 +16,23 @@ class UpdateCustomerBankDetailRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Get the validation rules that apply to the request.
+     */
     public function rules(): array
     {
         return [
-            'customer_id'    => 'required|string|exists:customers,customer_id',
-            'bank_name'      => 'required|string|max:200',
-            'branch_name'    => 'nullable|string|max:200',
-            'account_number' => 'required|string|max:200',
-            'payment_method' => 'required|in:cash,bank_transfer,cheque',
+            'customer_id' => 'required|string|exists:customers,customer_id',
+            'assest_category' => 'required|string|in:vehicle,shares_bonds',
+            'owner_name' => 'required|string|max:255',
+            'make_model' => 'nullable|string|max:255',
+            'company_name' => 'nullable|string|max:255',
+            'no_of_shares' => 'nullable|integer|min:0',
+            'par_value' => 'nullable|numeric|min:0',
+            'registation_no' => 'nullable|string|max:255',
+            'market_value' => 'nullable|numeric|min:0',
+            'mortgage_lease_hire_status' => 'nullable|string|max:255',
+            'is_active' => 'nullable|boolean',
         ];
     }
 

@@ -110,6 +110,30 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Guarantor Create', 'group_name' => 'Guarantor Management Permissions'],
             ['name' => 'Guarantor Update', 'group_name' => 'Guarantor Management Permissions'],
             ['name' => 'Guarantor Delete', 'group_name' => 'Guarantor Management Permissions'],
+
+            /* Application Management */
+            ['name' => 'Application Index', 'group_name' => 'Application Management Permissions'],
+            ['name' => 'Application Create', 'group_name' => 'Application Management Permissions'],
+            ['name' => 'Application Update', 'group_name' => 'Application Management Permissions'],
+            ['name' => 'Application Delete', 'group_name' => 'Application Management Permissions'],
+
+            /* Application History Management */
+            ['name' => 'Application History Index', 'group_name' => 'Application History Management Permissions'],
+            ['name' => 'Application History Create', 'group_name' => 'Application History Management Permissions'],
+            ['name' => 'Application History Update', 'group_name' => 'Application History Management Permissions'],
+            ['name' => 'Application History Delete', 'group_name' => 'Application History Management Permissions'],
+
+            /* Fixed Asset Management */
+            ['name' => 'Fixed Asset Index', 'group_name' => 'Fixed Asset Management Permissions'],
+            ['name' => 'Fixed Asset Create', 'group_name' => 'Fixed Asset Management Permissions'],
+            ['name' => 'Fixed Asset Update', 'group_name' => 'Fixed Asset Management Permissions'],
+            ['name' => 'Fixed Asset Delete', 'group_name' => 'Fixed Asset Management Permissions'],
+
+            /* Moving Asset Management */
+            ['name' => 'Moving Asset Index', 'group_name' => 'Moving Asset Management Permissions'],
+            ['name' => 'Moving Asset Create', 'group_name' => 'Moving Asset Management Permissions'],
+            ['name' => 'Moving Asset Update', 'group_name' => 'Moving Asset Management Permissions'],
+            ['name' => 'Moving Asset Delete', 'group_name' => 'Moving Asset Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {

@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-class UpdateGuarantorRequest extends FormRequest
+class UpdateApplicationHistoryRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -18,21 +18,31 @@ class UpdateGuarantorRequest extends FormRequest
 
     /**
      * Get the validation rules that apply to the request.
-     *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
      */
     public function rules(): array
     {
-         $id = $this->route('guarantor');
-
         return [
+            'application_id' => 'required|exists:applications,id',
             'customer_id' => 'required|string|exists:customers,customer_id',
-            'full_name' => 'required|string|max:255',
-            'type' => 'required|in:individual,company',
-            'id_type' => 'required|in:national_id,passport',
-            'id_number' => 'required|string|max:255',
-            'phone_primary' => 'required|string|max:20',
-            'id_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048'
+            'application_no' => 'required|string|max:255',
+            'application_type' => 'required|string|max:255',
+            'role' => 'required|string|in:primary,joint',
+            'status' => 'required|string|max:255',
+
+            // Income / Expense 
+            'basic_salary' => 'nullable|numeric|min:0',
+            'fixed_allowances' => 'nullable|numeric|min:0',
+            'other_allowances' => 'nullable|numeric|min:0',
+            'other_income' => 'nullable|numeric|min:0',
+            'total_monthly_income' => 'nullable|numeric|min:0',
+            'household_expenses' => 'nullable|numeric|min:0',
+            'rent_expense' => 'nullable|numeric|min:0',
+            'insurance_premiums' => 'nullable|numeric|min:0',
+            'other_expenses' => 'nullable|numeric|min:0',
+            'total_monthly_expenses' => 'nullable|numeric|min:0',
+            'requested_amount' => 'nullable|numeric|min:0',
+            'purpose' => 'nullable|string',
+            'recorded_at' => 'nullable|date',
         ];
     }
 

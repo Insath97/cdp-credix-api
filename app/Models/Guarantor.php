@@ -11,12 +11,31 @@ class Guarantor extends Model
 
     protected $fillable = [
         'customer_id',
+        'application_id',
         'full_name',
         'type',
         'id_type',
         'id_number',
+        'id_image',
+        'date_of_birth',
+        'hnb_account_no',
         'phone_primary',
-        'id_image'
+        'occupation',
+        'employer_name',
+        'date_joined',
+        'salary',
+        'allowance',
+        'other_income',
+        'liabilities',
+    ];
+
+    protected $casts = [
+        'date_of_birth' => 'date',
+        'date_joined' => 'date',
+        'salary' => 'decimal:2',
+        'allowance' => 'decimal:2',
+        'other_income' => 'decimal:2',
+        'liabilities' => 'decimal:2',
     ];
 
     public function scopeSearch($query, $search)
@@ -26,13 +45,19 @@ class Guarantor extends Model
                 ->orWhere('type', 'like', "%$search%")
                 ->orWhere('id_type', 'like', "%$search%")
                 ->orWhere('id_number', 'like', "%$search%")
-                ->orWhere('phone_primary', 'like', "%$search%");
+                ->orWhere('phone_primary', 'like', "%$search%")
+                ->orWhere('hnb_account_no', 'like', "%$search%");
         });
     }
 
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    public function application()
+    {
+        return $this->belongsTo(Application::class);
     }
 
 }
