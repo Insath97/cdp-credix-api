@@ -12,6 +12,7 @@ use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
@@ -84,6 +85,7 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function store(CreateCustomerRequest $request)
     {
+        DB::beginTransaction();
         try {
             $currentUser = Auth::guard('api')->user();
             $data = $request->validated();
@@ -97,17 +99,40 @@ class CustomerController extends Controller implements HasMiddleware
 
             $customer = Customer::create($data);
 
-            $this->logActivity('Create', 'Customer', 'Customer created', [
-                'creator_id' => $currentUser->id,
+            if (!empty($data['bank_details'])) {
+                foreach ($data['bank_details'] as $bankDetail) {
+                    $customer->bankDetails()->create($bankDetail);
+                }
+            }
+
+            if (!empty($data['fixed_assets'])) {
+                foreach ($data['fixed_assets'] as $fixedAsset) {
+                    $customer->fixedAssets()->create($fixedAsset);
+                }
+            }
+
+            if (!empty($data['moving_assets'])) {
+                foreach ($data['moving_assets'] as $movingAsset) {
+                    $customer->movingAssets()->create($movingAsset);
+                }
+            }
+
+            DB::commit();
+
+            $customer->load(['bankDetails', 'fixedAssets', 'movingAssets']);
+
+            $this->logActivity('Create', 'Customer', 'Customer created with associated details', [
+                'creator_id' => $currentUser ? $currentUser->id : null,
                 'customer_code' => $customer->customer_code
             ]);
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Customer created successfully',
+                'message' => 'Customer and associated details created successfully',
                 'data' => $customer
             ], 201);
         } catch (\Throwable $th) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create customer',

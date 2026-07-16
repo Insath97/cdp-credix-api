@@ -26,7 +26,7 @@ class UpdateCustomerRequest extends FormRequest
         $id = $this->route('customer');
 
          return [
-        'customer_id'=>'required|string|max:255',
+        'customer_id'=>'required|string|max:255|unique:customers,customer_id,' . $id,
         'full_name'=>'required|string|max:500',
         'name_with_initials'=>'required|string|max:255',
         'customer_code'=>'required',
@@ -69,6 +69,34 @@ class UpdateCustomerRequest extends FormRequest
         'business_email'=>'nullable|string|max:255',
         'branch_id'=>'required|exists:branches,id',
         'is_active'=>'required|boolean',
+
+        // Bank Details Validation
+        'bank_details' => 'nullable|array',
+        'bank_details.*.bank_name' => 'required_with:bank_details|string|max:255',
+        'bank_details.*.branch_name' => 'nullable|string|max:255',
+        'bank_details.*.account_number' => 'required_with:bank_details|string|max:255',
+        'bank_details.*.payment_method' => 'nullable|string|max:255',
+        'bank_details.*.is_active' => 'nullable|boolean',
+
+        // Fixed Assets Validation
+        'fixed_assets' => 'nullable|array',
+        'fixed_assets.*.owner_name' => 'required_with:fixed_assets|string|max:255',
+        'fixed_assets.*.property_location' => 'nullable|string|max:255',
+        'fixed_assets.*.extent' => 'nullable|string|max:255',
+        'fixed_assets.*.market_value' => 'nullable|numeric|min:0',
+        'fixed_assets.*.is_mortaged' => 'nullable|boolean',
+        'fixed_assets.*.is_active' => 'nullable|boolean',
+
+        // Moving Assets Validation
+        'moving_assets' => 'nullable|array',
+        'moving_assets.*.assest_category' => 'required_with:moving_assets|string|max:255',
+        'moving_assets.*.owner_name' => 'required_with:moving_assets|string|max:255',
+        'moving_assets.*.no_of_shares' => 'nullable|integer|min:0',
+        'moving_assets.*.par_value' => 'nullable|numeric|min:0',
+        'moving_assets.*.registation_no' => 'nullable|string|max:255',
+        'moving_assets.*.market_value' => 'nullable|numeric|min:0',
+        'moving_assets.*.mortgage_lease_hire_status' => 'nullable|string|max:255',
+        'moving_assets.*.is_active' => 'nullable|boolean',
         ];
     }
 
