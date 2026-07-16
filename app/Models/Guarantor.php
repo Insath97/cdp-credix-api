@@ -60,9 +60,4 @@ class Guarantor extends Model
         return $this->belongsTo(Application::class);
     }
 
-    public function documents(): \Illuminate\Database\Eloquent\Relations\MorphMany
-    {
-        return $this->morphMany(Document::class, 'documentable');
-    }
-
 }

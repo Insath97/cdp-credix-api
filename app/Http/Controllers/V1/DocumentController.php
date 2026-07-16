@@ -23,7 +23,7 @@ class DocumentController extends Controller implements HasMiddleware
         return [
             new Middleware('permission:Document Index', only: ['index', 'show']),
             new Middleware('permission:Document Create', only: ['store']),
-            new Middleware('permission:Document Update', only: ['update', 'toggleStatus']),
+            new Middleware('permission:Document Update', only: ['update']),
             new Middleware('permission:Document Delete', only: ['destroy']),
         ];
     }
@@ -39,21 +39,6 @@ class DocumentController extends Controller implements HasMiddleware
 
             if ($request->has('search')) {
                 $query->search($request->search);
-            }
-
-            if ($request->has('documentable_type')) {
-                $typeMap = [
-                    'customer' => \App\Models\Customer::class,
-                    'guarantor' => \App\Models\Guarantor::class,
-                    'application' => \App\Models\Application::class,
-                ];
-                $typeInput = strtolower($request->documentable_type);
-                $resolvedType = $typeMap[$typeInput] ?? $request->documentable_type;
-                $query->where('documentable_type', $resolvedType);
-            }
-
-            if ($request->has('documentable_id')) {
-                $query->where('documentable_id', $request->documentable_id);
             }
 
             if ($request->has('document_type')) {
@@ -72,7 +57,7 @@ class DocumentController extends Controller implements HasMiddleware
 
             $this->logActivity('Index', 'Document', 'Documents index accessed', [
                 'user_id' => Auth::id(),
-                'filters' => $request->only(['search', 'documentable_type', 'documentable_id', 'document_type', 'status', 'is_active']),
+                'filters' => $request->only(['search', 'document_type', 'status', 'is_active']),
                 'count' => $documents->count()
             ]);
 
@@ -97,26 +82,6 @@ class DocumentController extends Controller implements HasMiddleware
     {
         try {
             $data = $request->validated();
-
-            // Map polymorphic relation alias to full class name
-            $typeMap = [
-                'customer' => \App\Models\Customer::class,
-                'guarantor' => \App\Models\Guarantor::class,
-                'application' => \App\Models\Application::class,
-            ];
-            $typeInput = strtolower($data['documentable_type']);
-            if (array_key_exists($typeInput, $typeMap)) {
-                $data['documentable_type'] = $typeMap[$typeInput];
-            }
-
-            // Verify that the polymorphic model exists
-            $modelClass = $data['documentable_type'];
-            if (!class_exists($modelClass) || !$modelClass::find($data['documentable_id'])) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'The linked documentable model does not exist.'
-                ], 422);
-            }
 
             // Handle file upload if present
             if ($request->hasFile('file')) {
@@ -263,53 +228,6 @@ class DocumentController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to delete document',
-                'error' => $th->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Update the document validation status.
-     */
-    public function toggleStatus(Request $request, string $id)
-    {
-        try {
-            $document = Document::find($id);
-
-            if (!$document) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Document not found'
-                ], 404);
-            }
-
-            $request->validate([
-                'status' => 'required|string|in:active,rejected,expired',
-                'remarks' => 'nullable|string',
-            ]);
-
-            $document->status = $request->status;
-            if ($request->has('remarks')) {
-                $document->remarks = $request->remarks;
-            }
-            $document->save();
-
-            $this->logActivity('TOGGLE_STATUS', 'Document', "Toggled status of document {$document->document_name} to {$request->status}", [
-                'document_id' => $id,
-                'new_status' => $request->status,
-                'remarks' => $request->remarks,
-                'updated_by' => Auth::id()
-            ]);
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Document status updated successfully',
-                'data' => $document->load('uploader')
-            ], 200);
-        } catch (\Throwable $th) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to update document status',
                 'error' => $th->getMessage()
             ], 500);
         }

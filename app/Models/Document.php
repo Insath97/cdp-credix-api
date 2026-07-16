@@ -14,8 +14,6 @@ class Document extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'documentable_type',
-        'documentable_id',
         'document_type',
         'is_mandatory',
         'document_name',
@@ -32,14 +30,6 @@ class Document extends Model
         'is_active' => 'boolean',
         'uploaded_at' => 'datetime',
     ];
-
-    /**
-     * Get the parent documentable model (Customer, Guarantor, or Application).
-     */
-    public function documentable(): MorphTo
-    {
-        return $this->morphTo();
-    }
 
     /**
      * Get the user who uploaded the document.

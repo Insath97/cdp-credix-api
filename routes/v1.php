@@ -131,7 +131,5 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Documents
     Route::apiResource('documents', DocumentController::class);
-    Route::prefix('documents')->group(function () {
-        Route::patch('{id}/toggle-status', [DocumentController::class, 'toggleStatus']);
-    });
+   
 });

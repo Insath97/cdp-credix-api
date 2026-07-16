@@ -14,9 +14,6 @@ return new class extends Migration
         Schema::create('documents', function (Blueprint $table) {
             $table->id();
             
-            // Polymorphic relation fields (documentable_type, documentable_id)
-            $table->morphs('documentable');
-            
             $table->enum('document_type', [
                 'nic_copy', 
                 'passport_copy', 

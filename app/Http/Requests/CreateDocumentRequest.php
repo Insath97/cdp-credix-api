@@ -22,9 +22,7 @@ class CreateDocumentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'documentable_type' => 'required|string|in:customer,guarantor,application,App\Models\Customer,App\Models\Guarantor,App\Models\Application',
-            'documentable_id' => 'required|integer',
-            'document_type' => 'required|string|in:nic_copy,passport_copy,driving_license,salary_slip,bank_statement,billing_proof,salary_assignment_letter,employer_letter,photo,other',
+            'document_type' => 'nullable|string|in:nic_copy,passport_copy,driving_license,salary_slip,bank_statement,billing_proof,salary_assignment_letter,employer_letter,photo,other',
             'is_mandatory' => 'nullable|boolean',
             'document_name' => 'required|string|max:255',
             'file' => 'required_without:file_path|file|mimes:pdf,jpg,jpeg,png|max:10240',

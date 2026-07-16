@@ -134,6 +134,13 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Moving Asset Create', 'group_name' => 'Moving Asset Management Permissions'],
             ['name' => 'Moving Asset Update', 'group_name' => 'Moving Asset Management Permissions'],
             ['name' => 'Moving Asset Delete', 'group_name' => 'Moving Asset Management Permissions'],
+
+            /* Document Management */
+            ['name' => 'Document Index', 'group_name' => 'Document Management Permissions'],
+            ['name' => 'Document Create', 'group_name' => 'Document Management Permissions'],
+            ['name' => 'Document Update', 'group_name' => 'Document Management Permissions'],
+            ['name' => 'Document Delete', 'group_name' => 'Document Management Permissions'],
+            ['name' => 'Document Toggle Status', 'group_name' => 'Document Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {
