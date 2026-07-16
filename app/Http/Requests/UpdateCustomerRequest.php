@@ -29,7 +29,7 @@ class UpdateCustomerRequest extends FormRequest
         'customer_id'=>'required|string|max:255|unique:customers,customer_id,' . $id,
         'full_name'=>'required|string|max:500',
         'name_with_initials'=>'required|string|max:255',
-        'customer_code'=>'required',
+        'customer_code' => 'nullable|string|max:255|unique:customers,customer_code,' . $id,
         'id_type'=>'required',
         'id_number'=>'required',
         'address_line_1'=>'required',

@@ -13,6 +13,19 @@ class Customer extends Model
 {
     use HasFactory, SoftDeletes;
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($customer) {
+            if (empty($customer->customer_code)) {
+                $lastCustomer = self::withTrashed()->orderBy('id', 'desc')->first();
+                $nextId = $lastCustomer ? $lastCustomer->id + 1 : 1;
+                $customer->customer_code = 'CUS' . str_pad($nextId, 4, '0', STR_PAD_LEFT);
+            }
+        });
+    }
+
     protected $fillable = [
         'customer_id',
         'customer_code',

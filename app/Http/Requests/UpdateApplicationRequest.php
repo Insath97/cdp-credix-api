@@ -24,8 +24,7 @@ class UpdateApplicationRequest extends FormRequest
         $id = $this->route('application');
 
         return [
-            'application_no' => 'required|string|max:255|unique:applications,application_no,' . $id,
-            'application_type' => 'required|string|in:loan,lease',
+            'application_no' => 'nullable|string|max:255|unique:applications,application_no',            'application_type' => 'required|string|in:loan,lease',
             'branch' => 'nullable|string|max:255',
             'loan_type' => 'nullable|string|max:255',
             'requested_amount' => 'required|numeric|min:0',

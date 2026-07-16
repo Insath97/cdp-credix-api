@@ -24,8 +24,7 @@ class UpdateApplicationHistoryRequest extends FormRequest
         return [
             'application_id' => 'required|exists:applications,id',
             'customer_id' => 'required|string|exists:customers,customer_id',
-            'application_no' => 'required|string|max:255',
-            'application_type' => 'required|string|max:255',
+            'application_no' => 'nullable|string|max:255|unique:applications,application_no',            'application_type' => 'required|string|max:255',
             'role' => 'required|string|in:primary,joint',
             'status' => 'required|string|max:255',
 
