@@ -147,6 +147,11 @@ class Customer extends Model
         return $this->hasMany(Guarantor::class);
     }
 
+    public function documents(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->morphMany(Document::class, 'documentable');
+    }
+
     public function fixedAssets(): HasMany
     {
         return $this->hasMany(FixedAssests::class, 'customer_id');

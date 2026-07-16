@@ -95,6 +95,11 @@ class Application extends Model
         return $this->hasMany(Guarantor::class);
     }
 
+    public function documents(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->morphMany(Document::class, 'documentable');
+    }
+
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', '!=', 'cancelled');

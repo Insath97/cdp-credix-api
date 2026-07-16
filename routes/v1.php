@@ -19,6 +19,7 @@ use App\Http\Controllers\V1\ApplicationController;
 use App\Http\Controllers\V1\ApplicationHistoryController;
 use App\Http\Controllers\V1\FixedAssestsController;
 use App\Http\Controllers\V1\MovingAssestsController;
+use App\Http\Controllers\V1\DocumentController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -127,4 +128,10 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Moving Assets
     Route::apiResource('moving-assests', MovingAssestsController::class);
+
+    // Documents
+    Route::apiResource('documents', DocumentController::class);
+    Route::prefix('documents')->group(function () {
+        Route::patch('{id}/toggle-status', [DocumentController::class, 'toggleStatus']);
+    });
 });
