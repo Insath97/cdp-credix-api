@@ -32,7 +32,6 @@ class CreateGuarantorRequest extends FormRequest
             'id_number' => 'required|string|max:100',
             'id_image' => 'nullable|string|max:500',
             'date_of_birth' => 'nullable|date',
-            'hnb_account_no' => 'nullable|string|max:100',
             'phone_primary' => 'nullable|string|max:20',
             'occupation' => 'nullable|string|max:255',
             'employer_name' => 'nullable|string|max:255',
@@ -41,6 +40,9 @@ class CreateGuarantorRequest extends FormRequest
             'allowance' => 'nullable|numeric|min:0',
             'other_income' => 'nullable|numeric|min:0',
             'liabilities' => 'nullable|numeric|min:0',
+            'bank_name_of_guarantor' => 'nullable|string|max:255',
+            'bank_account_no_of_guarantor' => 'nullable|string|max:255',
+            'bank_branch_of_guarantor' => 'nullable|string|max:255',
         ];
     }
 

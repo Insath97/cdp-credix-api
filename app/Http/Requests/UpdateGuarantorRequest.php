@@ -27,12 +27,24 @@ class UpdateGuarantorRequest extends FormRequest
 
         return [
             'customer_id' => 'required|string|exists:customers,customer_id',
+            'application_id' => 'required|exists:applications,id',
             'full_name' => 'required|string|max:255',
-            'type' => 'required|in:individual,company',
-            'id_type' => 'required|in:national_id,passport',
-            'id_number' => 'required|string|max:255',
-            'phone_primary' => 'required|string|max:20',
-            'id_image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048'
+            'type' => 'required|string|in:guarantor_1,guarantor_2',
+            'id_type' => 'required|string|max:100',
+            'id_number' => 'required|string|max:100',
+            'id_image' => 'nullable|string|max:500',
+            'date_of_birth' => 'nullable|date',
+            'phone_primary' => 'nullable|string|max:20',
+            'occupation' => 'nullable|string|max:255',
+            'employer_name' => 'nullable|string|max:255',
+            'date_joined' => 'nullable|date',
+            'salary' => 'nullable|numeric|min:0',
+            'allowance' => 'nullable|numeric|min:0',
+            'other_income' => 'nullable|numeric|min:0',
+            'liabilities' => 'nullable|numeric|min:0',
+            'bank_name_of_guarantor' => 'nullable|string|max:255',
+            'bank_account_no_of_guarantor' => 'nullable|string|max:255',
+            'bank_branch_of_guarantor' => 'nullable|string|max:255',
         ];
     }
 

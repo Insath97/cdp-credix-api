@@ -140,7 +140,6 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Document Create', 'group_name' => 'Document Management Permissions'],
             ['name' => 'Document Update', 'group_name' => 'Document Management Permissions'],
             ['name' => 'Document Delete', 'group_name' => 'Document Management Permissions'],
-            ['name' => 'Document Toggle Status', 'group_name' => 'Document Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {

@@ -21,7 +21,6 @@ return new class extends Migration
             $table->string('id_number')->nullable();
             $table->string('id_image')->nullable();
             $table->date('date_of_birth')->nullable();
-            $table->string('hnb_account_no')->nullable();
             $table->string('phone_primary')->nullable();
             $table->string('occupation')->nullable();
             $table->string('employer_name')->nullable();
@@ -30,6 +29,9 @@ return new class extends Migration
             $table->decimal('allowance', 15, 2)->nullable();
             $table->decimal('other_income', 15, 2)->nullable();
             $table->decimal('liabilities', 15, 2)->nullable();
+            $table->string('bank_name_of_guarantor')->nullable();
+            $table->string('bank_account_no_of_guarantor')->nullable();
+            $table->string('bank_branch_of_guarantor')->nullable();
             $table->timestamps();
         });
     }

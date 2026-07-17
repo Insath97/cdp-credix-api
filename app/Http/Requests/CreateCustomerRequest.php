@@ -27,7 +27,7 @@ class CreateCustomerRequest extends FormRequest
         'customer_id'=>'nullable|string|max:255',
         'full_name'=>'required|string|max:500',
         'name_with_initials'=>'required|string|max:255',
-        'customer_code' => 'nullable|string',
+        'customer_code' => 'nullable|string|max:255|unique:customers,customer_code',
         'id_type'=>'required',
         'id_number'=>'required',
         'address_line_1'=>'required',

@@ -18,7 +18,6 @@ class Guarantor extends Model
         'id_number',
         'id_image',
         'date_of_birth',
-        'hnb_account_no',
         'phone_primary',
         'occupation',
         'employer_name',
@@ -27,6 +26,9 @@ class Guarantor extends Model
         'allowance',
         'other_income',
         'liabilities',
+        'bank_name_of_guarantor',
+        'bank_account_no_of_guarantor',
+        'bank_branch_of_guarantor',
     ];
 
     protected $casts = [
@@ -46,7 +48,11 @@ class Guarantor extends Model
                 ->orWhere('id_type', 'like', "%$search%")
                 ->orWhere('id_number', 'like', "%$search%")
                 ->orWhere('phone_primary', 'like', "%$search%")
-                ->orWhere('hnb_account_no', 'like', "%$search%");
+                ->orWhere('occupation', 'like', "%$search%")
+                ->orWhere('employer_name', 'like', "%$search%")
+                ->orWhere('bank_name_of_guarantor', 'like', "%$search%")
+                ->orWhere('bank_account_no_of_guarantor', 'like', "%$search%")
+                ->orWhere('bank_branch_of_guarantor', 'like', "%$search%");
         });
     }
 
