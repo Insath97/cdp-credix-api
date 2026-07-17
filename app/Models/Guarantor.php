@@ -11,7 +11,6 @@ class Guarantor extends Model
 
     protected $fillable = [
         'customer_id',
-        'application_id',
         'full_name',
         'type',
         'id_type',
