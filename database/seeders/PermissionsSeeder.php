@@ -15,6 +15,10 @@ class PermissionsSeeder extends Seeder
     public function run(): void
     {
         $permissions = [
+            /* Activity Management */
+            ['name' => 'Activity Index', 'group_name' => 'Activity Management Permissions'],
+            ['name' => 'Activity Show', 'group_name' => 'Activity Management Permissions'],
+
             /* Access Management */
             ['name' => 'Permission Index', 'group_name' => 'Access Management Permissions'],
             ['name' => 'Permission Create', 'group_name' => 'Access Management Permissions'],
