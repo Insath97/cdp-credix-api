@@ -21,6 +21,7 @@ use App\Http\Controllers\V1\ApplicationHistoryController;
 use App\Http\Controllers\V1\FixedAssestsController;
 use App\Http\Controllers\V1\MovingAssestsController;
 use App\Http\Controllers\V1\DocumentController;
+use App\Http\Controllers\V1\LoanProductController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -134,5 +135,14 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Documents
     Route::apiResource('documents', DocumentController::class);
-   
+
+    // Loan Products
+    Route::prefix('loan-products')->group(function () {
+        Route::get('list', [LoanProductController::class, 'getActiveList']);
+        Route::patch('{id}/toggle-status', [LoanProductController::class, 'toggleStatus']);
+        Route::patch('{id}/activate', [LoanProductController::class, 'activate']);
+        Route::patch('{id}/deactivate', [LoanProductController::class, 'deactivate']);
+    });
+    Route::apiResource('loan-products', LoanProductController::class);
+
 });
