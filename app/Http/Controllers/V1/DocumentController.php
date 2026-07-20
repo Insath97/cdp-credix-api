@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Document;
 use App\Traits\ActivityLogTrait;
+use App\Traits\FileUploadTrait;
 use App\Http\Requests\CreateDocumentRequest;
 use App\Http\Requests\UpdateDocumentRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -16,7 +17,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class DocumentController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, FileUploadTrait;
 
     public static function middleware(): array
     {
@@ -83,12 +84,16 @@ class DocumentController extends Controller implements HasMiddleware
         try {
             $data = $request->validated();
 
-            // Handle file upload if present
-            if ($request->hasFile('file')) {
-                $file = $request->file('file');
-                $fileName = time() . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
-                $path = $file->storeAs('documents', $fileName, 'public');
-                $data['file_path'] = '/storage/' . $path;
+            $filePath = $this->handleFileUpload(
+                $request,
+                'file',
+                null,
+                'documents',
+                $data['document_name'] ?? ''
+            );
+
+            if ($filePath) {
+                $data['file_path'] = $filePath;
             }
 
             // Remove file parameter from data array to prevent insert errors
@@ -162,20 +167,16 @@ class DocumentController extends Controller implements HasMiddleware
 
             $data = $request->validated();
 
-            // Handle file upload replacement
-            if ($request->hasFile('file')) {
-                // Delete old file if it exists in public storage
-                if (!empty($document->file_path)) {
-                    $oldPath = str_replace('/storage/', '', $document->file_path);
-                    if (Storage::disk('public')->exists($oldPath)) {
-                        Storage::disk('public')->delete($oldPath);
-                    }
-                }
+            $filePath = $this->handleFileUpload(
+                $request,
+                'file',
+                $document->file_path,
+                'documents',
+                $document->document_name
+            );
 
-                $file = $request->file('file');
-                $fileName = time() . '_' . preg_replace('/\s+/', '_', $file->getClientOriginalName());
-                $path = $file->storeAs('documents', $fileName, 'public');
-                $data['file_path'] = '/storage/' . $path;
+            if ($filePath) {
+                $data['file_path'] = $filePath;
             }
 
             unset($data['file']);
@@ -211,6 +212,10 @@ class DocumentController extends Controller implements HasMiddleware
                     'status' => 'error',
                     'message' => 'Document not found'
                 ], 404);
+            }
+
+            if ($document->file_path) {
+                $this->deleteFile($document->file_path);
             }
 
             $document->delete();
