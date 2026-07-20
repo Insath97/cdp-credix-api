@@ -150,6 +150,14 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Product Create', 'group_name' => 'Loan Product Management Permissions'],
             ['name' => 'Loan Product Update', 'group_name' => 'Loan Product Management Permissions'],
             ['name' => 'Loan Product Delete', 'group_name' => 'Loan Product Management Permissions'],
+            ['name' => 'Loan Product Toggle Status', 'group_name' => 'Loan Product Management Permissions'],
+
+            /* Loan Application Management */
+            ['name' => 'Loan Application Index', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Create', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Update', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Delete', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Toggle Status', 'group_name' => 'Loan Application Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {

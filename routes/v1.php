@@ -22,6 +22,7 @@ use App\Http\Controllers\V1\FixedAssestsController;
 use App\Http\Controllers\V1\MovingAssestsController;
 use App\Http\Controllers\V1\DocumentController;
 use App\Http\Controllers\V1\LoanProductController;
+use App\Http\Controllers\V1\LoanApplicationController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -144,5 +145,13 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/deactivate', [LoanProductController::class, 'deactivate']);
     });
     Route::apiResource('loan-products', LoanProductController::class);
+
+    // Loan Applications
+    Route::prefix('loan-applications')->group(function () {
+        Route::patch('{id}/toggle-status', [LoanApplicationController::class, 'toggleStatus']);
+        Route::patch('{id}/activate', [LoanApplicationController::class, 'activate']);
+        Route::patch('{id}/deactivate', [LoanApplicationController::class, 'deactivate']);
+    });
+    Route::apiResource('loan-applications', LoanApplicationController::class);
 
 });

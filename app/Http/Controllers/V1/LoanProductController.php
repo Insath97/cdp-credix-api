@@ -22,7 +22,8 @@ class LoanProductController extends Controller implements HasMiddleware
         return [
             new Middleware('permission:Loan Product Index',  only: ['index', 'show', 'getActiveList']),
             new Middleware('permission:Loan Product Create', only: ['store']),
-            new Middleware('permission:Loan Product Update', only: ['update', 'toggleStatus', 'activate', 'deactivate']),
+            new Middleware('permission:Loan Product Update', only: ['update']),
+            new Middleware('permission:Loan Product Toggle Status', only: ['toggleStatus', 'activate', 'deactivate']),
             new Middleware('permission:Loan Product Delete', only: ['destroy']),
         ];
     }
