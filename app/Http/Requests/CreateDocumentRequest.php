@@ -22,14 +22,15 @@ class CreateDocumentRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'customer_id'   => 'nullable|integer|exists:customers,id',
             'document_type' => 'nullable|string|in:nic_copy,passport_copy,driving_license,salary_slip,bank_statement,billing_proof,salary_assignment_letter,employer_letter,photo,other',
-            'is_mandatory' => 'nullable|boolean',
+            'is_mandatory'  => 'nullable|boolean',
             'document_name' => 'required|string|max:255',
-            'file' => 'required_without:file_path|file|mimes:pdf,jpg,jpeg,png|max:10240',
-            'file_path' => 'required_without:file|string|max:1000',
-            'remarks' => 'nullable|string',
-            'status' => 'nullable|string|in:active,rejected,expired',
-            'is_active' => 'nullable|boolean',
+            'file'          => 'required_without:file_path|file|mimes:pdf,jpg,jpeg,png|max:10240',
+            'file_path'     => 'required_without:file|string|max:1000',
+            'remarks'       => 'nullable|string',
+            'status'        => 'nullable|string|in:active,rejected,expired',
+            'is_active'     => 'nullable|boolean',
         ];
     }
 
