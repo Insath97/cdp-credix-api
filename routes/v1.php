@@ -23,6 +23,7 @@ use App\Http\Controllers\V1\MovingAssestsController;
 use App\Http\Controllers\V1\DocumentController;
 use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LoanApplicationController;
+use App\Http\Controllers\V1\LoanApplicationGuarantorController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -153,5 +154,8 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/deactivate', [LoanApplicationController::class, 'deactivate']);
     });
     Route::apiResource('loan-applications', LoanApplicationController::class);
+
+    // Loan Application Guarantors
+    Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);
 
 });

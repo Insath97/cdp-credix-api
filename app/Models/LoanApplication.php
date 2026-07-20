@@ -117,6 +117,14 @@ class LoanApplication extends Model
     }
 
     /**
+     * Relationship with LoanApplicationGuarantors.
+     */
+    public function loanApplicationGuarantors(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(LoanApplicationGuarantor::class);
+    }
+
+    /**
      * Scope for active records.
      */
     public function scopeActive(Builder $query): Builder
