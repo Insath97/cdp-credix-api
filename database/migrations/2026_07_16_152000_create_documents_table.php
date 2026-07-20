@@ -31,6 +31,8 @@ return new class extends Migration
             $table->string('document_name');
             $table->string('file_path');
             
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
+            
             $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('uploaded_at')->useCurrent();
             

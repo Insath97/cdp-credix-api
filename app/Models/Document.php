@@ -18,6 +18,7 @@ class Document extends Model
         'is_mandatory',
         'document_name',
         'file_path',
+        'customer_id',
         'uploaded_by',
         'uploaded_at',
         'status',
@@ -30,6 +31,14 @@ class Document extends Model
         'is_active' => 'boolean',
         'uploaded_at' => 'datetime',
     ];
+
+    /**
+     * Get the customer this document belongs to.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
 
     /**
      * Get the user who uploaded the document.

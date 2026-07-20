@@ -166,4 +166,9 @@ class Customer extends Model
     {
         return $this->hasMany(ApplicationHistory::class);
     }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(Document::class);
+    }
 }

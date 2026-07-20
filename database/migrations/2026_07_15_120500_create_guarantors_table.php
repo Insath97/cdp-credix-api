@@ -14,7 +14,6 @@ return new class extends Migration
         Schema::create('guarantors', function (Blueprint $table) {
             $table->id();
             $table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();
-            $table->foreignId('application_id')->constrained('applications')->cascadeOnDelete();
             $table->string('full_name');
             $table->string('type')->nullable(); // e.g. guarantor_1 / guarantor_2
             $table->string('id_type')->nullable();

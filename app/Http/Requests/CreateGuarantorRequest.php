@@ -24,7 +24,7 @@ class CreateGuarantorRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'customer_id' => 'required|string|exists:customers,customer_id',
+            'customer_id' => 'required|string|exists:customers,id',
             'full_name' => 'required|string|max:255',
             'type' => 'required|string|in:guarantor_1,guarantor_2',
             'id_type' => 'required|string|max:100',
