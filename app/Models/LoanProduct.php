@@ -24,7 +24,6 @@ class LoanProduct extends Model
         'max_term_months',
         'processing_fee_type',
         'processing_fee_value',
-        'penalty_type',
         'penalty_value',
         'grace_period_days',
         'is_active',

@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
-class CreateLoanProductRequest extends FormRequest
+class CreateRecoveryCaseRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -22,20 +22,12 @@ class CreateLoanProductRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => 'required|string|max:255',
-            'code' => 'nullable|string|max:50|unique:loan_products,code',
-            'description' => 'nullable|string',
-            'interest_rate' => 'required|numeric|min:0|max:999.999',
-            'interest_type' => 'nullable|string|in:flat,reducing',
-            'min_amount' => 'required|numeric|min:0',
-            'max_amount' => 'required|numeric|min:0|gte:min_amount',
-            'min_term_months' => 'required|integer|min:1',
-            'max_term_months' => 'required|integer|min:1|gte:min_term_months',
-            'processing_fee_type' => 'required|string|in:fixed,percentage',
-            'processing_fee_value' => 'required|numeric|min:0',
-            'penalty_value' => 'nullable|numeric|min:0',
-            'grace_period_days' => 'nullable|integer|min:0',
-            'is_active' => 'nullable|boolean',
+            'loan_application_id' => 'required|integer|exists:loan_applications,id',
+            'status'              => 'nullable|string|in:open,in_progress,resolved,escalated,closed',
+            'overdue_amount'      => 'nullable|numeric|min:0',
+            'assigned_agent_id'   => 'nullable|integer|exists:users,id',
+            'remarks'             => 'nullable|string',
+            'opened_at'           => 'nullable|date',
         ];
     }
 

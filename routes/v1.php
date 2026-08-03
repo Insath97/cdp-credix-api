@@ -26,6 +26,8 @@ use App\Http\Controllers\V1\LoanApplicationController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
 use App\Http\Controllers\V1\LoanInstallmentController;
 use App\Http\Controllers\V1\PaymentController;
+use App\Http\Controllers\V1\RecoveryCaseController;
+use App\Http\Controllers\V1\RecoveryActivityController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -171,5 +173,11 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Payments
     Route::apiResource('payments', PaymentController::class);
+
+    // Recovery Cases
+    Route::apiResource('recovery-cases', RecoveryCaseController::class);
+
+    // Recovery Activities
+    Route::apiResource('recovery-activities', RecoveryActivityController::class);
 
 });

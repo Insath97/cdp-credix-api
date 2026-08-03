@@ -35,7 +35,6 @@ class UpdateLoanProductRequest extends FormRequest
             'max_term_months' => 'nullable|integer|min:1|gte:min_term_months',
             'processing_fee_type' => 'nullable|string|in:fixed,percentage',
             'processing_fee_value' => 'nullable|numeric|min:0',
-            'penalty_type' => 'nullable|string|in:fixed,percentage',
             'penalty_value' => 'nullable|numeric|min:0',
             'grace_period_days' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean',

@@ -182,6 +182,18 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Payment Create', 'group_name' => 'Payment Management Permissions'],
             ['name' => 'Payment Update', 'group_name' => 'Payment Management Permissions'],
             ['name' => 'Payment Delete', 'group_name' => 'Payment Management Permissions'],
+
+            /* Recovery Case Management */
+            ['name' => 'Recovery Case Index', 'group_name' => 'Recovery Case Management Permissions'],
+            ['name' => 'Recovery Case Create', 'group_name' => 'Recovery Case Management Permissions'],
+            ['name' => 'Recovery Case Update', 'group_name' => 'Recovery Case Management Permissions'],
+            ['name' => 'Recovery Case Delete', 'group_name' => 'Recovery Case Management Permissions'],
+
+            /* Recovery Activity Management */
+            ['name' => 'Recovery Activity Index', 'group_name' => 'Recovery Activity Management Permissions'],
+            ['name' => 'Recovery Activity Create', 'group_name' => 'Recovery Activity Management Permissions'],
+            ['name' => 'Recovery Activity Update', 'group_name' => 'Recovery Activity Management Permissions'],
+            ['name' => 'Recovery Activity Delete', 'group_name' => 'Recovery Activity Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {
