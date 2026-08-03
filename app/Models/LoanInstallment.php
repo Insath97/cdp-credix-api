@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LoanInstallment extends Model
 {
@@ -50,5 +51,13 @@ class LoanInstallment extends Model
     public function penaltyWaivedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'penalty_waived_by');
+    }
+
+    /**
+     * Relationship with the payments applied to this installment.
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class);
     }
 }

@@ -176,6 +176,12 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Installment Create', 'group_name' => 'Loan Installment Management Permissions'],
             ['name' => 'Loan Installment Update', 'group_name' => 'Loan Installment Management Permissions'],
             ['name' => 'Loan Installment Delete', 'group_name' => 'Loan Installment Management Permissions'],
+
+            /* Payment Management */
+            ['name' => 'Payment Index', 'group_name' => 'Payment Management Permissions'],
+            ['name' => 'Payment Create', 'group_name' => 'Payment Management Permissions'],
+            ['name' => 'Payment Update', 'group_name' => 'Payment Management Permissions'],
+            ['name' => 'Payment Delete', 'group_name' => 'Payment Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {

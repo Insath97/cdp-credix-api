@@ -157,6 +157,14 @@ class LoanApplication extends Model
     }
 
     /**
+     * Relationship with the payment history.
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class)->orderBy('paid_at');
+    }
+
+    /**
      * Scope for active records.
      */
     public function scopeActive(Builder $query): Builder
