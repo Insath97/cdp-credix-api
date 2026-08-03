@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Enums\LoanApplicationStatus;
 
 class LoanApplication extends Model
 {
@@ -36,6 +38,9 @@ class LoanApplication extends Model
         'disbursed_at',
         'outstanding_balance',
         'is_active',
+        'status',
+        'assigned_reviewer_id',
+        'current_approval_level',
     ];
 
     protected $casts = [
@@ -58,6 +63,9 @@ class LoanApplication extends Model
         'disbursed_at'        => 'datetime',
         'outstanding_balance' => 'decimal:2',
         'is_active'            => 'boolean',
+        'status'                => LoanApplicationStatus::class,
+        'assigned_reviewer_id'  => 'integer',
+        'current_approval_level' => 'integer',
     ];
 
     /**
@@ -122,6 +130,22 @@ class LoanApplication extends Model
     public function loanApplicationGuarantors(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(LoanApplicationGuarantor::class);
+    }
+
+    /**
+     * Relationship with the assigned reviewer.
+     */
+    public function assignedReviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_reviewer_id');
+    }
+
+    /**
+     * Relationship with the workflow status change history.
+     */
+    public function statusHistory(): HasMany
+    {
+        return $this->hasMany(LoanApplicationStatusHistory::class)->orderBy('created_at');
     }
 
     /**

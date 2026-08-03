@@ -19,7 +19,7 @@ return new class extends Migration
             $table->text('description')->nullable();
 
             $table->decimal('interest_rate', 6, 3);                         
-            $table->string('interest_type')->default('flat')->nullable();    
+            // $table->string('interest_type')->default('flat')->nullable();    
 
             $table->decimal('min_amount', 15, 2);
             $table->decimal('max_amount', 15, 2);

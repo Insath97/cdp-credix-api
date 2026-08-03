@@ -44,11 +44,17 @@ return new class extends Migration
             $table->timestamp('disbursed_at')->nullable();
             
             $table->decimal('outstanding_balance', 15, 2)->nullable();
-            
+
+            $table->string('status', 30)->default('pending')->index();
+            $table->foreignId('assigned_reviewer_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->unsignedTinyInteger('current_approval_level')->nullable();
+
             $table->boolean('is_active')->default(true);
-            
+
             $table->softDeletes();
             $table->timestamps();
+
+            $table->index(['branch_id', 'status']);
         });
     }
 

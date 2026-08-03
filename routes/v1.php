@@ -152,6 +152,12 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/toggle-status', [LoanApplicationController::class, 'toggleStatus']);
         Route::patch('{id}/activate', [LoanApplicationController::class, 'activate']);
         Route::patch('{id}/deactivate', [LoanApplicationController::class, 'deactivate']);
+        Route::patch('{id}/submit', [LoanApplicationController::class, 'submit']);
+        Route::patch('{id}/review', [LoanApplicationController::class, 'review']);
+        Route::patch('{id}/approve', [LoanApplicationController::class, 'approve']);
+        Route::patch('{id}/reject', [LoanApplicationController::class, 'reject']);
+        Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
+        Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });
     Route::apiResource('loan-applications', LoanApplicationController::class);
 

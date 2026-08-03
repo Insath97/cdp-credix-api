@@ -12,10 +12,17 @@ use App\Http\Requests\CreateLoanApplicationRequest;
 use App\Http\Requests\UpdateLoanApplicationRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use App\Enums\LoanApplicationStatus;
+use App\Exceptions\InvalidLoanApplicationTransitionException;
+use App\Services\LoanApplicationWorkflowService;
 
 class LoanApplicationController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
+
+    public function __construct(protected LoanApplicationWorkflowService $workflowService)
+    {
+    }
 
     public static function middleware(): array
     {
@@ -25,6 +32,12 @@ class LoanApplicationController extends Controller implements HasMiddleware
             new Middleware('permission:Loan Application Update', only: ['update']),
             new Middleware('permission:Loan Application Toggle Status', only: ['toggleStatus', 'activate', 'deactivate']),
             new Middleware('permission:Loan Application Delete', only: ['destroy']),
+            new Middleware('permission:Loan Application Submit', only: ['submit']),
+            new Middleware('permission:Loan Application Review', only: ['review']),
+            new Middleware('permission:Loan Application Approve', only: ['approve']),
+            new Middleware('permission:Loan Application Reject', only: ['reject']),
+            new Middleware('permission:Loan Application Disburse', only: ['disburse']),
+            new Middleware('permission:Loan Application Cancel', only: ['cancel']),
         ];
     }
 
@@ -87,13 +100,14 @@ class LoanApplicationController extends Controller implements HasMiddleware
     {
         try {
             $data = $request->validated();
-            
+
             if (empty($data['applied_by'])) {
                 $data['applied_by'] = Auth::id();
             }
             if (empty($data['applied_at'])) {
                 $data['applied_at'] = now();
             }
+            $data['status'] = LoanApplicationStatus::Pending;
 
             $loanApplication = LoanApplication::create($data);
 
@@ -174,14 +188,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
             }
 
             $data = $request->validated();
-            
-            // Check for review & approval transitions to log or track timestamps
-            if (isset($data['reviewed_by']) && empty($loanApplication->reviewed_at)) {
-                $data['reviewed_at'] = now();
-            }
-            if (isset($data['approved_by']) && empty($loanApplication->approved_at)) {
-                $data['approved_at'] = now();
-            }
 
             $loanApplication->update($data);
 
@@ -335,6 +341,304 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'status'  => 'error',
                 'message' => 'Failed to deactivate loan application',
                 'error'   => $th->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Submit a pending loan application for review.
+     */
+    public function submit(string $id)
+    {
+        try {
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Submitted,
+                Auth::id()
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} submitted", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application submitted successfully',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to submit loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Move a loan application into review and optionally assign a reviewer.
+     */
+    public function review(Request $request, string $id)
+    {
+        try {
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            $extra = [
+                'reviewed_by' => Auth::id(),
+                'reviewed_at' => now(),
+            ];
+            if ($request->filled('assigned_reviewer_id')) {
+                $extra['assigned_reviewer_id'] = $request->input('assigned_reviewer_id');
+            }
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::UnderReview,
+                Auth::id(),
+                $request->input('remarks'),
+                $extra
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} moved to review", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application moved to review successfully',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to move loan application to review',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Approve a loan application under review.
+     */
+    public function approve(Request $request, string $id)
+    {
+        try {
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            $extra = [
+                'approved_by' => Auth::id(),
+                'approved_at' => now(),
+            ];
+            if ($request->filled('approved_amount')) {
+                $extra['approved_amount'] = $request->input('approved_amount');
+            }
+            if ($request->filled('remarks')) {
+                $extra['approval_remarks'] = $request->input('remarks');
+            }
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Approved,
+                Auth::id(),
+                $request->input('remarks'),
+                $extra
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} approved", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application approved successfully',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to approve loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Reject a loan application under review.
+     */
+    public function reject(Request $request, string $id)
+    {
+        try {
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Rejected,
+                Auth::id(),
+                $request->input('rejection_reason'),
+                ['rejection_reason' => $request->input('rejection_reason')]
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} rejected", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application rejected successfully',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to reject loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Disburse an approved loan application.
+     */
+    public function disburse(string $id)
+    {
+        try {
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Disbursed,
+                Auth::id(),
+                null,
+                ['disbursed_at' => now()]
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} disbursed", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application disbursed successfully',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to disburse loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Cancel a loan application that has not yet been approved.
+     */
+    public function cancel(Request $request, string $id)
+    {
+        try {
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Cancelled,
+                Auth::id(),
+                $request->input('remarks')
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} cancelled", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application cancelled successfully',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to cancel loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
     }
