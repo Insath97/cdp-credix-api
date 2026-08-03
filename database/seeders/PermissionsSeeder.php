@@ -194,6 +194,18 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Recovery Activity Create', 'group_name' => 'Recovery Activity Management Permissions'],
             ['name' => 'Recovery Activity Update', 'group_name' => 'Recovery Activity Management Permissions'],
             ['name' => 'Recovery Activity Delete', 'group_name' => 'Recovery Activity Management Permissions'],
+
+            /* Recovery Agent Management */
+            ['name' => 'Recovery Agent Index', 'group_name' => 'Recovery Agent Management Permissions'],
+            ['name' => 'Recovery Agent Create', 'group_name' => 'Recovery Agent Management Permissions'],
+            ['name' => 'Recovery Agent Update', 'group_name' => 'Recovery Agent Management Permissions'],
+            ['name' => 'Recovery Agent Delete', 'group_name' => 'Recovery Agent Management Permissions'],
+
+            /* External Recovery Agent Management */
+            ['name' => 'External Recovery Agent Index', 'group_name' => 'External Recovery Agent Management Permissions'],
+            ['name' => 'External Recovery Agent Create', 'group_name' => 'External Recovery Agent Management Permissions'],
+            ['name' => 'External Recovery Agent Update', 'group_name' => 'External Recovery Agent Management Permissions'],
+            ['name' => 'External Recovery Agent Delete', 'group_name' => 'External Recovery Agent Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {

@@ -28,6 +28,8 @@ use App\Http\Controllers\V1\LoanInstallmentController;
 use App\Http\Controllers\V1\PaymentController;
 use App\Http\Controllers\V1\RecoveryCaseController;
 use App\Http\Controllers\V1\RecoveryActivityController;
+use App\Http\Controllers\V1\RecoveryAgentController;
+use App\Http\Controllers\V1\ExternalRecoveryAgentController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -179,5 +181,11 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Recovery Activities
     Route::apiResource('recovery-activities', RecoveryActivityController::class);
+
+    // Recovery Agents
+    Route::apiResource('recovery-agents', RecoveryAgentController::class);
+
+    // External Recovery Agents
+    Route::apiResource('external-recovery-agents', ExternalRecoveryAgentController::class);
 
 });
