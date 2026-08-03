@@ -149,6 +149,14 @@ class LoanApplication extends Model
     }
 
     /**
+     * Relationship with the installment schedule.
+     */
+    public function installments(): HasMany
+    {
+        return $this->hasMany(LoanInstallment::class)->orderBy('installment_no');
+    }
+
+    /**
      * Scope for active records.
      */
     public function scopeActive(Builder $query): Builder

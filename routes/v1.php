@@ -24,6 +24,7 @@ use App\Http\Controllers\V1\DocumentController;
 use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LoanApplicationController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
+use App\Http\Controllers\V1\LoanInstallmentController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -163,5 +164,8 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Loan Application Guarantors
     Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);
+
+    // Loan Installments
+    Route::apiResource('loan-installments', LoanInstallmentController::class);
 
 });

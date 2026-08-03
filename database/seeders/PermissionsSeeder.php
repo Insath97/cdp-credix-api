@@ -170,6 +170,12 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Guarantor Create', 'group_name' => 'Loan Application Guarantor Management Permissions'],
             ['name' => 'Loan Application Guarantor Update', 'group_name' => 'Loan Application Guarantor Management Permissions'],
             ['name' => 'Loan Application Guarantor Delete', 'group_name' => 'Loan Application Guarantor Management Permissions'],
+
+            /* Loan Installment Management */
+            ['name' => 'Loan Installment Index', 'group_name' => 'Loan Installment Management Permissions'],
+            ['name' => 'Loan Installment Create', 'group_name' => 'Loan Installment Management Permissions'],
+            ['name' => 'Loan Installment Update', 'group_name' => 'Loan Installment Management Permissions'],
+            ['name' => 'Loan Installment Delete', 'group_name' => 'Loan Installment Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {

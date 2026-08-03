@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\DB;
 
 class LoanApplicationWorkflowService
 {
+    public function __construct(protected InstallmentScheduleService $installmentScheduleService)
+    {
+    }
+
     /**
      * Transition a loan application to a new status, guarded by the enum's
      * allowed-transition map, and record the change in status history.
@@ -47,6 +51,10 @@ class LoanApplicationWorkflowService
                 'remarks'     => $remarks,
             ]);
 
+            if ($to === LoanApplicationStatus::Disbursed) {
+                $this->installmentScheduleService->generate($loanApplication);
+            }
+
             return $loanApplication->fresh([
                 'application',
                 'customer',
@@ -56,6 +64,7 @@ class LoanApplicationWorkflowService
                 'reviewedBy',
                 'approvedBy',
                 'assignedReviewer',
+                'installments',
             ]);
         });
     }
