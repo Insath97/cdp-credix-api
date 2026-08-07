@@ -41,4 +41,12 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI'),
     ],
 
+    'dialog_sms' => [
+        'url' => env('DIALOG_SMS_URL', 'https://esms.dialog.lk'),
+        'send_url' => env('DIALOG_SMS_SEND_URL', 'https://e-sms.dialog.lk/api/v2/sms'),
+        'username' => env('DIALOG_SMS_USERNAME'),
+        'password' => env('DIALOG_SMS_PASSWORD'),
+        'mask' => env('DIALOG_SMS_MASK', 'CDP EMPIRE'),
+    ],
+
 ];

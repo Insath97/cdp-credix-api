@@ -112,10 +112,25 @@ class UserController extends Controller implements HasMiddleware
 
             // Create Employee first if user_type is staff
             if ($data['user_type'] === 'staff') {
+                $nameParts = preg_split('/\s+/', trim($data['name']));
+                $firstName = $nameParts[0];
+                $lastName = count($nameParts) > 1 ? implode(' ', array_slice($nameParts, 1)) : '';
+                $lastWord = end($nameParts);
+                $initials = count($nameParts) > 1
+                    ? implode('', array_map(fn ($word) => mb_strtoupper(mb_substr($word, 0, 1)) . '.', array_slice($nameParts, 0, -1)))
+                    : '';
+                $nameWithInitials = trim($initials . ' ' . $lastWord);
+
                 $employeeData = [
+                    'f_name' => $firstName,
+                    'l_name' => $lastName,
+                    'full_name' => $data['name'],
+                    'name_with_initials' => $nameWithInitials,
                     'employee_code' => $data['employee_code'],
                     'id_number' => $data['id_number'],
+                    'email' => $data['email'] ?? null,
                     'phone' => $data['phone'] ?? null,
+                    'phone_primary' => $data['phone'] ?? null,
                     'branch_id' => $data['branch_id'] ?? null,
                     'zonal_id' => $data['zonal_id'] ?? null,
                     'region_id' => $data['region_id'] ?? null,

@@ -30,12 +30,16 @@ use App\Http\Controllers\V1\RecoveryCaseController;
 use App\Http\Controllers\V1\RecoveryActivityController;
 use App\Http\Controllers\V1\RecoveryAgentController;
 use App\Http\Controllers\V1\ExternalRecoveryAgentController;
+use App\Http\Controllers\V1\NotificationController;
+use App\Http\Controllers\V1\PasswordChangeController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
 
 Route::prefix('v1')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
+    Route::post('forgot-password', [PasswordChangeController::class, 'forgotPassword'])->middleware('throttle:otp-request');
+    Route::post('reset-forgot-password', [PasswordChangeController::class, 'resetForgotPassword'])->middleware('throttle:otp-verify');
 });
 
 /* protected routes */
@@ -44,14 +48,24 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
 
+    // Password
+    Route::prefix('password')->group(function () {
+        Route::post('request-change', [PasswordChangeController::class, 'requestChange'])->middleware('throttle:otp-request');
+        Route::post('change-with-otp', [PasswordChangeController::class, 'changeWithOtp'])->middleware('throttle:otp-verify');
+    });
+
+    /*ActivityLog*/
     Route::apiResource('activities', ActivityController::class);
 
+    /*Permissions*/
     Route::get('permissions/list', [PermissionController::class, 'getPermissionList']);
     Route::apiResource('permissions', PermissionController::class);
 
+    /*Roles*/
     Route::get('roles/list/', [RoleController::class, 'getAvailableRoles']);
     Route::apiResource('roles', RoleController::class);
 
+    /*Users*/
     Route::patch('users/{id}/toggle-status', [UserController::class, 'toggleStatus']);
     Route::apiResource('users', UserController::class);
 
@@ -92,6 +106,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Departments
     Route::prefix('departments')->group(function () {
+        Route::get('list', [DepartmentController::class, 'getDepartmentList']);
         Route::get('{id}/designations', [DepartmentController::class, 'getDesignations']);
         Route::patch('{id}/toggle-status', [DepartmentController::class, 'toggleStatus']);
     });
@@ -187,5 +202,8 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // External Recovery Agents
     Route::apiResource('external-recovery-agents', ExternalRecoveryAgentController::class);
+
+    // Notifications (read-only audit log)
+    Route::apiResource('notifications', NotificationController::class)->only(['index', 'show']);
 
 });

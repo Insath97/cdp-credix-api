@@ -15,13 +15,18 @@ use Illuminate\Routing\Controllers\Middleware;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Services\LoanApplicationWorkflowService;
+use App\Services\NotificationService;
+use Illuminate\Support\Facades\Validator;
+use Spatie\Permission\Models\Role;
 
 class LoanApplicationController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
 
-    public function __construct(protected LoanApplicationWorkflowService $workflowService)
-    {
+    public function __construct(
+        protected LoanApplicationWorkflowService $workflowService,
+        protected NotificationService $notificationService,
+    ) {
     }
 
     public static function middleware(): array
@@ -370,6 +375,21 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loan_application_id' => $loanApplication->id,
             ]);
 
+            $staffRole = Role::where('name', config('notifications.staff_role'))->first();
+            if ($staffRole) {
+                foreach ($staffRole->users as $staffUser) {
+                    $staffPhone = $staffUser->employee?->phone_primary;
+                    if (!empty($staffPhone)) {
+                        $this->notificationService->sendSms(
+                            'application_submitted',
+                            $staffPhone,
+                            'CDP Crdix: New loan application pending for review.',
+                            ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
+                        );
+                    }
+                }
+            }
+
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Loan application submitted successfully',
@@ -509,6 +529,18 @@ class LoanApplicationController extends Controller implements HasMiddleware
     public function reject(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'rejection_reason' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $loanApplication = LoanApplication::find($id);
 
             if (!$loanApplication) {
@@ -529,6 +561,15 @@ class LoanApplicationController extends Controller implements HasMiddleware
             $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} rejected", [
                 'loan_application_id' => $loanApplication->id,
             ]);
+
+            if ($loanApplication->customer && !empty($loanApplication->customer->phone_primary)) {
+                $this->notificationService->sendSms(
+                    'application_rejected',
+                    $loanApplication->customer->phone_primary,
+                    "Your loan application has been rejected.\nReason: {$loanApplication->rejection_reason}",
+                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
+                );
+            }
 
             return response()->json([
                 'status'  => 'success',
@@ -573,9 +614,24 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 ['disbursed_at' => now()]
             );
 
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Active,
+                Auth::id()
+            );
+
             $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} disbursed", [
                 'loan_application_id' => $loanApplication->id,
             ]);
+
+            if ($loanApplication->customer && !empty($loanApplication->customer->phone_primary)) {
+                $this->notificationService->sendSms(
+                    'loan_disbursed',
+                    $loanApplication->customer->phone_primary,
+                    'Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.',
+                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
+                );
+            }
 
             return response()->json([
                 'status'  => 'success',

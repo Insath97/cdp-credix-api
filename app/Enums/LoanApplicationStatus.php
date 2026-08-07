@@ -29,6 +29,8 @@ enum LoanApplicationStatus: string
             self::Submitted => [self::UnderReview, self::Cancelled],
             self::UnderReview => [self::Approved, self::Rejected, self::Cancelled],
             self::Approved => [self::Disbursed],
+            self::Disbursed => [self::Active],
+            self::Active => [self::Closed],
             default => [],
         };
     }

@@ -8,6 +8,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\Payment;
 use App\Models\LoanInstallment;
+use App\Enums\LoanApplicationStatus;
+use App\Services\LoanApplicationWorkflowService;
+use App\Services\NotificationService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreatePaymentRequest;
 use App\Http\Requests\UpdatePaymentRequest;
@@ -18,6 +21,12 @@ use Illuminate\Support\Str;
 class PaymentController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
+
+    public function __construct(
+        protected LoanApplicationWorkflowService $workflowService,
+        protected NotificationService $notificationService,
+    ) {
+    }
 
     public static function middleware(): array
     {
@@ -98,15 +107,45 @@ class PaymentController extends Controller implements HasMiddleware
                 }
 
                 $loanApplication = $payment->loanApplication()->lockForUpdate()->first();
+                $loanClosed = false;
                 if ($loanApplication && $loanApplication->outstanding_balance !== null) {
                     $loanApplication->outstanding_balance = max(0, $loanApplication->outstanding_balance - $payment->amount);
                     $loanApplication->save();
+
+                    if ($loanApplication->outstanding_balance <= 0 && $loanApplication->status === LoanApplicationStatus::Active) {
+                        $loanApplication = $this->workflowService->transition(
+                            $loanApplication,
+                            LoanApplicationStatus::Closed,
+                            Auth::id()
+                        );
+                        $loanClosed = true;
+                    }
                 }
 
-                return $payment;
+                return [$payment, $loanApplication, $loanClosed];
             });
 
+            [$payment, $loanApplication, $loanClosed] = $payment;
+
             $this->logActivity('CREATE', 'Payment', "Created payment ID: {$payment->id} ({$payment->receipt_no})", $data);
+
+            if ($loanApplication && $loanApplication->customer && !empty($loanApplication->customer->phone_primary)) {
+                $this->notificationService->sendSms(
+                    'payment_received',
+                    $loanApplication->customer->phone_primary,
+                    "Payment received successfully.\nAmount: {$payment->amount}\nThank you for your payment.",
+                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
+                );
+
+                if ($loanClosed) {
+                    $this->notificationService->sendSms(
+                        'loan_closed',
+                        $loanApplication->customer->phone_primary,
+                        'Congratulations! Your loan has been successfully closed. Thank you for banking with us.',
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
+                    );
+                }
+            }
 
             return response()->json([
                 'status'  => 'success',

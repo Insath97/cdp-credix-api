@@ -25,6 +25,7 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         'username',
         'email',
         'password',
+        'password_changed_at',
         'user_type',
         'employee_id',
         'is_active',
@@ -57,6 +58,7 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
             'email_verified_at' => 'datetime',
             'email_verification_token_expires_at' => 'datetime',
             'password' => 'hashed',
+            'password_changed_at' => 'datetime',
             'last_login_at' => 'datetime',
             'is_active' => 'boolean',
             'can_login' => 'boolean',
@@ -83,6 +85,11 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
     public function employee()
     {
         return $this->belongsTo(Employee::class);
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     /* Accessors */

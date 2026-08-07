@@ -206,6 +206,9 @@ class PermissionsSeeder extends Seeder
             ['name' => 'External Recovery Agent Create', 'group_name' => 'External Recovery Agent Management Permissions'],
             ['name' => 'External Recovery Agent Update', 'group_name' => 'External Recovery Agent Management Permissions'],
             ['name' => 'External Recovery Agent Delete', 'group_name' => 'External Recovery Agent Management Permissions'],
+
+            /* Notification Management */
+            ['name' => 'Notification Index', 'group_name' => 'Notification Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {
@@ -220,5 +223,7 @@ class PermissionsSeeder extends Seeder
 
         $allPermissions = Permission::all();
         $role->syncPermissions($allPermissions);
+
+        Role::firstOrCreate(['guard_name' => 'api', 'name' => 'Employee']);
     }
 }

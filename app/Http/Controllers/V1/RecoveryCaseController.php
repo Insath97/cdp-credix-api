@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\RecoveryCase;
+use App\Services\NotificationService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateRecoveryCaseRequest;
 use App\Http\Requests\UpdateRecoveryCaseRequest;
@@ -16,6 +17,10 @@ use Illuminate\Support\Str;
 class RecoveryCaseController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
+
+    public function __construct(protected NotificationService $notificationService)
+    {
+    }
 
     public static function middleware(): array
     {
@@ -88,10 +93,30 @@ class RecoveryCaseController extends Controller implements HasMiddleware
 
             $this->logActivity('CREATE', 'RecoveryCase', "Created recovery case ID: {$case->id} ({$case->case_no})", $data);
 
+            $case->load(['loanApplication.customer', 'assignedAgent.employee', 'openedBy']);
+
+            if ($case->loanApplication && $case->loanApplication->customer && !empty($case->loanApplication->customer->phone_primary)) {
+                $this->notificationService->sendSms(
+                    'recovery_case_opened_customer',
+                    $case->loanApplication->customer->phone_primary,
+                    "CDP Credix: Your loan account (Loan Application ID: {$case->loan_application_id}) has become overdue. Please contact us immediately to avoid further recovery actions.",
+                    ['loan_application_id' => $case->loan_application_id, 'customer_id' => $case->loanApplication->customer_id]
+                );
+            }
+
+            if ($case->assignedAgent && !empty($case->assignedAgent->employee?->phone_primary)) {
+                $this->notificationService->sendSms(
+                    'recovery_case_opened_agent',
+                    $case->assignedAgent->employee->phone_primary,
+                    "CDP Credix: A new overdue recovery case (Case ID: {$case->id}, Customer ID: {$case->loanApplication->customer_id}) has been assigned to you. Please follow up with the customer.",
+                    ['loan_application_id' => $case->loan_application_id, 'user_id' => $case->assigned_agent_id]
+                );
+            }
+
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Recovery case created successfully',
-                'data'    => $case->load(['loanApplication', 'assignedAgent', 'openedBy']),
+                'data'    => $case,
             ], 201);
 
         } catch (\Throwable $th) {

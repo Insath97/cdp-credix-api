@@ -127,7 +127,7 @@ class DummyDataSeeder extends Seeder
             'state' => 'Western',
             'country' => 'Sri Lanka',
             'postal_code' => '00700',
-            'phone_primary' => '0773344556',
+            'phone_primary' => '0744125923',
             'phone_secondary' => '0112987654',
             'email' => 'alexs.peiris@example.com',
             'have_whatsapp' => true,

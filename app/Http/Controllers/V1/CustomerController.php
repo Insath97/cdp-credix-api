@@ -9,6 +9,7 @@ use App\Http\Requests\CreateCustomerRequest;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\Customer;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -19,6 +20,10 @@ use Illuminate\Routing\Controllers\Middleware;
 class CustomerController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
+
+    public function __construct(protected NotificationService $notificationService)
+    {
+    }
 
     public static function middleware(): array
     {
@@ -113,6 +118,15 @@ class CustomerController extends Controller implements HasMiddleware
             DB::commit();
 
             $customer->load(['bankDetails', 'fixedAssets', 'movingAssets']);
+
+            if (!empty($customer->phone_primary)) {
+                $this->notificationService->sendSms(
+                    'registration',
+                    $customer->phone_primary,
+                    'Welcome! Your customer registration has been completed successfully.',
+                    ['customer_id' => $customer->id]
+                );
+            }
 
             $this->logActivity('Create', 'Customer', 'Customer created with associated details', [
                 'creator_id' => $currentUser ? $currentUser->id : null,

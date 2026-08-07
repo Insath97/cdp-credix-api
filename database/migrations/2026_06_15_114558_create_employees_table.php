@@ -26,20 +26,20 @@ return new class extends Migration
             $table->foreignId('zonal_id')->nullable()->constrained('zonals')->nullOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained('branches')->nullOnDelete();
             $table->foreignId('department_id')->nullable()->constrained('departments')->nullOnDelete();
-            $table->foreignId('designation_id')->constrained('designations')->cascadeOnDelete();
+            $table->foreignId('designation_id')->nullable()->constrained('designations')->nullOnDelete();
             
-            $table->enum('employee_type', ['permanent', 'contract', 'internship', 'probation']);
-            $table->enum('id_type', ['nic', 'passport', 'driving_license', 'other']);
+            $table->enum('employee_type', ['permanent', 'contract', 'internship', 'probation'])->nullable();
+            $table->enum('id_type', ['nic', 'passport', 'driving_license', 'other'])->nullable();
             $table->string('id_number')->unique();
-            $table->date('date_of_birth');
-            $table->string('email')->unique();
+            $table->date('date_of_birth')->nullable();
+            $table->string('email')->nullable()->unique();
             $table->string('phone')->nullable();
             $table->string('address_line_1')->nullable();
             $table->string('city')->nullable();
             $table->string('state')->nullable();
             $table->string('country')->default('Sri Lanka');
             $table->string('postal_code')->nullable();
-            $table->string('phone_primary');
+            $table->string('phone_primary')->nullable();
             $table->string('phone_secondary')->nullable();
             $table->boolean('have_whatsapp')->default(false);
             $table->string('whatsapp_number')->nullable();

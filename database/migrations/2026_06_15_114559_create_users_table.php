@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('username')->unique();
             $table->string('email')->nullable()->unique();
             $table->string('password');
+            $table->timestamp('password_changed_at')->nullable();
             $table->enum('user_type', ['admin', 'staff','customer'])->default('admin');
             $table->foreignId('employee_id')->nullable()->constrained('employees')->nullOnDelete();
             $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
