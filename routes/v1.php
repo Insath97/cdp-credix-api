@@ -129,10 +129,11 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     // Customers
     Route::apiResource('customers', CustomerController::class);
     Route::prefix('customers')->group(function () {
+        Route::get('list', [CustomerController::class, 'index']);
+        Route::get('list/public/{customer_code?}', [CustomerController::class, 'getPublicDetails']);
         Route::patch('{id}/toggle-status', [CustomerController::class, 'toggleStatus']);
         Route::post('{id}/restore', [CustomerController::class, 'restore']);
         Route::delete('{id}/force-delete', [CustomerController::class, 'forceDelete']);
-        Route::get('list/public/{customer_code?}', [CustomerController::class, 'getPublicDetails']);
     });
 
     // Customer Bank Details
@@ -197,7 +198,10 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     // Recovery Activities
     Route::apiResource('recovery-activities', RecoveryActivityController::class);
 
-    // Recovery Agents
+    // Recovery Agents combined Externl Agents
+    Route::prefix('recovery-agents')->group(function () {
+        Route::get('combined', [RecoveryAgentController::class, 'combinedList']);
+    });
     Route::apiResource('recovery-agents', RecoveryAgentController::class);
 
     // External Recovery Agents

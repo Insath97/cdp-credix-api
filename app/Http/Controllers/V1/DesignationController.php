@@ -21,7 +21,7 @@ class DesignationController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Designation Index', ['only' => ['index', 'show']]),
+            new Middleware('permission:Designation Index', ['only' => ['index', 'show', 'getActiveList', 'getDesignationList']]),
             new Middleware('permission:Designation Create', ['only' => ['store']]),
             new Middleware('permission:Designation Update', ['only' => ['update']]),
             new Middleware('permission:Designation Delete', ['only' => ['destroy']]),
@@ -194,6 +194,14 @@ class DesignationController extends Controller implements HasMiddleware
                 'error' => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
+    }
+
+    /**
+     * Get a list of active designations (lightweight list).
+     */
+    public function getActiveList(Request $request)
+    {
+        return $this->getDesignationList($request);
     }
 
     /**

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\RecoveryAgent;
+use App\Models\ExternalRecoveryAgent;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateRecoveryAgentRequest;
 use App\Http\Requests\UpdateRecoveryAgentRequest;
@@ -19,7 +20,7 @@ class RecoveryAgentController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Recovery Agent Index',  only: ['index', 'show']),
+            new Middleware('permission:Recovery Agent Index',  only: ['index', 'show', 'combinedList']),
             new Middleware('permission:Recovery Agent Create', only: ['store']),
             new Middleware('permission:Recovery Agent Update', only: ['update']),
             new Middleware('permission:Recovery Agent Delete', only: ['destroy']),
@@ -61,6 +62,115 @@ class RecoveryAgentController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to retrieve recovery agents',
+                'error'   => $th->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a combined listing of internal and external recovery agents.
+     */
+    public function combinedList(Request $request)
+    {
+        try {
+            $type     = $request->get('type', 'all');
+            $search   = $request->get('search');
+            $branchId = $request->get('branch_id');
+            $isActive = $request->has('is_active') ? $request->boolean('is_active') : null;
+
+            $results = collect();
+
+            // Fetch Internal Recovery Agents
+            if (in_array($type, ['all', 'internal'])) {
+                $internalQuery = RecoveryAgent::with(['user', 'branch']);
+
+                if ($branchId !== null) {
+                    $internalQuery->where('branch_id', $branchId);
+                }
+
+                if ($isActive !== null) {
+                    $internalQuery->where('is_active', $isActive);
+                }
+
+                if (!empty($search)) {
+                    $internalQuery->whereHas('user', function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%")
+                          ->orWhere('email', 'like', "%{$search}%");
+                    });
+                }
+
+                $internalAgents = $internalQuery->get()->map(function ($agent) {
+                    return [
+                        'id'          => $agent->id,
+                        'agent_type'  => 'internal',
+                        'name'        => $agent->user?->name,
+                        'email'       => $agent->user?->email,
+                        'phone'       => null,
+                        'address'     => null,
+                        'user_id'     => $agent->user_id,
+                        'branch_id'   => $agent->branch_id,
+                        'branch_name' => $agent->branch?->name,
+                        'is_active'   => (bool) $agent->is_active,
+                        'remarks'     => $agent->remarks,
+                        'created_at'  => $agent->created_at,
+                        'updated_at'  => $agent->updated_at,
+                    ];
+                });
+
+                $results = $results->concat($internalAgents);
+            }
+
+            // Fetch External Recovery Agents
+            if (in_array($type, ['all', 'external'])) {
+                $externalQuery = ExternalRecoveryAgent::query();
+
+                if ($isActive !== null) {
+                    $externalQuery->where('is_active', $isActive);
+                }
+
+                if (!empty($search)) {
+                    $externalQuery->search($search);
+                }
+
+                if ($branchId === null || $type === 'external') {
+                    $externalAgents = $externalQuery->get()->map(function ($extAgent) {
+                        return [
+                            'id'          => $extAgent->id,
+                            'agent_type'  => 'external',
+                            'name'        => $extAgent->name,
+                            'email'       => $extAgent->email,
+                            'phone'       => $extAgent->phone,
+                            'address'     => $extAgent->address,
+                            'user_id'     => null,
+                            'branch_id'   => null,
+                            'branch_name' => null,
+                            'is_active'   => (bool) $extAgent->is_active,
+                            'remarks'     => $extAgent->remarks,
+                            'created_at'  => $extAgent->created_at,
+                            'updated_at'  => $extAgent->updated_at,
+                        ];
+                    });
+
+                    $results = $results->concat($externalAgents);
+                }
+            }
+
+            $this->logActivity('Index', 'CombinedRecoveryAgent', 'Combined recovery agents list accessed', [
+                'user_id' => Auth::id(),
+                'filters' => $request->only(['type', 'search', 'branch_id', 'is_active']),
+                'count'   => $results->count(),
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Combined recovery agents retrieved successfully',
+                'data'    => $results->values(),
+            ], 200);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to retrieve combined recovery agents',
                 'error'   => $th->getMessage(),
             ], 500);
         }

@@ -28,7 +28,7 @@ class CustomerController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Customer Index', only: ['index', 'show']),
+            new Middleware('permission:Customer Index', only: ['index', 'show', 'getPublicDetails']),
             new Middleware('permission:Customer Create', only: ['store']),
             new Middleware('permission:Customer Update', only: ['update']),
             new Middleware('permission:Customer Delete', only: ['destroy']),
