@@ -22,7 +22,7 @@ class CreateLoanApplicationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'application_id'         => 'required|integer|exists:applications,id',
+            'application_id'         => 'nullable|integer|exists:applications,id',
             'customer_id'            => 'required|integer|exists:customers,id',
             'loan_product_id'        => 'required|integer|exists:loan_products,id',
             'branch_id'              => 'nullable|integer|exists:branches,id',

@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use App\Models\Application;
+use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationRequest;
@@ -105,6 +107,22 @@ class LoanApplicationController extends Controller implements HasMiddleware
     {
         try {
             $data = $request->validated();
+
+            if (empty($data['application_id'])) {
+                $branchName = !empty($data['branch_id'])
+                    ? Branch::find($data['branch_id'])?->name
+                    : null;
+
+                $application = Application::create([
+                    'application_type' => 'loan',
+                    'branch' => $branchName,
+                    'requested_amount' => $data['requested_amount'],
+                    'repayment_period_months' => $data['term_months'] ?? null,
+                    'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
+                ]);
+
+                $data['application_id'] = $application->id;
+            }
 
             if (empty($data['applied_by'])) {
                 $data['applied_by'] = Auth::id();
