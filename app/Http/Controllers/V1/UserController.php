@@ -146,9 +146,12 @@ class UserController extends Controller implements HasMiddleware
                 $data['username'] = $data['id_number'];
                 $data['password'] = Hash::make($data['id_number']);
             } else {
-                // For admin users
+                // For admin and customer users
                 $data['employee_id'] = null;
-                $data['password'] = Hash::make($data['password']);
+                if ($data['user_type'] === 'admin') {
+                    $data['customer_id'] = null;
+                }
+                $data['password'] = Hash::make($data['password'] ?? '');
             }
 
             $user = User::create($data);
@@ -342,6 +345,9 @@ class UserController extends Controller implements HasMiddleware
                     $employee->delete();
                 }
                 $data['employee_id'] = null;
+                if ($targetUserType === 'admin') {
+                    $data['customer_id'] = null;
+                }
             }
 
             $user->update($data);
