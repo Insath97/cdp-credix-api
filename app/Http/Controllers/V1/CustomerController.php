@@ -115,6 +115,12 @@ class CustomerController extends Controller implements HasMiddleware
                 }
             }
 
+            if (!empty($data['liabilities'])) {
+                foreach ($data['liabilities'] as $liability) {
+                    $customer->liabilities()->create($liability);
+                }
+            }
+            
             DB::commit();
 
             $customer->load(['bankDetails', 'fixedAssets', 'movingAssets']);
