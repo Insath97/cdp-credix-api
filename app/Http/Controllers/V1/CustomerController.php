@@ -120,10 +120,10 @@ class CustomerController extends Controller implements HasMiddleware
                     $customer->liabilities()->create($liability);
                 }
             }
-            
+
             DB::commit();
 
-            $customer->load(['bankDetails', 'fixedAssets', 'movingAssets']);
+            $customer->load(['bankDetails', 'fixedAssets', 'movingAssets','liabilities']);
 
             if (!empty($customer->phone_primary)) {
                 $this->notificationService->sendSms(
@@ -157,7 +157,7 @@ class CustomerController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $customer = Customer::with(['user'])->find($id);
+            $customer = Customer::with(['user', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities'])->find($id);
 
             if (!$customer) {
                 return response()->json([

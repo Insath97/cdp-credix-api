@@ -95,6 +95,18 @@ class CreateCustomerRequest extends FormRequest
         'moving_assets.*.market_value' => 'nullable|numeric|min:0',
         'moving_assets.*.mortgage_lease_hire_status' => 'nullable|string|max:255',
         'moving_assets.*.is_active' => 'nullable|boolean',
+
+        // Liabilities Validation
+        'liabilities' => 'nullable|array',
+        'liabilities.*.liability_type' => 'required_with:liabilities|string|in:bank_loan,leasing,credit_card,hire_purchase,other',
+        'liabilities.*.institution_name' => 'required_with:liabilities|string|max:255',
+        'liabilities.*.account_reference_no' => 'nullable|string|max:255',
+        'liabilities.*.original_amount' => 'nullable|numeric|min:0',
+        'liabilities.*.outstanding_balance' => 'required_with:liabilities|numeric|min:0',
+        'liabilities.*.monthly_installment' => 'nullable|numeric|min:0',
+        'liabilities.*.start_date' => 'nullable|date',
+        'liabilities.*.end_date' => 'nullable|date',
+        'liabilities.*.is_active' => 'nullable|boolean',
         ];
     }
 
