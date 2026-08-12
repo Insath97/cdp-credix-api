@@ -77,6 +77,7 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
             'name' => $this->name,
             'username' => $this->username,
             'email' => $this->email,
+            'user_type' => $this->user_type,
         ];
     }
 
