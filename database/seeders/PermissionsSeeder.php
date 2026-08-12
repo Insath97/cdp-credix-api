@@ -142,6 +142,13 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Moving Asset Update', 'group_name' => 'Moving Asset Management Permissions'],
             ['name' => 'Moving Asset Delete', 'group_name' => 'Moving Asset Management Permissions'],
 
+            /* Liability Management */
+            ['name' => 'Liability Index', 'group_name' => 'Liability Management Permissions'],
+            ['name' => 'Liability Create', 'group_name' => 'Liability Management Permissions'],
+            ['name' => 'Liability Update', 'group_name' => 'Liability Management Permissions'],
+            ['name' => 'Liability Delete', 'group_name' => 'Liability Management Permissions'],
+            ['name' => 'Liability Toggle Status', 'group_name' => 'Liability Management Permissions'],
+
             /* Document Management */
             ['name' => 'Document Index', 'group_name' => 'Document Management Permissions'],
             ['name' => 'Document Create', 'group_name' => 'Document Management Permissions'],

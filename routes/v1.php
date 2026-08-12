@@ -17,6 +17,7 @@ use App\Http\Controllers\V1\GroupController;
 use App\Http\Controllers\V1\CustomerController;
 use App\Http\Controllers\V1\CustomerBankDetailController;
 use App\Http\Controllers\V1\GuarantorController;
+use App\Http\Controllers\V1\LiabilityController;
 use App\Http\Controllers\V1\ApplicationController;
 use App\Http\Controllers\V1\ApplicationHistoryController;
 use App\Http\Controllers\V1\FixedAssestsController;
@@ -163,6 +164,12 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Moving Assets
     Route::apiResource('moving-assests', MovingAssestsController::class);
+
+    // Liabilities
+    Route::apiResource('liabilities', LiabilityController::class);
+    Route::prefix('liabilities')->group(function () {
+        Route::patch('{id}/toggle-status', [LiabilityController::class, 'toggleStatus']);
+    });
 
     // Documents
     Route::apiResource('documents', DocumentController::class);
