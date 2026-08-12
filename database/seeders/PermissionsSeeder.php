@@ -37,6 +37,9 @@ class PermissionsSeeder extends Seeder
             ['name' => 'User Delete', 'group_name' => 'User Management Permissions'],
             ['name' => 'User Toggle Status', 'group_name' => 'User Management Permissions'],
 
+            /* Employee Management */
+            ['name' => 'Employee Index', 'group_name' => 'Employee Management Permissions'],
+
             /* Country Management */
             ['name' => 'Country Index', 'group_name' => 'Country Management Permissions'],
             ['name' => 'Country Create', 'group_name' => 'Country Management Permissions'],

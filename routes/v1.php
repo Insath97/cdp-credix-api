@@ -5,6 +5,7 @@ use App\Http\Controllers\V1\ActivityController;
 use App\Http\Controllers\V1\PermissionController;
 use App\Http\Controllers\V1\RoleController;
 use App\Http\Controllers\V1\UserController;
+use App\Http\Controllers\V1\EmployeeController;
 use App\Http\Controllers\V1\DepartmentController;
 use App\Http\Controllers\V1\ProvinceController;
 use App\Http\Controllers\V1\RegionController;
@@ -69,6 +70,11 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     /*Users*/
     Route::patch('users/{id}/toggle-status', [UserController::class, 'toggleStatus']);
     Route::apiResource('users', UserController::class);
+
+    // Employees
+    Route::prefix('employees')->group(function () {
+        Route::get('list', [EmployeeController::class, 'getActiveList']);
+    });
 
     // Countries
     Route::prefix('countries')->group(function () {
