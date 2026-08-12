@@ -29,8 +29,12 @@ class CreateUserRequest extends FormRequest
             'username' => 'required_if:user_type,admin|nullable|string|max:255|unique:users,username',
             'email' => 'nullable|email|max:255|unique:users,email',
             'password' => 'required_if:user_type,admin|nullable|string|min:8',
-            'user_type' => 'required|in:admin,staff',
+            // 'user_type' => 'required|in:admin,staff',
+            'user_type' => 'required|in:admin,staff,customer',
+
             'role' => 'required|string|exists:roles,name',
+
+            'customer_id' => 'required_if:user_type,customer|nullable|exists:customers,id',
 
             // Staff specific validation (embedded employee details)
             'employee_code' => 'required_if:user_type,staff|nullable|string|unique:employees,employee_code',
