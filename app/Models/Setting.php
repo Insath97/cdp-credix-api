@@ -35,6 +35,7 @@ class Setting extends Model
             return match ($setting->type) {
                 'integer' => (int) $setting->value,
                 'boolean' => (bool) $setting->value,
+                'json' => json_decode($setting->value, true) ?? [],
                 default => $setting->value,
             };
         });
@@ -46,8 +47,24 @@ class Setting extends Model
     public static function set(string $key, $value): void
     {
         $setting = static::where('key', $key)->firstOrFail();
-        $setting->update(['value' => is_bool($value) ? (string) (int) $value : (string) $value]);
+        $setting->update(['value' => static::serialize($value)]);
 
         Cache::forget(static::cacheKey($key));
+    }
+
+    /**
+     * Serialize a raw value for storage in the `value` text column.
+     */
+    public static function serialize($value): string
+    {
+        if (is_array($value)) {
+            return json_encode($value);
+        }
+
+        if (is_bool($value)) {
+            return (string) (int) $value;
+        }
+
+        return (string) $value;
     }
 }

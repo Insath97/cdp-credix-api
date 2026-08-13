@@ -86,6 +86,26 @@ return new class extends Migration
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'key' => 'customer_bank_list',
+                'value' => json_encode([
+                    'Commercial Bank',
+                    'DFCC Bank',
+                    'HNB',
+                    'HDFC Bank',
+                    'NSB',
+                    'NTB',
+                    'NDB',
+                    'Pan Asia Bank',
+                    "People's Bank",
+                    'Sampath Bank',
+                ]),
+                'type' => 'json',
+                'group' => 'customer',
+                'description' => 'Bank names offered in the customer bank details dropdown.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 

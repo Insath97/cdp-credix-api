@@ -146,10 +146,11 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     });
 
     // Customer Bank Details
-    Route::apiResource('customer-bank-details', CustomerBankDetailController::class);
     Route::prefix('customer-bank-details')->group(function () {
+        Route::get('bank-options', [CustomerBankDetailController::class, 'bankOptions']);
         Route::patch('{id}/toggle-status', [CustomerBankDetailController::class, 'toggleStatus']);
     });
+    Route::apiResource('customer-bank-details', CustomerBankDetailController::class);
 
     // Guarantors
     Route::apiResource('guarantors', GuarantorController::class);

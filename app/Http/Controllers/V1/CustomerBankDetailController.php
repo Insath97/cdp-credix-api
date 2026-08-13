@@ -8,23 +8,39 @@ use App\Http\Requests\CreateCustomerBankDetailRequest;
 use App\Http\Requests\UpdateCustomerBankDetailRequest;
 use App\Models\CustomerBankDetail;
 use App\Models\Customer;
+use App\Models\Setting;
 use Illuminate\Support\Facades\DB;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class CustomerBankDetailController extends Controller
+class CustomerBankDetailController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
 
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:CustomerBankDetail Index', only: ['index', 'show']),
-            new Middleware('permission:CustomerBankDetail Create', only: ['store']),
-            new Middleware('permission:CustomerBankDetail Update', only: ['update']),
-            new Middleware('permission:CustomerBankDetail Delete', only: ['destroy']),
-            new Middleware('permission:CustomerBankDetail Toggle Status', only: ['toggleStatus'])
+            new Middleware('permission:Customer Bank Detail Index', only: ['index', 'show', 'bankOptions']),
+            new Middleware('permission:Customer Bank Detail Create', only: ['store']),
+            new Middleware('permission:Customer Bank Detail Update', only: ['update']),
+            new Middleware('permission:Customer Bank Detail Delete', only: ['destroy']),
+            new Middleware('permission:Customer Bank Detail Toggle Status', only: ['toggleStatus'])
         ];
+    }
+
+    /**
+     * Display the configurable list of bank names for the customer bank
+     * details dropdown (managed via System Settings, key: customer_bank_list).
+     */
+    public function bankOptions()
+    {
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Bank options retrieved successfully',
+            'data'    => Setting::get('customer_bank_list', []),
+        ], 200);
     }
     
     public function index(Request $request)

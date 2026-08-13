@@ -116,7 +116,7 @@ class SettingController extends Controller implements HasMiddleware
             }
 
             $value = $request->validated()['value'];
-            $setting->update(['value' => is_bool($value) ? (string) (int) $value : (string) $value]);
+            $setting->update(['value' => Setting::serialize($value)]);
             Cache::forget("setting:{$key}");
 
             $this->logActivity('UPDATE', 'Setting', "Updated setting: {$key}", [
