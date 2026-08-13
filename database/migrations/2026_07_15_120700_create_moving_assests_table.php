@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('moving_assests', function (Blueprint $table) {
             $table->id();
+            $table->string('slug')->nullable()->unique();
             $table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();
             $table->string('assest_category'); // e.g. vehicle, shares_bonds
             $table->string('owner_name');

@@ -26,6 +26,8 @@ use App\Http\Controllers\V1\DocumentController;
 use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LoanApplicationController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
+use App\Http\Controllers\V1\LoanApplicationFixedAssetController;
+use App\Http\Controllers\V1\LoanApplicationMovingAssetController;
 use App\Http\Controllers\V1\LoanInstallmentController;
 use App\Http\Controllers\V1\PaymentController;
 use App\Http\Controllers\V1\RecoveryCaseController;
@@ -200,6 +202,12 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Loan Application Guarantors
     Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);
+
+    // Loan Application Fixed Assets (pledged assets)
+    Route::apiResource('loan-application-fixed-assets', LoanApplicationFixedAssetController::class)->only(['index', 'store', 'show', 'destroy']);
+
+    // Loan Application Moving Assets (pledged assets)
+    Route::apiResource('loan-application-moving-assets', LoanApplicationMovingAssetController::class)->only(['index', 'store', 'show', 'destroy']);
 
     // Loan Installments
     Route::apiResource('loan-installments', LoanInstallmentController::class);

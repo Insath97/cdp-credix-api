@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\MovingAssests;
+use App\Enums\LoanApplicationStatus;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateMovingAssetsRequest;
 use App\Http\Requests\UpdateMovingAssetsRequest;
@@ -43,6 +44,20 @@ class MovingAssestsController extends Controller implements HasMiddleware
 
              if ($request->has('is_active')) {
                  $query->where('is_active', $request->is_active);
+             }
+
+             if ($request->has('used_for_loan')) {
+                 $terminalStatuses = [
+                     LoanApplicationStatus::Rejected->value,
+                     LoanApplicationStatus::Cancelled->value,
+                     LoanApplicationStatus::Closed->value,
+                 ];
+
+                 if ($request->boolean('used_for_loan')) {
+                     $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                 } else {
+                     $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                 }
              }
 
              $moving_assests = $query->orderBy('created_at', 'desc')->paginate($perPage);

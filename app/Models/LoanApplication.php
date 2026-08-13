@@ -133,6 +133,22 @@ class LoanApplication extends Model
     }
 
     /**
+     * Relationship with pledged fixed assets (via the pivot).
+     */
+    public function loanApplicationFixedAssets(): HasMany
+    {
+        return $this->hasMany(LoanApplicationFixedAsset::class);
+    }
+
+    /**
+     * Relationship with pledged moving assets (via the pivot).
+     */
+    public function loanApplicationMovingAssets(): HasMany
+    {
+        return $this->hasMany(LoanApplicationMovingAsset::class);
+    }
+
+    /**
      * Relationship with the assigned reviewer.
      */
     public function assignedReviewer(): BelongsTo

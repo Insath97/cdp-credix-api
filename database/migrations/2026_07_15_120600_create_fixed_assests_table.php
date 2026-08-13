@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('fixed_assests', function (Blueprint $table) {
             $table->id();
+            $table->string('slug')->nullable()->unique();
             $table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();
             $table->string('owner_name');
             $table->string('property_location')->nullable();
