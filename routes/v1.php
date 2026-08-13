@@ -34,6 +34,7 @@ use App\Http\Controllers\V1\RecoveryAgentController;
 use App\Http\Controllers\V1\ExternalRecoveryAgentController;
 use App\Http\Controllers\V1\NotificationController;
 use App\Http\Controllers\V1\PasswordChangeController;
+use App\Http\Controllers\V1\SettingController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -188,8 +189,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/toggle-status', [LoanApplicationController::class, 'toggleStatus']);
         Route::patch('{id}/activate', [LoanApplicationController::class, 'activate']);
         Route::patch('{id}/deactivate', [LoanApplicationController::class, 'deactivate']);
-        Route::patch('{id}/submit', [LoanApplicationController::class, 'submit']);
-        Route::patch('{id}/review', [LoanApplicationController::class, 'review']);
+        Route::patch('{id}/verify', [LoanApplicationController::class, 'verify']);
         Route::patch('{id}/approve', [LoanApplicationController::class, 'approve']);
         Route::patch('{id}/reject', [LoanApplicationController::class, 'reject']);
         Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
@@ -223,5 +223,13 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Notifications (read-only audit log)
     Route::apiResource('notifications', NotificationController::class)->only(['index', 'show']);
+
+    // System Settings
+    Route::prefix('settings')->group(function () {
+        Route::get('list', [SettingController::class, 'list']);
+    });
+    Route::get('settings', [SettingController::class, 'index']);
+    Route::get('settings/{key}', [SettingController::class, 'show']);
+    Route::put('settings/{key}', [SettingController::class, 'update']);
 
 });

@@ -39,8 +39,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
             new Middleware('permission:Loan Application Update', only: ['update']),
             new Middleware('permission:Loan Application Toggle Status', only: ['toggleStatus', 'activate', 'deactivate']),
             new Middleware('permission:Loan Application Delete', only: ['destroy']),
-            new Middleware('permission:Loan Application Submit', only: ['submit']),
-            new Middleware('permission:Loan Application Review', only: ['review']),
+            new Middleware('permission:Loan Application Verify', only: ['verify']),
             new Middleware('permission:Loan Application Approve', only: ['approve']),
             new Middleware('permission:Loan Application Reject', only: ['reject']),
             new Middleware('permission:Loan Application Disburse', only: ['disburse']),
@@ -130,11 +129,26 @@ class LoanApplicationController extends Controller implements HasMiddleware
             if (empty($data['applied_at'])) {
                 $data['applied_at'] = now();
             }
-            $data['status'] = LoanApplicationStatus::Pending;
+            $data['status'] = LoanApplicationStatus::Submitted;
 
             $loanApplication = LoanApplication::create($data);
 
             $this->logActivity('CREATE', 'LoanApplication', "Created loan application ID: {$loanApplication->id}", $data);
+
+            $staffRole = Role::where('name', config('notifications.staff_role'))->first();
+            if ($staffRole) {
+                foreach ($staffRole->users as $staffUser) {
+                    $staffPhone = $staffUser->employee?->phone_primary;
+                    if (!empty($staffPhone)) {
+                        $this->notificationService->sendSms(
+                            'application_submitted',
+                            $staffPhone,
+                            'CDP Crdix: New loan application pending for review.',
+                            ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
+                        );
+                    }
+                }
+            }
 
             return response()->json([
                 'status'  => 'success',
@@ -369,69 +383,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
     }
 
     /**
-     * Submit a pending loan application for review.
+     * Verify a loan application after review and optionally assign a reviewer.
      */
-    public function submit(string $id)
-    {
-        try {
-            $loanApplication = LoanApplication::find($id);
-
-            if (!$loanApplication) {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'Loan application not found',
-                ], 404);
-            }
-
-            $loanApplication = $this->workflowService->transition(
-                $loanApplication,
-                LoanApplicationStatus::Submitted,
-                Auth::id()
-            );
-
-            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} submitted", [
-                'loan_application_id' => $loanApplication->id,
-            ]);
-
-            $staffRole = Role::where('name', config('notifications.staff_role'))->first();
-            if ($staffRole) {
-                foreach ($staffRole->users as $staffUser) {
-                    $staffPhone = $staffUser->employee?->phone_primary;
-                    if (!empty($staffPhone)) {
-                        $this->notificationService->sendSms(
-                            'application_submitted',
-                            $staffPhone,
-                            'CDP Crdix: New loan application pending for review.',
-                            ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
-                        );
-                    }
-                }
-            }
-
-            return response()->json([
-                'status'  => 'success',
-                'message' => 'Loan application submitted successfully',
-                'data'    => $loanApplication,
-            ], 200);
-
-        } catch (InvalidLoanApplicationTransitionException $e) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => $e->getMessage(),
-            ], 422);
-        } catch (\Throwable $th) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Failed to submit loan application',
-                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
-            ], 500);
-        }
-    }
-
-    /**
-     * Move a loan application into review and optionally assign a reviewer.
-     */
-    public function review(Request $request, string $id)
+    public function verify(Request $request, string $id)
     {
         try {
             $loanApplication = LoanApplication::find($id);
@@ -453,19 +407,19 @@ class LoanApplicationController extends Controller implements HasMiddleware
 
             $loanApplication = $this->workflowService->transition(
                 $loanApplication,
-                LoanApplicationStatus::UnderReview,
+                LoanApplicationStatus::Verified,
                 Auth::id(),
                 $request->input('remarks'),
                 $extra
             );
 
-            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} moved to review", [
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} verified", [
                 'loan_application_id' => $loanApplication->id,
             ]);
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Loan application moved to review successfully',
+                'message' => 'Loan application verified successfully',
                 'data'    => $loanApplication,
             ], 200);
 

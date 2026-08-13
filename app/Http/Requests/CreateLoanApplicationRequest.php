@@ -5,6 +5,8 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
+use App\Enums\LoanApplicationStatus;
 
 class CreateLoanApplicationRequest extends FormRequest
 {
@@ -37,6 +39,7 @@ class CreateLoanApplicationRequest extends FormRequest
             'applied_at'             => 'nullable|date',
             'outstanding_balance'    => 'nullable|numeric|min:0',
             'is_active'              => 'nullable|boolean',
+            'status'                 => ['nullable', Rule::enum(LoanApplicationStatus::class)],
         ];
     }
 

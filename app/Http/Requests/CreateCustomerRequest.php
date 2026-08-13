@@ -40,7 +40,7 @@ class CreateCustomerRequest extends FormRequest
         'date_of_birth'=>'required|date',
         'phone_primary'=>'required|string|max:20',
         'phone_secondary'=>'nullable|string|max:20',
-        'email'=>'required|string|max:255',
+        'email'=>'nullable|email|max:255|unique:users,email',
         'have_whatsapp'=>'required|boolean',
         'whatsapp_number'=>'nullable|string|max:20',
         'preferred_language'=>'required|string|max:50',

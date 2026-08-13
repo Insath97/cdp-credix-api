@@ -23,7 +23,7 @@ class LoanApplicationWorkflowService
     public function transition(
         LoanApplication $loanApplication,
         LoanApplicationStatus $to,
-        int $actorId,
+        ?int $actorId = null,
         ?string $remarks = null,
         array $extra = []
     ): LoanApplication {

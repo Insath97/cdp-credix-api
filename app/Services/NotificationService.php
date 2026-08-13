@@ -15,14 +15,14 @@ class NotificationService
      * on the Notification row rather than bubbling up, so a mail failure
      * never breaks the business action that triggered it.
      */
-    public function sendEmail(string $type, string $recipientEmail, string $subject, string $message, array $context = []): Notification
+    public function sendEmail(string $type, string $recipientEmail, string $subject, string $message, array $context = [], ?string $logMessage = null): Notification
     {
         $notification = Notification::create(array_merge($context, [
             'type'      => $type,
             'channel'   => 'email',
             'recipient' => $recipientEmail,
             'subject'   => $subject,
-            'message'   => $message,
+            'message'   => $logMessage ?? $message,
             'status'    => 'pending',
         ]));
 
@@ -57,13 +57,13 @@ class NotificationService
      * The row starts as 'pending' and is flipped to 'sent'/'failed' by
      * SendSmsJob once the queued job actually processes the send.
      */
-    public function sendSms(string $type, string $recipientPhone, string $message, array $context = []): Notification
+    public function sendSms(string $type, string $recipientPhone, string $message, array $context = [], ?string $logMessage = null): Notification
     {
         $notification = Notification::create(array_merge($context, [
             'type'      => $type,
             'channel'   => 'sms',
             'recipient' => $recipientPhone,
-            'message'   => $message,
+            'message'   => $logMessage ?? $message,
             'status'    => 'pending',
         ]));
 

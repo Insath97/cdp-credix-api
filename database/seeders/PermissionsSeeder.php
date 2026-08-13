@@ -168,8 +168,7 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Update', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Delete', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Toggle Status', 'group_name' => 'Loan Application Management Permissions'],
-            ['name' => 'Loan Application Submit', 'group_name' => 'Loan Application Management Permissions'],
-            ['name' => 'Loan Application Review', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Verify', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Approve', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Reject', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Disburse', 'group_name' => 'Loan Application Management Permissions'],
@@ -219,6 +218,10 @@ class PermissionsSeeder extends Seeder
 
             /* Notification Management */
             ['name' => 'Notification Index', 'group_name' => 'Notification Management Permissions'],
+
+            /* System Settings Management */
+            ['name' => 'Setting Index', 'group_name' => 'System Settings Permissions'],
+            ['name' => 'Setting Update', 'group_name' => 'System Settings Permissions'],
         ];
 
         foreach ($permissions as $permission) {

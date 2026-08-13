@@ -24,8 +24,10 @@ class CreateRecoveryCaseRequest extends FormRequest
         return [
             'loan_application_id' => 'required|integer|exists:loan_applications,id',
             'status'              => 'nullable|string|in:open,in_progress,resolved,escalated,closed',
+            'stage'               => 'nullable|string|in:internal,external',
             'overdue_amount'      => 'nullable|numeric|min:0',
             'assigned_agent_id'   => 'nullable|integer|exists:users,id',
+            'external_agent_id'   => 'nullable|integer|exists:external_recovery_agents,id',
             'remarks'             => 'nullable|string',
             'opened_at'           => 'nullable|date',
         ];

@@ -9,11 +9,14 @@ use App\Http\Requests\CreateCustomerRequest;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\Customer;
+use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
@@ -53,12 +56,10 @@ class CustomerController extends Controller implements HasMiddleware
                 $query->where('customer_id', $request->customer_id);
             }
 
-            // Filter by specific branch if requested
             if ($request->has('branch_id')) {
                 $query->where('branch_id', $request->branch_id);
             }
 
-            // Automatically restrict staff members to their own branch
             $currentUser = Auth::guard('api')->user();
             if ($currentUser && $currentUser->user_type === 'staff') {
                 if ($currentUser->employee && $currentUser->employee->branch_id) {
@@ -121,22 +122,53 @@ class CustomerController extends Controller implements HasMiddleware
                 }
             }
 
+            $plainPassword = Str::random(10);
+
+            $user = User::create([
+                'name' => $customer->full_name,
+                'username' => $customer->customer_code,
+                'email' => $customer->email,
+                'password' => Hash::make($plainPassword),
+                'user_type' => 'customer',
+                'customer_id' => $customer->id,
+                'is_active' => true,
+                'can_login' => true,
+            ]);
+
             DB::commit();
 
             $customer->load(['bankDetails', 'fixedAssets', 'movingAssets','liabilities']);
 
-            if (!empty($customer->phone_primary)) {
+            $credentialsMessage = "Welcome! Your CDP Credix account has been created.\nUsername: {$user->username}\nPassword: {$plainPassword}\nPlease keep this information secure and change your password after logging in.";
+
+            if (!empty($customer->email)) {
+                $this->notificationService->sendEmail(
+                    'customer_registration_credentials',
+                    $customer->email,
+                    'Your CDP Credix Account Credentials',
+                    $credentialsMessage,
+                    ['customer_id' => $customer->id, 'user_id' => $user->id],
+                    'Login credentials email sent to customer.'
+                );
+            } elseif (!empty($customer->phone_primary)) {
                 $this->notificationService->sendSms(
-                    'registration',
+                    'customer_registration_credentials',
                     $customer->phone_primary,
-                    'Welcome! Your customer registration has been completed successfully.',
-                    ['customer_id' => $customer->id]
+                    $credentialsMessage,
+                    ['customer_id' => $customer->id, 'user_id' => $user->id],
+                    'Login credentials SMS sent to customer.'
                 );
             }
 
             $this->logActivity('Create', 'Customer', 'Customer created with associated details', [
                 'creator_id' => $currentUser ? $currentUser->id : null,
                 'customer_code' => $customer->customer_code
+            ]);
+
+            $this->logActivity('Create', 'User', "Login account created for customer: {$customer->customer_code}", [
+                'customer_id' => $customer->id,
+                'user_id' => $user->id,
+                'username' => $user->username,
             ]);
 
             return response()->json([

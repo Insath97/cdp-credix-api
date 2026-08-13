@@ -4,17 +4,15 @@ namespace App\Enums;
 
 enum LoanApplicationStatus: string
 {
-    case Pending = 'pending';
+
     case Submitted = 'submitted';
-    case UnderReview = 'under_review';
+    case Verified = 'verified';
     case Approved = 'approved';
     case Rejected = 'rejected';
     case Disbursed = 'disbursed';
     case Active = 'active';
     case Overdue = 'overdue';
     case Closed = 'closed';
-    case Defaulted = 'defaulted';
-    case WrittenOff = 'written_off';
     case Cancelled = 'cancelled';
 
     /**
@@ -25,12 +23,12 @@ enum LoanApplicationStatus: string
     public function allowedTransitions(): array
     {
         return match ($this) {
-            self::Pending => [self::Submitted, self::Cancelled],
-            self::Submitted => [self::UnderReview, self::Cancelled],
-            self::UnderReview => [self::Approved, self::Rejected, self::Cancelled],
+            self::Submitted => [self::Verified, self::Cancelled],
+            self::Verified => [self::Approved, self::Rejected, self::Cancelled],
             self::Approved => [self::Disbursed],
             self::Disbursed => [self::Active],
-            self::Active => [self::Closed],
+            self::Active => [self::Overdue, self::Closed],
+            self::Overdue => [self::Active, self::Closed],
             default => [],
         };
     }
@@ -48,12 +46,11 @@ enum LoanApplicationStatus: string
     public function toApplicationStatus(): string
     {
         return match ($this) {
-            self::Pending => 'pending',
-            self::Submitted, self::UnderReview => 'in_progress',
+            self::Submitted, self::Verified => 'in_progress',
             self::Approved => 'approved',
             self::Rejected => 'rejected',
             self::Disbursed, self::Active, self::Overdue => 'disbursed',
-            self::Closed, self::Defaulted, self::WrittenOff => 'closed',
+            self::Closed => 'closed',
             self::Cancelled => 'cancelled',
         };
     }
