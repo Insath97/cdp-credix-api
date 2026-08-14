@@ -2,13 +2,17 @@
 
 namespace App\Models;
 
+use App\Enums\LoanApplicationStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class CustomerBankDetail extends Model
 {
     use HasFactory, SoftDeletes;
+
+    protected $appends = ['used_for_loan'];
 
     protected $fillable = [
         'customer_id',
@@ -36,6 +40,29 @@ class CustomerBankDetail extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /**
+     * Loan applications this bank detail has been linked to.
+     */
+    public function loanApplications(): BelongsToMany
+    {
+        return $this->belongsToMany(LoanApplication::class, 'loan_application_bank_details', 'customer_bank_detail_id', 'loan_application_id');
+    }
+
+    /**
+     * Whether this bank detail is currently linked to a loan application that
+     * hasn't reached a terminal (released) status.
+     */
+    public function getUsedForLoanAttribute(): bool
+    {
+        return $this->loanApplications()
+            ->whereNotIn('status', [
+                LoanApplicationStatus::Rejected->value,
+                LoanApplicationStatus::Cancelled->value,
+                LoanApplicationStatus::Closed->value,
+            ])
+            ->exists();
     }
 
 }

@@ -149,6 +149,22 @@ class LoanApplication extends Model
     }
 
     /**
+     * Relationship with linked liabilities (via the pivot).
+     */
+    public function loanApplicationLiabilities(): HasMany
+    {
+        return $this->hasMany(LoanApplicationLiability::class);
+    }
+
+    /**
+     * Relationship with linked bank details (via the pivot).
+     */
+    public function loanApplicationBankDetails(): HasMany
+    {
+        return $this->hasMany(LoanApplicationBankDetail::class);
+    }
+
+    /**
      * Relationship with the assigned reviewer.
      */
     public function assignedReviewer(): BelongsTo

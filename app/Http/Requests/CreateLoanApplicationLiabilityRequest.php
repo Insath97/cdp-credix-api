@@ -2,14 +2,14 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Guarantor;
+use App\Models\Liability;
 use App\Models\LoanApplication;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Rule;
 
-class CreateLoanApplicationGuarantorRequest extends FormRequest
+class CreateLoanApplicationLiabilityRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -26,11 +26,11 @@ class CreateLoanApplicationGuarantorRequest extends FormRequest
     {
         return [
             'loan_application_id' => 'required|integer|exists:loan_applications,id',
-            'guarantor_id'        => [
+            'liability_id'        => [
                 'required',
                 'integer',
-                'exists:guarantors,id',
-                Rule::unique('loan_application_guarantors')->where(function ($query) {
+                'exists:liabilities,id',
+                Rule::unique('loan_application_liabilities')->where(function ($query) {
                     return $query->where('loan_application_id', $this->loan_application_id);
                 }),
                 function ($attribute, $value, $fail) {
@@ -40,18 +40,15 @@ class CreateLoanApplicationGuarantorRequest extends FormRequest
                         return;
                     }
 
-                    $guarantor = Guarantor::where('id', $value)
+                    $liability = Liability::where('id', $value)
                         ->where('customer_id', $loanApplication->customer_id)
                         ->first();
 
-                    if (!$guarantor) {
-                        $fail('This guarantor does not belong to the customer on this loan application.');
+                    if (!$liability) {
+                        $fail('This liability does not belong to the customer on this loan application.');
                     }
                 },
             ],
-            'guarantor_type'      => 'nullable|string|max:255',
-            'status'              => 'nullable|string|in:pending,approved,rejected',
-            'remarks'             => 'nullable|string',
         ];
     }
 

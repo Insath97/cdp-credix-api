@@ -204,6 +204,16 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Moving Asset Create', 'group_name' => 'Loan Application Moving Asset Management Permissions'],
             ['name' => 'Loan Application Moving Asset Delete', 'group_name' => 'Loan Application Moving Asset Management Permissions'],
 
+            /* Loan Application Liability Management */
+            ['name' => 'Loan Application Liability Index', 'group_name' => 'Loan Application Liability Management Permissions'],
+            ['name' => 'Loan Application Liability Create', 'group_name' => 'Loan Application Liability Management Permissions'],
+            ['name' => 'Loan Application Liability Delete', 'group_name' => 'Loan Application Liability Management Permissions'],
+
+            /* Loan Application Bank Detail Management */
+            ['name' => 'Loan Application Bank Detail Index', 'group_name' => 'Loan Application Bank Detail Management Permissions'],
+            ['name' => 'Loan Application Bank Detail Create', 'group_name' => 'Loan Application Bank Detail Management Permissions'],
+            ['name' => 'Loan Application Bank Detail Delete', 'group_name' => 'Loan Application Bank Detail Management Permissions'],
+
             /* Loan Installment Management */
             ['name' => 'Loan Installment Index', 'group_name' => 'Loan Installment Management Permissions'],
             ['name' => 'Loan Installment Create', 'group_name' => 'Loan Installment Management Permissions'],

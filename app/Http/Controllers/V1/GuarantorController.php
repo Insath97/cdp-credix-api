@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\Guarantor;
+use App\Enums\LoanApplicationStatus;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use App\Traits\ActivityLogTrait;
@@ -30,6 +31,20 @@ class GuarantorController extends Controller
 
             if ($request->has('customer_id')) {
                 $query->where('customer_id', $request->customer_id);
+            }
+
+            if ($request->has('used_for_loan')) {
+                $terminalStatuses = [
+                    LoanApplicationStatus::Rejected->value,
+                    LoanApplicationStatus::Cancelled->value,
+                    LoanApplicationStatus::Closed->value,
+                ];
+
+                if ($request->boolean('used_for_loan')) {
+                    $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                } else {
+                    $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                }
             }
 
             $guarantors = $query->orderBy('created_at', 'desc')->paginate($perPage);

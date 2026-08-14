@@ -5,6 +5,7 @@ namespace App\Http\Controllers\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateLiabilityRequest;
 use App\Http\Requests\UpdateLiabilityRequest;
+use App\Enums\LoanApplicationStatus;
 use App\Models\Customer;
 use App\Models\Liability;
 use App\Traits\ActivityLogTrait;
@@ -43,6 +44,20 @@ class LiabilityController extends Controller implements HasMiddleware
 
             if ($request->has('is_active')) {
                 $query->where('is_active', $request->boolean('is_active'));
+            }
+
+            if ($request->has('used_for_loan')) {
+                $terminalStatuses = [
+                    LoanApplicationStatus::Rejected->value,
+                    LoanApplicationStatus::Cancelled->value,
+                    LoanApplicationStatus::Closed->value,
+                ];
+
+                if ($request->boolean('used_for_loan')) {
+                    $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                } else {
+                    $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                }
             }
 
             $liabilities = $query->orderBy('created_at', 'desc')->paginate($perPage);

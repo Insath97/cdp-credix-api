@@ -2,14 +2,14 @@
 
 namespace App\Http\Requests;
 
-use App\Models\Guarantor;
+use App\Models\CustomerBankDetail;
 use App\Models\LoanApplication;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Rule;
 
-class CreateLoanApplicationGuarantorRequest extends FormRequest
+class CreateLoanApplicationBankDetailRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -25,12 +25,12 @@ class CreateLoanApplicationGuarantorRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'loan_application_id' => 'required|integer|exists:loan_applications,id',
-            'guarantor_id'        => [
+            'loan_application_id'     => 'required|integer|exists:loan_applications,id',
+            'customer_bank_detail_id' => [
                 'required',
                 'integer',
-                'exists:guarantors,id',
-                Rule::unique('loan_application_guarantors')->where(function ($query) {
+                'exists:customer_bank_details,id',
+                Rule::unique('loan_application_bank_details')->where(function ($query) {
                     return $query->where('loan_application_id', $this->loan_application_id);
                 }),
                 function ($attribute, $value, $fail) {
@@ -40,18 +40,15 @@ class CreateLoanApplicationGuarantorRequest extends FormRequest
                         return;
                     }
 
-                    $guarantor = Guarantor::where('id', $value)
+                    $bankDetail = CustomerBankDetail::where('id', $value)
                         ->where('customer_id', $loanApplication->customer_id)
                         ->first();
 
-                    if (!$guarantor) {
-                        $fail('This guarantor does not belong to the customer on this loan application.');
+                    if (!$bankDetail) {
+                        $fail('This bank detail does not belong to the customer on this loan application.');
                     }
                 },
             ],
-            'guarantor_type'      => 'nullable|string|max:255',
-            'status'              => 'nullable|string|in:pending,approved,rejected',
-            'remarks'             => 'nullable|string',
         ];
     }
 

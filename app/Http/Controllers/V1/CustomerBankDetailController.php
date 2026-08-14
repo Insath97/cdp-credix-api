@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Http\Requests\CreateCustomerBankDetailRequest;
 use App\Http\Requests\UpdateCustomerBankDetailRequest;
+use App\Enums\LoanApplicationStatus;
 use App\Models\CustomerBankDetail;
 use App\Models\Customer;
 use App\Models\Setting;
@@ -55,6 +56,20 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
 
             if ($request->has('customer_id')) {
                 $query->where('customer_id', $request->customer_id);
+            }
+
+            if ($request->has('used_for_loan')) {
+                $terminalStatuses = [
+                    LoanApplicationStatus::Rejected->value,
+                    LoanApplicationStatus::Cancelled->value,
+                    LoanApplicationStatus::Closed->value,
+                ];
+
+                if ($request->boolean('used_for_loan')) {
+                    $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                } else {
+                    $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                }
             }
 
             $customerbankdetail = $query->orderBy('created_at', 'desc')->paginate($perPage);

@@ -2,12 +2,16 @@
 
 namespace App\Models;
 
+use App\Enums\LoanApplicationStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Guarantor extends Model
 {
     use HasFactory;
+
+    protected $appends = ['used_for_loan'];
 
     protected $fillable = [
         'customer_id',
@@ -63,6 +67,29 @@ class Guarantor extends Model
     public function application()
     {
         return $this->belongsTo(Application::class);
+    }
+
+    /**
+     * Loan applications this guarantor has been pledged against.
+     */
+    public function loanApplications(): BelongsToMany
+    {
+        return $this->belongsToMany(LoanApplication::class, 'loan_application_guarantors', 'guarantor_id', 'loan_application_id');
+    }
+
+    /**
+     * Whether this guarantor is currently pledged to a loan application that
+     * hasn't reached a terminal (released) status.
+     */
+    public function getUsedForLoanAttribute(): bool
+    {
+        return $this->loanApplications()
+            ->whereNotIn('status', [
+                LoanApplicationStatus::Rejected->value,
+                LoanApplicationStatus::Cancelled->value,
+                LoanApplicationStatus::Closed->value,
+            ])
+            ->exists();
     }
 
 }
