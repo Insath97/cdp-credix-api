@@ -23,6 +23,8 @@ use App\Http\Controllers\V1\ApplicationHistoryController;
 use App\Http\Controllers\V1\FixedAssestsController;
 use App\Http\Controllers\V1\MovingAssestsController;
 use App\Http\Controllers\V1\DocumentController;
+use App\Http\Controllers\V1\LoanTermController;
+use App\Http\Controllers\V1\LoanTypeController;
 use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LoanApplicationController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
@@ -177,6 +179,20 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Documents
     Route::apiResource('documents', DocumentController::class);
+
+    // Loan Terms
+    Route::prefix('loan-terms')->group(function () {
+        Route::get('list', [LoanTermController::class, 'getActiveList']);
+        Route::patch('{id}/toggle-status', [LoanTermController::class, 'toggleStatus']);
+    });
+    Route::apiResource('loan-terms', LoanTermController::class);
+
+    // Loan Types
+    Route::prefix('loan-types')->group(function () {
+        Route::get('list', [LoanTypeController::class, 'getActiveList']);
+        Route::patch('{id}/toggle-status', [LoanTypeController::class, 'toggleStatus']);
+    });
+    Route::apiResource('loan-types', LoanTypeController::class);
 
     // Loan Products
     Route::prefix('loan-products')->group(function () {
