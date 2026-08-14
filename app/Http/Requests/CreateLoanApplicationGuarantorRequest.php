@@ -46,6 +46,11 @@ class CreateLoanApplicationGuarantorRequest extends FormRequest
 
                     if (!$guarantor) {
                         $fail('This guarantor does not belong to the customer on this loan application.');
+                        return;
+                    }
+
+                    if ($guarantor->used_for_loan) {
+                        $fail('This guarantor is already pledged to an active loan application.');
                     }
                 },
             ],
