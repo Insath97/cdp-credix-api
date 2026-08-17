@@ -84,7 +84,7 @@ class Guarantor extends Model
     public function getUsedForLoanAttribute(): bool
     {
         return $this->loanApplications()
-            ->whereNotIn('status', [
+            ->whereNotIn('loan_applications.status', [
                 LoanApplicationStatus::Rejected->value,
                 LoanApplicationStatus::Cancelled->value,
                 LoanApplicationStatus::Closed->value,
