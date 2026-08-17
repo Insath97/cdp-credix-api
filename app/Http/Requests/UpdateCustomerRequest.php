@@ -97,6 +97,46 @@ class UpdateCustomerRequest extends FormRequest
         'moving_assets.*.market_value' => 'nullable|numeric|min:0',
         'moving_assets.*.mortgage_lease_hire_status' => 'nullable|string|max:255',
         'moving_assets.*.is_active' => 'nullable|boolean',
+
+        // Liabilities Validation
+        'liabilities' => 'nullable|array',
+        'liabilities.*.liability_type' => 'required_with:liabilities|string|in:bank_loan,leasing,credit_card,hire_purchase,other',
+        'liabilities.*.institution_name' => 'required_with:liabilities|string|max:255',
+        'liabilities.*.account_reference_no' => 'nullable|string|max:255',
+        'liabilities.*.original_amount' => 'nullable|numeric|min:0',
+        'liabilities.*.outstanding_balance' => 'required_with:liabilities|numeric|min:0',
+        'liabilities.*.monthly_installment' => 'nullable|numeric|min:0',
+        'liabilities.*.start_date' => 'nullable|date',
+        'liabilities.*.end_date' => 'nullable|date',
+        'liabilities.*.is_active' => 'nullable|boolean',
+
+        // Guarantors Validation
+        'guarantors' => 'nullable|array',
+        'guarantors.*.full_name' => 'required_with:guarantors|string|max:255',
+        'guarantors.*.type' => 'required_with:guarantors|string|in:guarantor_1,guarantor_2',
+        'guarantors.*.id_type' => 'required_with:guarantors|string|max:100',
+        'guarantors.*.id_number' => 'required_with:guarantors|string|max:100',
+        'guarantors.*.date_of_birth' => 'nullable|date',
+        'guarantors.*.phone_primary' => 'nullable|string|max:20',
+        'guarantors.*.occupation' => 'nullable|string|max:255',
+        'guarantors.*.employer_name' => 'nullable|string|max:255',
+        'guarantors.*.date_joined' => 'nullable|date',
+        'guarantors.*.salary' => 'nullable|numeric|min:0',
+        'guarantors.*.allowance' => 'nullable|numeric|min:0',
+        'guarantors.*.other_income' => 'nullable|numeric|min:0',
+        'guarantors.*.liabilities' => 'nullable|numeric|min:0',
+        'guarantors.*.bank_name_of_guarantor' => 'nullable|string|max:255',
+        'guarantors.*.bank_account_no_of_guarantor' => 'nullable|string|max:255',
+        'guarantors.*.bank_branch_of_guarantor' => 'nullable|string|max:255',
+
+        // Documents Validation
+        'documents' => 'nullable|array',
+        'documents.*.document_name' => 'nullable|string|max:255',
+        'documents.*.document_type' => 'required_with:documents|string|in:nic_copy,passport_copy,driving_license,salary_slip,bank_statement,billing_proof,salary_assignment_letter,employer_letter,photo,other',
+        'documents.*.remarks' => 'nullable|string|max:1000',
+        'documents.*.is_active' => 'nullable|boolean',
+        'documents.*.file_path' => 'nullable|string|max:255',
+        'documents.*.file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
         ];
     }
 
