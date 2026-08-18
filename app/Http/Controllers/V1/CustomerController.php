@@ -8,8 +8,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateCustomerRequest;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
+use App\Models\Application;
 use App\Models\Customer;
+use App\Models\LoanApplication;
 use App\Models\User;
+use App\Enums\LoanApplicationStatus;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -123,6 +126,31 @@ class CustomerController extends Controller implements HasMiddleware
                 }
             }
 
+            if (!empty($data['create_user_account']) && !empty($data['user_username'])) {
+                $plainPassword = $data['user_password'] ?? Str::random(10);
+                $user = User::create([
+                    'name' => $customer->full_name,
+                    'username' => $data['user_username'],
+                    'email' => $customer->email,
+                    'password' => Hash::make($plainPassword),
+                    'user_type' => 'customer',
+                    'customer_id' => $customer->id,
+                    'is_active' => true,
+                    'can_login' => true,
+                ]);
+            } else {
+                $plainPassword = Str::random(10);
+                $user = User::create([
+                    'name' => $customer->full_name,
+                    'username' => $customer->customer_code,
+                    'email' => $customer->email,
+                    'password' => Hash::make($plainPassword),
+                    'user_type' => 'customer',
+                    'customer_id' => $customer->id,
+                    'is_active' => true,
+                    'can_login' => true,
+                ]);
+            }
             if (!empty($data['guarantors'])) {
                 foreach ($data['guarantors'] as $guarantor) {
                     $customer->guarantors()->create($guarantor);
@@ -148,18 +176,35 @@ class CustomerController extends Controller implements HasMiddleware
                 }
             }
 
-            $plainPassword = Str::random(10);
+            if (!empty($data['loan_product_id'])) {
+                $branchName = !empty($data['branch_id'])
+                    ? \App\Models\Branch::find($data['branch_id'])?->name
+                    : null;
 
-            $user = User::create([
-                'name' => $customer->full_name,
-                'username' => $customer->customer_code,
-                'email' => $customer->email,
-                'password' => Hash::make($plainPassword),
-                'user_type' => 'customer',
-                'customer_id' => $customer->id,
-                'is_active' => true,
-                'can_login' => true,
-            ]);
+                $application = Application::create([
+                    'application_type' => 'loan',
+                    'branch' => $branchName,
+                    'requested_amount' => $data['requested_amount'] ?? null,
+                    'repayment_period_months' => $data['term_months'] ?? null,
+                    'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
+                ]);
+
+                LoanApplication::create([
+                    'application_id' => $application->id,
+                    'customer_id' => $customer->id,
+                    'loan_product_id' => $data['loan_product_id'],
+                    'branch_id' => $data['branch_id'] ?? null,
+                    'requested_amount' => $data['requested_amount'] ?? null,
+                    'interest_rate' => $data['interest_rate'] ?? null,
+                    'interest_type' => $data['interest_type'] ?? 'flat',
+                    'term_months' => $data['term_months'] ?? null,
+                    'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
+                    'applied_by' => Auth::id(),
+                    'applied_at' => now(),
+                    'status' => LoanApplicationStatus::Submitted->value,
+                    'is_active' => true,
+                ]);
+            }
 
             DB::commit();
 

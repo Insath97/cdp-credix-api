@@ -179,12 +179,23 @@ class LoanApplicationController extends Controller implements HasMiddleware
         try {
             $loanApplication = LoanApplication::with([
                 'application',
-                'customer',
+                'customer.bankDetails',
+                'customer.fixedAssets',
+                'customer.movingAssets',
+                'customer.liabilities',
+                'customer.guarantors',
                 'loanProduct',
                 'branch',
                 'appliedBy',
                 'reviewedBy',
-                'approvedBy'
+                'approvedBy',
+                'loanApplicationGuarantors.guarantor',
+                'loanApplicationFixedAssets',
+                'loanApplicationMovingAssets',
+                'loanApplicationLiabilities',
+                'loanApplicationBankDetails',
+                'installments',
+                'statusHistory',
             ])->find($id);
 
             if (!$loanApplication) {

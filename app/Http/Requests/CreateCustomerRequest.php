@@ -134,6 +134,19 @@ class CreateCustomerRequest extends FormRequest
         'documents.*.remarks' => 'nullable|string|max:1000',
         'documents.*.is_active' => 'nullable|boolean',
         'documents.*.file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+
+        // User Account Validation
+        'create_user_account' => 'nullable|boolean',
+        'user_username' => 'nullable|string|max:255|unique:users,username',
+        'user_password' => 'nullable|string|min:6|max:255',
+
+        // Loan Application Validation
+        'loan_product_id' => 'nullable|integer|exists:loan_products,id',
+        'requested_amount' => 'nullable|numeric|min:0',
+        'interest_rate' => 'nullable|numeric|min:0',
+        'interest_type' => 'nullable|string|in:flat,reducing',
+        'term_months' => 'nullable|integer|min:1',
+        'monthly_repayment_date' => 'nullable|integer|min:1|max:31',
         ];
     }
 
