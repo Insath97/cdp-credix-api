@@ -33,6 +33,7 @@ use App\Http\Controllers\V1\LoanApplicationMovingAssetController;
 use App\Http\Controllers\V1\LoanApplicationLiabilityController;
 use App\Http\Controllers\V1\LoanApplicationBankDetailController;
 use App\Http\Controllers\V1\LoanInstallmentController;
+use App\Http\Controllers\V1\LoanRevisionController;
 use App\Http\Controllers\V1\PaymentController;
 use App\Http\Controllers\V1\RecoveryCaseController;
 use App\Http\Controllers\V1\RecoveryActivityController;
@@ -235,6 +236,14 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Loan Installments
     Route::apiResource('loan-installments', LoanInstallmentController::class);
+
+    // Loan Revisions
+    Route::prefix('loan-revisions')->group(function () {
+        Route::patch('{id}/approve', [LoanRevisionController::class, 'approve']);
+        Route::patch('{id}/reject', [LoanRevisionController::class, 'reject']);
+        Route::patch('{id}/cancel', [LoanRevisionController::class, 'cancel']);
+    });
+    Route::apiResource('loan-revisions', LoanRevisionController::class)->only(['index', 'store', 'show']);
 
     // Payments
     Route::apiResource('payments', PaymentController::class);

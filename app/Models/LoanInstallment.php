@@ -13,6 +13,7 @@ class LoanInstallment extends Model
 
     protected $fillable = [
         'loan_application_id',
+        'loan_revision_id',
         'installment_no',
         'due_date',
         'amount_due',
@@ -27,6 +28,7 @@ class LoanInstallment extends Model
 
     protected $casts = [
         'loan_application_id' => 'integer',
+        'loan_revision_id'    => 'integer',
         'installment_no'      => 'integer',
         'due_date'             => 'date',
         'amount_due'           => 'decimal:2',
@@ -51,6 +53,14 @@ class LoanInstallment extends Model
     public function penaltyWaivedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'penalty_waived_by');
+    }
+
+    /**
+     * Relationship with the loan revision that generated this installment, if any.
+     */
+    public function loanRevision(): BelongsTo
+    {
+        return $this->belongsTo(LoanRevision::class);
     }
 
     /**

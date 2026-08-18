@@ -28,6 +28,7 @@ return new class extends Migration
             $table->decimal('penalty_value', 10, 2)->nullable();
             $table->unsignedInteger('grace_period_days')->default(0);
             $table->boolean('is_active')->default(true);
+            $table->boolean('is_islamic')->default(true);
             $table->softDeletes();
             $table->timestamps();
         });

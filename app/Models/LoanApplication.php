@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Enums\LoanApplicationStatus;
+use App\Enums\LoanRevisionStatus;
 
 class LoanApplication extends Model
 {
@@ -202,6 +203,25 @@ class LoanApplication extends Model
     public function recoveryCases(): HasMany
     {
         return $this->hasMany(RecoveryCase::class);
+    }
+
+    /**
+     * Relationship with the loan revision ledger.
+     */
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(LoanRevision::class)->orderBy('revision_no');
+    }
+
+    /**
+     * Whether this loan application has a revision that is still pending approval,
+     * which should block it from accepting new payments.
+     */
+    public function hasUnresolvedRevision(): bool
+    {
+        return $this->revisions()
+            ->whereIn('status', array_map(fn ($status) => $status->value, LoanRevisionStatus::unresolved()))
+            ->exists();
     }
 
     /**

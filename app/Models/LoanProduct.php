@@ -27,6 +27,7 @@ class LoanProduct extends Model
         'penalty_value',
         'grace_period_days',
         'is_active',
+        'is_islamic',
     ];
 
     protected $casts = [
@@ -39,6 +40,7 @@ class LoanProduct extends Model
         'max_term_months'      => 'integer',
         'grace_period_days'    => 'integer',
         'is_active'            => 'boolean',
+        'is_islamic'           => 'boolean',
     ];
 
     /**
@@ -47,6 +49,14 @@ class LoanProduct extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
+    }
+
+    /**
+     * Scope for Islamic finance products.
+     */
+    public function scopeIslamic(Builder $query): Builder
+    {
+        return $query->where('is_islamic', true);
     }
 
     public function loanApplications(): HasMany

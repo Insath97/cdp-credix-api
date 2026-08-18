@@ -8,7 +8,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\Payment;
 use App\Models\LoanInstallment;
+use App\Models\LoanRevision;
 use App\Enums\LoanApplicationStatus;
+use App\Enums\LoanRevisionStatus;
 use App\Services\LoanApplicationWorkflowService;
 use App\Services\NotificationService;
 use App\Traits\ActivityLogTrait;
@@ -85,6 +87,19 @@ class PaymentController extends Controller implements HasMiddleware
     {
         try {
             $data = $request->validated();
+
+            if (!empty($data['loan_application_id'])) {
+                $hasUnresolvedRevision = LoanRevision::where('loan_application_id', $data['loan_application_id'])
+                    ->whereIn('status', array_map(fn ($status) => $status->value, LoanRevisionStatus::unresolved()))
+                    ->exists();
+
+                if ($hasUnresolvedRevision) {
+                    return response()->json([
+                        'status'  => 'error',
+                        'message' => 'This loan application has a revision pending approval and cannot accept new payments until it is resolved.',
+                    ], 422);
+                }
+            }
 
             $payment = DB::transaction(function () use ($data) {
                 $data['received_by'] = Auth::id();
