@@ -16,6 +16,8 @@ return new class extends Migration
 
             $table->string('name');
             $table->string('code')->unique()->nullable();
+            $table->foreignId('loan_type_id')->nullable()->constrained('loan_types')->nullOnDelete();
+            $table->foreignId('loan_term_id')->nullable()->constrained('loan_terms')->nullOnDelete();
             $table->text('description')->nullable();
             $table->decimal('interest_rate', 6, 3);
             $table->string('interest_type')->nullable()->default('flat');

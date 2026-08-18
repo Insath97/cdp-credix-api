@@ -26,6 +26,8 @@ class UpdateLoanProductRequest extends FormRequest
         return [
             'name' => 'nullable|string|max:255',
             'code' => 'nullable|string|max:50|unique:loan_products,code,' . $id,
+            'loan_type_id' => 'nullable|integer|exists:loan_types,id',
+            'loan_term_id' => 'nullable|integer|exists:loan_terms,id',
             'description' => 'nullable|string',
             'interest_rate' => 'nullable|numeric|min:0|max:999.999',
             'interest_type' => 'nullable|string|in:flat,reducing',
