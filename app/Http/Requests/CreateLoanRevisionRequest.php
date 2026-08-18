@@ -6,8 +6,9 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Rule;
+use App\Enums\LoanRevisionType;
 
-class CreateLoanInstallmentRequest extends FormRequest
+class CreateLoanRevisionRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
@@ -23,24 +24,10 @@ class CreateLoanInstallmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'loan_application_id'   => 'required|integer|exists:loan_applications,id',
-            'installment_no'        => [
-                'required',
-                'integer',
-                'min:1',
-                Rule::unique('loan_installments')->where(function ($query) {
-                    return $query->where('loan_application_id', $this->loan_application_id);
-                }),
-            ],
-            'due_date'               => 'required|date',
-            'amount_due'             => 'required|numeric|min:0',
-            'amount_paid'            => 'nullable|numeric|min:0',
-            'penalty_amount'         => 'nullable|numeric|min:0',
-            'penalty_waived_by'      => 'nullable|integer|exists:users,id',
-            'penalty_waived_reason'  => 'nullable|string',
-            'balance'                 => 'nullable|numeric|min:0',
-            'status'                  => 'nullable|string|in:upcoming,due,partially_paid,paid,overdue,waived,revised',
-            'paid_at'                 => 'nullable|date',
+            'loan_application_id' => 'required|integer|exists:loan_applications,id',
+            'revision_type'       => ['required', Rule::enum(LoanRevisionType::class)],
+            'reason'              => 'required|string|max:2000',
+            'revised_term'        => 'required_unless:revision_type,principal_only|nullable|integer|min:1',
         ];
     }
 

@@ -36,6 +36,7 @@ class CreateLoanProductRequest extends FormRequest
             'penalty_value' => 'nullable|numeric|min:0',
             'grace_period_days' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean',
+            'is_islamic' => 'nullable|boolean',
         ];
     }
 
