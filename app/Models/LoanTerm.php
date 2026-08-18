@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LoanTerm extends Model
 {
@@ -52,5 +53,13 @@ class LoanTerm extends Model
     public function loanTypes(): BelongsToMany
     {
         return $this->belongsToMany(LoanType::class);
+    }
+
+    /**
+     * The loan products classified under this loan term.
+     */
+    public function loanProducts(): HasMany
+    {
+        return $this->hasMany(LoanProduct::class);
     }
 }
