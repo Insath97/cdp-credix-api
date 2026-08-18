@@ -106,6 +106,28 @@ return new class extends Migration
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'key' => 'loan_revision_enabled',
+                'value' => '1',
+                'type' => 'boolean',
+                'group' => 'loan_revision',
+                'description' => 'Master switch for the loan revision (restructuring) feature.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'key' => 'loan_revision_allowed_types',
+                'value' => json_encode([
+                    'reduce_installment',
+                    'extend_term',
+                    'principal_only',
+                ]),
+                'type' => 'json',
+                'group' => 'loan_revision',
+                'description' => 'Revision types an officer may create for a loan application.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 

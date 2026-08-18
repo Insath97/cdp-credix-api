@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class LoanProduct extends Model
@@ -15,6 +16,8 @@ class LoanProduct extends Model
     protected $fillable = [
         'name',
         'code',
+        'loan_type_id',
+        'loan_term_id',
         'description',
         'interest_rate',
         'interest_type',
@@ -27,9 +30,12 @@ class LoanProduct extends Model
         'penalty_value',
         'grace_period_days',
         'is_active',
+        'is_islamic',
     ];
 
     protected $casts = [
+        'loan_type_id'         => 'integer',
+        'loan_term_id'         => 'integer',
         'interest_rate'        => 'decimal:3',
         'min_amount'           => 'decimal:2',
         'max_amount'           => 'decimal:2',
@@ -39,6 +45,7 @@ class LoanProduct extends Model
         'max_term_months'      => 'integer',
         'grace_period_days'    => 'integer',
         'is_active'            => 'boolean',
+        'is_islamic'           => 'boolean',
     ];
 
     /**
@@ -49,11 +56,35 @@ class LoanProduct extends Model
         return $query->where('is_active', true);
     }
 
+    /**
+     * Scope for Islamic finance products.
+     */
+    public function scopeIslamic(Builder $query): Builder
+    {
+        return $query->where('is_islamic', true);
+    }
+
     public function loanApplications(): HasMany
     {
         return $this->hasMany(LoanApplication::class);
     }
-    
+
+    /**
+     * Relationship with the loan type classification.
+     */
+    public function loanType(): BelongsTo
+    {
+        return $this->belongsTo(LoanType::class);
+    }
+
+    /**
+     * Relationship with the loan term classification.
+     */
+    public function loanTerm(): BelongsTo
+    {
+        return $this->belongsTo(LoanTerm::class);
+    }
+
     public function scopeSearch(Builder $query, ?string $search): Builder
     {
         return $query->where(function ($q) use ($search) {

@@ -39,7 +39,7 @@ class CreateLoanInstallmentRequest extends FormRequest
             'penalty_waived_by'      => 'nullable|integer|exists:users,id',
             'penalty_waived_reason'  => 'nullable|string',
             'balance'                 => 'nullable|numeric|min:0',
-            'status'                  => 'nullable|string|in:upcoming,due,partially_paid,paid,overdue,waived',
+            'status'                  => 'nullable|string|in:upcoming,due,partially_paid,paid,overdue,waived,revised',
             'paid_at'                 => 'nullable|date',
         ];
     }
