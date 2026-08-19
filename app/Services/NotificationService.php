@@ -27,17 +27,25 @@ class NotificationService
         ]));
 
         try {
-            Mail::to($recipientEmail)->queue(new GenericNotificationMail($subject, $message));
+            Mail::to($recipientEmail)->send(new GenericNotificationMail($subject, $message));
 
             $notification->update([
                 'status'  => 'sent',
                 'sent_at' => now(),
+            ]);
+
+            Log::info("Notification email sent successfully", [
+                'notification_id' => $notification->id,
+                'type'            => $type,
+                'recipient'       => $recipientEmail,
+                'subject'         => $subject,
             ]);
         } catch (\Throwable $th) {
             Log::error("Failed to send notification email: " . $th->getMessage(), [
                 'notification_id' => $notification->id,
                 'type'            => $type,
                 'recipient'       => $recipientEmail,
+                'subject'         => $subject,
             ]);
 
             $notification->update([
@@ -68,9 +76,15 @@ class NotificationService
         ]));
 
         try {
-            SendSmsJob::dispatch($recipientPhone, $message, $notification->id);
+            SendSmsJob::dispatchSync($recipientPhone, $message, $notification->id);
+
+            Log::info("Notification SMS sent successfully", [
+                'notification_id' => $notification->id,
+                'type'            => $type,
+                'recipient'       => $recipientPhone,
+            ]);
         } catch (\Throwable $th) {
-            Log::error("Failed to queue notification SMS: " . $th->getMessage(), [
+            Log::error("Failed to send notification SMS: " . $th->getMessage(), [
                 'notification_id' => $notification->id,
                 'type'            => $type,
                 'recipient'       => $recipientPhone,

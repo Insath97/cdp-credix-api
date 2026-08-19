@@ -184,6 +184,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'customer.movingAssets',
                 'customer.liabilities',
                 'customer.guarantors',
+                'customer.documents',
                 'loanProduct',
                 'branch',
                 'appliedBy',
@@ -195,7 +196,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loanApplicationLiabilities',
                 'loanApplicationBankDetails',
                 'installments',
-                'statusHistory',
+                'statusHistory.changedBy',
             ])->find($id);
 
             if (!$loanApplication) {

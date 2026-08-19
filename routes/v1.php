@@ -237,7 +237,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     // Loan Installments
     Route::apiResource('loan-installments', LoanInstallmentController::class);
 
-    // Loan Revisions
+    // Loan Revisions(islamic)
     Route::prefix('loan-revisions')->group(function () {
         Route::patch('{id}/approve', [LoanRevisionController::class, 'approve']);
         Route::patch('{id}/reject', [LoanRevisionController::class, 'reject']);

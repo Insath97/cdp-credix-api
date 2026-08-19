@@ -134,7 +134,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $case = RecoveryCase::with(['loanApplication', 'assignedAgent', 'openedBy'])->find($id);
+            $case = RecoveryCase::with(['loanApplication.customer', 'assignedAgent', 'openedBy', 'activities.performedBy', 'externalAgent'])->find($id);
 
             if (!$case) {
                 return response()->json([
