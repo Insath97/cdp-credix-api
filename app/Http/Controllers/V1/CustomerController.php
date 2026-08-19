@@ -213,7 +213,7 @@ class CustomerController extends Controller implements HasMiddleware
             $credentialsMessage = "Welcome! Your CDP Credix account has been created.\nUsername: {$user->username}\nPassword: {$plainPassword}\nPlease keep this information secure and change your password after logging in.";
 
             if (!empty($customer->email)) {
-                $this->notificationService->sendEmail(
+                $emailNotification = $this->notificationService->sendEmail(
                     'customer_registration_credentials',
                     $customer->email,
                     'Your CDP Credix Account Credentials',
@@ -221,14 +221,48 @@ class CustomerController extends Controller implements HasMiddleware
                     ['customer_id' => $customer->id, 'user_id' => $user->id],
                     'Login credentials email sent to customer.'
                 );
+
+                if ($emailNotification->status === 'sent') {
+                    $this->logActivity('EMAIL_SENT', 'Customer', "Registration credentials email sent to customer: {$customer->email}", [
+                        'customer_id'     => $customer->id,
+                        'email'           => $customer->email,
+                        'notification_id' => $emailNotification->id,
+                    ]);
+                } else {
+                    $this->logActivity('EMAIL_FAILED', 'Customer', "Failed to send registration credentials email to customer: {$customer->email}", [
+                        'customer_id'     => $customer->id,
+                        'email'           => $customer->email,
+                        'notification_id' => $emailNotification->id,
+                        'error'           => $emailNotification->error,
+                    ], 'error');
+                }
             } elseif (!empty($customer->phone_primary)) {
-                $this->notificationService->sendSms(
+                $smsNotification = $this->notificationService->sendSms(
                     'customer_registration_credentials',
                     $customer->phone_primary,
                     $credentialsMessage,
                     ['customer_id' => $customer->id, 'user_id' => $user->id],
                     'Login credentials SMS sent to customer.'
                 );
+
+                if ($smsNotification->status !== 'failed') {
+                    $this->logActivity('SMS_QUEUED', 'Customer', "Registration credentials SMS queued for customer: {$customer->phone_primary}", [
+                        'customer_id'     => $customer->id,
+                        'phone'           => $customer->phone_primary,
+                        'notification_id' => $smsNotification->id,
+                    ]);
+                } else {
+                    $this->logActivity('SMS_FAILED', 'Customer', "Failed to queue registration credentials SMS for customer: {$customer->phone_primary}", [
+                        'customer_id'     => $customer->id,
+                        'phone'           => $customer->phone_primary,
+                        'notification_id' => $smsNotification->id,
+                        'error'           => $smsNotification->error,
+                    ], 'error');
+                }
+            } else {
+                $this->logActivity('NOTIFICATION_SKIPPED', 'Customer', "No email or primary phone available to send registration credentials for customer: {$customer->customer_code}", [
+                    'customer_id' => $customer->id,
+                ], 'warning');
             }
 
             $this->logActivity('Create', 'Customer', 'Customer created with associated details', [
