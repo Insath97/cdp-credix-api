@@ -111,12 +111,12 @@ class AuthController extends Controller
                     'user_id' => $user->id,
                     'reference' => $reference,
                     'otp' => $otp,
-                    'expires_at' => now()->addMinutes(1),
+                    'expires_at' => now()->addMinutes(30),
                     'status' => 'approved',
                     'ip_address' => $request->ip(),
                 ]);
 
-                $message = config('app.name') . ": Your OTP for login is {$otp}. Valid for 1 minute.";
+                $message = config('app.name') . ": Your OTP for login is {$otp}. Valid for 30 minutes.";
                 SendSmsJob::dispatch($phone, $message);
                 Log::info('First-time login OTP SMS queued', [
                     'user_id' => $user->id,

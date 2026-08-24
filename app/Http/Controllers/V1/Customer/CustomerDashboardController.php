@@ -1,0 +1,98 @@
+<?php
+
+namespace App\Http\Controllers\V1\Customer;
+
+use App\Enums\LoanApplicationStatus;
+use App\Http\Controllers\Controller;
+use App\Models\LoanApplication;
+use App\Models\LoanInstallment;
+use App\Traits\ActivityLogTrait;
+use App\Traits\ResolvesAuthenticatedCustomerTrait;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class CustomerDashboardController extends Controller
+{
+    use ActivityLogTrait, ResolvesAuthenticatedCustomerTrait;
+    /**
+     * Summary widgets for the customer dashboard landing screen.
+     */
+    public function overview(Request $request)
+    {
+        try {
+            $customer = $this->myCustomer();
+            $customerId = $customer->id;
+
+            $activeStatuses = [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue];
+
+            $activeLoans = LoanApplication::where('customer_id', $customerId)
+                ->whereIn('status', $activeStatuses)
+                ->get(['id', 'outstanding_balance']);
+
+            $nextInstallment = LoanInstallment::whereHas('loanApplication', function ($query) use ($customerId) {
+                $query->where('customer_id', $customerId);
+            })
+                ->whereNotIn('status', ['paid', 'waived', 'revised'])
+                ->orderBy('due_date')
+                ->with('loanApplication.application')
+                ->first();
+
+            $overdueInstallments = LoanInstallment::whereHas('loanApplication', function ($query) use ($customerId) {
+                $query->where('customer_id', $customerId);
+            })
+                ->where('status', 'overdue')
+                ->orderBy('due_date')
+                ->get(['id', 'due_date', 'balance']);
+
+            $overdueAmount = $overdueInstallments->sum('balance');
+            $earliestOverdue = $overdueInstallments->first();
+            $overdueDays = $earliestOverdue ? $earliestOverdue->due_date->diffInDays(now()) : null;
+
+            $statusCounts = LoanApplication::where('customer_id', $customerId)
+                ->select('status', DB::raw('count(*) as total'))
+                ->groupBy('status')
+                ->get()
+                ->mapWithKeys(fn ($row) => [$row->status->value => $row->total]);
+
+            $loanSummary = collect(LoanApplicationStatus::cases())
+                ->mapWithKeys(fn ($status) => [$status->value => $statusCounts->get($status->value, 0)])
+                ->toArray();
+            $loanSummary = ['total_loans' => array_sum($loanSummary)] + $loanSummary;
+
+            $data = [
+                'customer_name' => $customer->full_name,
+                'customer_id' => $customer->customer_id,
+                'customer_code' => $customer->customer_code,
+                'active_loans_count' => $activeLoans->count(),
+                'total_outstanding_amount' => $activeLoans->sum('outstanding_balance'),
+                'loan_summary' => $loanSummary,
+                'next_installment' => $nextInstallment ? [
+                    'amount' => $nextInstallment->amount_due,
+                    'due_date' => $nextInstallment->due_date,
+                    'loan_application_id' => $nextInstallment->loan_application_id,
+                    'application_no' => $nextInstallment->loanApplication?->application?->application_no,
+                ] : null,
+                'overdue_amount' => $overdueAmount,
+                'overdue_days' => $overdueDays,
+            ];
+
+            $this->logActivity('Index', 'CustomerPortal', 'Customer viewed dashboard overview', [
+                'user_id' => auth('api')->id(),
+                'customer_id' => $customerId,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Dashboard overview retrieved successfully',
+                'data' => $data,
+            ], 200);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retrieve dashboard overview',
+                'error' => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+}
