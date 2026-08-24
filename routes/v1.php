@@ -42,6 +42,13 @@ use App\Http\Controllers\V1\ExternalRecoveryAgentController;
 use App\Http\Controllers\V1\NotificationController;
 use App\Http\Controllers\V1\PasswordChangeController;
 use App\Http\Controllers\V1\SettingController;
+use App\Http\Controllers\V1\Customer\CustomerDashboardController;
+use App\Http\Controllers\V1\Customer\CustomerProfileController;
+use App\Http\Controllers\V1\Customer\CustomerLoanController;
+use App\Http\Controllers\V1\Customer\CustomerPaymentController;
+use App\Http\Controllers\V1\Customer\CustomerNotificationController;
+use App\Http\Controllers\V1\Customer\CustomerDocumentController;
+use App\Http\Controllers\V1\Customer\CustomerFinancialProfileController;
 use Illuminate\Support\Facades\Route;
 
 /* public routes */
@@ -274,4 +281,35 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     Route::get('settings/{key}', [SettingController::class, 'show']);
     Route::put('settings/{key}', [SettingController::class, 'update']);
 
+});
+
+/* customer dashboard routes */
+Route::middleware(['auth:api', 'customer.auth'])->prefix('v1/my')->group(function () {
+    Route::get('dashboard', [CustomerDashboardController::class, 'overview']);
+
+    Route::get('profile', [CustomerProfileController::class, 'show']);
+    Route::patch('profile', [CustomerProfileController::class, 'update']);
+
+    Route::get('loan-applications', [CustomerLoanController::class, 'applications']);
+    Route::get('loan-applications/{id}', [CustomerLoanController::class, 'applicationShow']);
+
+    Route::get('loans', [CustomerLoanController::class, 'index']);
+    Route::get('loans/{id}', [CustomerLoanController::class, 'show']);
+    Route::get('loans/{id}/installments', [CustomerLoanController::class, 'installments']);
+    Route::get('loans/{id}/revisions', [CustomerLoanController::class, 'revisions']);
+    Route::get('loans/{id}/statement', [CustomerLoanController::class, 'statement']);
+
+    Route::get('payments', [CustomerPaymentController::class, 'index']);
+    Route::get('payments/{id}', [CustomerPaymentController::class, 'show']);
+
+    Route::get('notifications', [CustomerNotificationController::class, 'index']);
+
+    Route::get('documents', [CustomerDocumentController::class, 'index']);
+    Route::get('documents/{id}/download', [CustomerDocumentController::class, 'download']);
+
+    Route::get('guarantors', [CustomerFinancialProfileController::class, 'guarantors']);
+    Route::get('fixed-assets', [CustomerFinancialProfileController::class, 'fixedAssets']);
+    Route::get('moving-assets', [CustomerFinancialProfileController::class, 'movingAssets']);
+    Route::get('liabilities', [CustomerFinancialProfileController::class, 'liabilities']);
+    Route::get('bank-details', [CustomerFinancialProfileController::class, 'bankDetails']);
 });
