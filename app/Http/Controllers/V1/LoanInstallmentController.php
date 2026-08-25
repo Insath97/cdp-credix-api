@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\LoanInstallment;
+use App\Models\LoanApplication;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanInstallmentRequest;
 use App\Http\Requests\UpdateLoanInstallmentRequest;
@@ -73,6 +74,11 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     {
         try {
             $data = $request->validated();
+
+            // amount_due is never frontend-supplied — it always comes from the
+            // parent loan application's backend-calculated monthly_installment.
+            $loanApplication = LoanApplication::find($data['loan_application_id']);
+            $data['amount_due'] = $loanApplication->monthly_installment;
 
             if (empty($data['balance'])) {
                 $data['balance'] = $data['amount_due'] - ($data['amount_paid'] ?? 0);

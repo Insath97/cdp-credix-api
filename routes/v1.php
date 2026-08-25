@@ -42,6 +42,7 @@ use App\Http\Controllers\V1\ExternalRecoveryAgentController;
 use App\Http\Controllers\V1\NotificationController;
 use App\Http\Controllers\V1\PasswordChangeController;
 use App\Http\Controllers\V1\SettingController;
+use App\Http\Controllers\V1\AdminDashboardController;
 use App\Http\Controllers\V1\Customer\CustomerDashboardController;
 use App\Http\Controllers\V1\Customer\CustomerProfileController;
 use App\Http\Controllers\V1\Customer\CustomerLoanController;
@@ -249,6 +250,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/approve', [LoanRevisionController::class, 'approve']);
         Route::patch('{id}/reject', [LoanRevisionController::class, 'reject']);
         Route::patch('{id}/cancel', [LoanRevisionController::class, 'cancel']);
+        Route::get('{id}/document', [LoanRevisionController::class, 'downloadDocument']);
     });
     Route::apiResource('loan-revisions', LoanRevisionController::class)->only(['index', 'store', 'show']);
 
@@ -280,6 +282,15 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     Route::get('settings', [SettingController::class, 'index']);
     Route::get('settings/{key}', [SettingController::class, 'show']);
     Route::put('settings/{key}', [SettingController::class, 'update']);
+
+    // Admin Dashboard
+    Route::prefix('admin-dashboard')->group(function () {
+        Route::get('overview', [AdminDashboardController::class, 'overview']);
+        Route::get('recent-transactions', [AdminDashboardController::class, 'recentTransactions']);
+        Route::get('recent-loan-applications', [AdminDashboardController::class, 'recentLoanApplications']);
+
+        Route::get('targets', [AdminDashboardController::class, 'targetIndex']);
+    });
 
 });
 

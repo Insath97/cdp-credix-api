@@ -33,7 +33,6 @@ class CreateLoanInstallmentRequest extends FormRequest
                 }),
             ],
             'due_date'               => 'required|date',
-            'amount_due'             => 'required|numeric|min:0',
             'amount_paid'            => 'nullable|numeric|min:0',
             'penalty_amount'         => 'nullable|numeric|min:0',
             'penalty_waived_by'      => 'nullable|integer|exists:users,id',

@@ -120,6 +120,7 @@ class LoanRevisionService
                 'revised_term'                => $revisedTerm,
                 'revised_installment_amount'  => $revisedInstallmentAmount,
                 'reason'                      => $data['reason'],
+                'document'                    => $data['document'] ?? null,
                 'requested_by'                => $actorId,
             ]);
         });
