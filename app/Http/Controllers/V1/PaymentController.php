@@ -47,7 +47,7 @@ class PaymentController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Payment::with(['loanApplication', 'loanInstallment', 'receivedBy']);
+            $query = Payment::with(['loanApplication', 'loanApplication.application', 'loanInstallment', 'receivedBy']);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -183,7 +183,7 @@ class PaymentController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $payment = Payment::with(['loanApplication', 'loanInstallment', 'receivedBy'])->find($id);
+            $payment = Payment::with(['loanApplication', 'loanApplication.application', 'loanInstallment', 'receivedBy'])->find($id);
 
             if (!$payment) {
                 return response()->json([
