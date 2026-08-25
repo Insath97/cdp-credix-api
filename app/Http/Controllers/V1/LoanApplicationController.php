@@ -131,10 +131,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
             }
             $data['status'] = LoanApplicationStatus::Submitted;
 
-            // All financial figures are backend-calculated, never frontend-supplied.
-            $interest = round($data['requested_amount'] * $data['interest_rate'] / 100, 2);
-            $totalRepayment = round($data['requested_amount'] + $interest, 2);
-            $data['monthly_installment'] = round($totalRepayment / $data['term_months'], 2);
+            // monthly_installment is intentionally NOT calculated here — the customer's
+            // requested_amount is not necessarily what gets disbursed. Calculation happens
+            // at approve() using approved_amount, once that figure is actually known.
 
             $loanApplication = LoanApplication::create($data);
 
@@ -469,16 +468,26 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            // Approved amount defaults to what the customer requested unless the
+            // approver explicitly overrides it (e.g. approving a lower amount).
+            $approvedAmount = $request->filled('approved_amount')
+                ? $request->input('approved_amount')
+                : $loanApplication->requested_amount;
+
             $extra = [
                 'approved_by' => Auth::id(),
                 'approved_at' => now(),
+                'approved_amount' => $approvedAmount,
             ];
-            if ($request->filled('approved_amount')) {
-                $extra['approved_amount'] = $request->input('approved_amount');
-            }
             if ($request->filled('remarks')) {
                 $extra['approval_remarks'] = $request->input('remarks');
             }
+
+            // All financial figures are backend-calculated from approved_amount —
+            // never requested_amount — since that's the figure actually being lent.
+            $interest = round($approvedAmount * $loanApplication->interest_rate / 100, 2);
+            $totalRepayment = round($approvedAmount + $interest, 2);
+            $extra['monthly_installment'] = round($totalRepayment / $loanApplication->term_months, 2);
 
             $loanApplication = $this->workflowService->transition(
                 $loanApplication,
