@@ -24,11 +24,16 @@ class LoanRevision extends Model
         'revised_term',
         'revised_installment_amount',
         'reason',
+        'document',
         'remarks',
         'requested_by',
         'approved_by',
         'approved_at',
         'effective_date',
+    ];
+
+    protected $appends = [
+        'document_url',
     ];
 
     protected $casts = [
@@ -77,5 +82,14 @@ class LoanRevision extends Model
     public function installments(): HasMany
     {
         return $this->hasMany(LoanInstallment::class, 'loan_revision_id');
+    }
+
+    /**
+     * URL to the authenticated download endpoint for the supporting document,
+     * never the raw storage path.
+     */
+    public function getDocumentUrlAttribute(): ?string
+    {
+        return $this->document ? url("/api/v1/loan-revisions/{$this->id}/document") : null;
     }
 }
