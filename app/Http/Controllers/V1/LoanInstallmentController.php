@@ -20,7 +20,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Loan Installment Index',  only: ['index', 'show']),
+            new Middleware('permission:Loan Installment Index',  only: ['index', 'show', 'list']),
             new Middleware('permission:Loan Installment Create', only: ['store']),
             new Middleware('permission:Loan Installment Update', only: ['update']),
             new Middleware('permission:Loan Installment Delete', only: ['destroy']),
@@ -34,7 +34,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = LoanInstallment::with(['loanApplication']);
+            $query = LoanInstallment::with(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch']);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -68,6 +68,49 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     }
 
     /**
+     * Get a list of loan installments.
+     */
+    public function list(Request $request)
+    {
+        try {
+            $query = LoanInstallment::with(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch']);
+
+            if ($request->has('loan_application_id')) {
+                $query->where('loan_application_id', $request->loan_application_id);
+            }
+
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('per_page')) {
+                $installments = $query->orderBy('due_date')->paginate($request->get('per_page'));
+            } else {
+                $installments = $query->orderBy('due_date')->get();
+            }
+
+            $this->logActivity('Index', 'LoanInstallment', 'Loan installments list accessed', [
+                'user_id' => Auth::id(),
+                'filters' => $request->only(['loan_application_id', 'status']),
+                'count'   => is_a($installments, \Illuminate\Pagination\AbstractPaginator::class) ? $installments->total() : $installments->count(),
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan installments list retrieved successfully',
+                'data'    => $installments,
+            ], 200);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to retrieve loan installments list',
+                'error'   => $th->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Store a newly created loan installment.
      */
     public function store(CreateLoanInstallmentRequest $request)
@@ -91,7 +134,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Loan installment created successfully',
-                'data'    => $installment->load(['loanApplication']),
+                'data'    => $installment->load(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch']),
             ], 201);
 
         } catch (\Throwable $th) {
@@ -109,7 +152,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $installment = LoanInstallment::with(['loanApplication'])->find($id);
+            $installment = LoanInstallment::with(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch'])->find($id);
 
             if (!$installment) {
                 return response()->json([
@@ -156,7 +199,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Loan installment updated successfully',
-                'data'    => $installment->fresh(['loanApplication']),
+                'data'    => $installment->fresh(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch']),
             ], 200);
 
         } catch (\Throwable $th) {
