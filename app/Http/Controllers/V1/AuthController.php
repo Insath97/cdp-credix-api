@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\V1;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\SendSmsJob;
 use App\Models\LoginOtpVerification;
 use App\Models\User;
+use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cookie;
@@ -117,11 +117,20 @@ class AuthController extends Controller
                 ]);
 
                 $message = config('app.name') . ": Your OTP for login is {$otp}. Valid for 30 minutes.";
-                SendSmsJob::dispatch($phone, $message);
-                Log::info('First-time login OTP SMS queued', [
+
+                Log::info('OTP Login Debug', [
                     'user_id' => $user->id,
                     'phone' => $phone,
+                    'otp' => $otp,
                 ]);
+
+                try {
+                    $smsService = app(SmsService::class);
+                    $smsSent = $smsService->sendSms($phone, $message);
+                    Log::info('OTP SMS send result', ['sent' => $smsSent, 'phone' => $phone]);
+                } catch (\Throwable $smsEx) {
+                    Log::error('OTP SMS send failed', ['error' => $smsEx->getMessage()]);
+                }
 
                 return response()->json([
                     'status' => 'success',
@@ -129,7 +138,7 @@ class AuthController extends Controller
                     'data' => [
                         'otp_required' => true,
                         'reference' => $reference,
-                        'expires_in' => 60,
+                        'expires_in' => 1800,
                     ]
                 ], 200);
             }
