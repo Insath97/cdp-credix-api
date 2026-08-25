@@ -242,6 +242,9 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     Route::apiResource('loan-application-bank-details', LoanApplicationBankDetailController::class)->only(['index', 'store', 'show', 'destroy']);
 
     // Loan Installments
+    Route::prefix('loan-installments')->group(function () {
+        Route::get('list', [LoanInstallmentController::class, 'list']);
+    });
     Route::apiResource('loan-installments', LoanInstallmentController::class);
 
     // Loan Revisions(islamic)
