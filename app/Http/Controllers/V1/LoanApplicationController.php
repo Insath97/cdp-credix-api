@@ -131,6 +131,11 @@ class LoanApplicationController extends Controller implements HasMiddleware
             }
             $data['status'] = LoanApplicationStatus::Submitted;
 
+            // All financial figures are backend-calculated, never frontend-supplied.
+            $interest = round($data['requested_amount'] * $data['interest_rate'] / 100, 2);
+            $totalRepayment = round($data['requested_amount'] + $interest, 2);
+            $data['monthly_installment'] = round($totalRepayment / $data['term_months'], 2);
+
             $loanApplication = LoanApplication::create($data);
 
             $this->logActivity('CREATE', 'LoanApplication', "Created loan application ID: {$loanApplication->id}", $data);

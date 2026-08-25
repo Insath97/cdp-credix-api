@@ -32,7 +32,6 @@ class CreateLoanApplicationRequest extends FormRequest
             'interest_rate'          => 'required|numeric|min:0|max:999.999',
             'interest_type'          => 'nullable|string|max:255',
             'term_months'            => 'required|integer|min:1',
-            'monthly_installment'    => 'nullable|numeric|min:0',
             'processing_fee'         => 'nullable|numeric|min:0',
             'monthly_repayment_date' => 'nullable|string|max:255',
             'applied_by'             => 'nullable|integer|exists:users,id',

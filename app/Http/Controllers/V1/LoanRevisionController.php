@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\LoanApplication;
 use App\Models\LoanRevision;
 use App\Traits\ActivityLogTrait;
+use App\Traits\FileUploadTrait;
 use App\Http\Requests\CreateLoanRevisionRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -19,7 +20,7 @@ use Illuminate\Support\Facades\Validator;
 
 class LoanRevisionController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, FileUploadTrait;
 
     public function __construct(
         protected LoanRevisionService $revisionService,
@@ -30,7 +31,7 @@ class LoanRevisionController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Loan Revision Index',   only: ['index', 'show']),
+            new Middleware('permission:Loan Revision Index',   only: ['index', 'show', 'downloadDocument']),
             new Middleware('permission:Loan Revision Create',  only: ['store']),
             new Middleware('permission:Loan Revision Approve', only: ['approve']),
             new Middleware('permission:Loan Revision Reject',  only: ['reject']),
@@ -97,6 +98,10 @@ class LoanRevisionController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Loan application not found',
                 ], 404);
+            }
+
+            if ($request->hasFile('document')) {
+                $data['document'] = $this->handleFileUpload($request, 'document', null, 'loan-revisions');
             }
 
             $revision = $this->revisionService->create($loanApplication, $data, Auth::id());
@@ -313,6 +318,48 @@ class LoanRevisionController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to cancel loan revision',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Stream the supporting document attached to a loan revision, so admin/
+     * authorized staff can view or download the customer's evidence during
+     * the approval/rejection process.
+     */
+    public function downloadDocument(string $id)
+    {
+        try {
+            $revision = LoanRevision::find($id);
+
+            if (!$revision || !$revision->document) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan revision document not found',
+                ], 404);
+            }
+
+            $absolutePath = public_path($revision->document);
+
+            if (!is_file($absolutePath)) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Document file is missing',
+                ], 404);
+            }
+
+            $this->logActivity('Show', 'LoanRevision', "Downloaded supporting document for loan revision ID: {$revision->id}", [
+                'user_id' => Auth::id(),
+                'loan_revision_id' => $revision->id,
+            ]);
+
+            return response()->file($absolutePath);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to download loan revision document',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }

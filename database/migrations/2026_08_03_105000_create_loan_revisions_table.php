@@ -28,6 +28,7 @@ return new class extends Migration
             $table->decimal('revised_installment_amount', 15, 2);
 
             $table->text('reason');
+            $table->string('document')->nullable();
             $table->text('remarks')->nullable();
 
             $table->foreignId('requested_by')->nullable()->constrained('users')->nullOnDelete();

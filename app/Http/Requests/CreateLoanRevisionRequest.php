@@ -28,6 +28,7 @@ class CreateLoanRevisionRequest extends FormRequest
             'revision_type'       => ['required', Rule::enum(LoanRevisionType::class)],
             'reason'              => 'required|string|max:2000',
             'revised_term'        => 'required_unless:revision_type,principal_only|nullable|integer|min:1',
+            'document'            => 'nullable|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
         ];
     }
 
