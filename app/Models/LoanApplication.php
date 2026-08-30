@@ -104,7 +104,7 @@ class LoanApplication extends Model
     /**
      * Relationship with the User who applied.
      */
-    public function appliedBy(): BelongsTo
+    public function appliedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'applied_by');
     }
@@ -112,7 +112,7 @@ class LoanApplication extends Model
     /**
      * Relationship with the User who reviewed.
      */
-    public function reviewedBy(): BelongsTo
+    public function reviewedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
     }
@@ -120,7 +120,7 @@ class LoanApplication extends Model
     /**
      * Relationship with the User who approved.
      */
-    public function approvedBy(): BelongsTo
+    public function approvedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
     }

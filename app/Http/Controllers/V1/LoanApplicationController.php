@@ -59,9 +59,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'customer',
                 'loanProduct',
                 'branch',
-                'appliedBy',
-                'reviewedBy',
-                'approvedBy'
+                'appliedByUser',
+                'reviewedByUser',
+                'approvedByUser'
             ]);
 
             if ($request->has('search')) {
@@ -162,7 +162,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'customer',
                     'loanProduct',
                     'branch',
-                    'appliedBy'
+                    'appliedByUser'
                 ]),
             ], 201);
 
@@ -191,9 +191,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'customer.documents',
                 'loanProduct',
                 'branch',
-                'appliedBy',
-                'reviewedBy',
-                'approvedBy',
+                'appliedByUser',
+                'reviewedByUser',
+                'approvedByUser',
                 'loanApplicationGuarantors.guarantor',
                 'loanApplicationFixedAssets',
                 'loanApplicationMovingAssets',
@@ -254,9 +254,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'customer',
                     'loanProduct',
                     'branch',
-                    'appliedBy',
-                    'reviewedBy',
-                    'approvedBy'
+                    'appliedByUser',
+                    'reviewedByUser',
+                    'approvedByUser'
                 ]),
             ], 200);
 

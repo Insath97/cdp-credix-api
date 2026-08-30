@@ -164,7 +164,7 @@ class LoanRevisionService
                 $this->applyApprovedRevision($revision);
             }
 
-            return $revision->fresh(['loanApplication', 'requestedBy', 'approvedBy', 'installments']);
+            return $revision->fresh(['loanApplication', 'requester', 'approver', 'installments']);
         });
     }
 

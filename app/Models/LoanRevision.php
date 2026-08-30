@@ -62,16 +62,18 @@ class LoanRevision extends Model
 
     /**
      * Relationship with the User who requested this revision.
+     * Named "requester" to avoid collision with the "requested_by" FK column.
      */
-    public function requestedBy(): BelongsTo
+    public function requester(): BelongsTo
     {
         return $this->belongsTo(User::class, 'requested_by');
     }
 
     /**
      * Relationship with the User who approved this revision.
+     * Named "approver" to avoid collision with the "approved_by" FK column.
      */
-    public function approvedBy(): BelongsTo
+    public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
