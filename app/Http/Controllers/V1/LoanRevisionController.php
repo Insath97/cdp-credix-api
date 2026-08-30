@@ -48,8 +48,9 @@ class LoanRevisionController extends Controller implements HasMiddleware
             $perPage = $request->get('per_page', 15);
             $query = LoanRevision::with([
                 'loanApplication.customer',
-                'requestedBy',
-                'approvedBy',
+                'loanApplication.application',
+                'requester',
+                'approver',
             ]);
 
             if ($request->filled('loan_application_id')) {
@@ -111,7 +112,7 @@ class LoanRevisionController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Loan revision created and submitted for approval',
-                'data'    => $revision->load(['loanApplication', 'requestedBy']),
+                'data'    => $revision->load(['loanApplication', 'requester']),
             ], 201);
 
         } catch (\InvalidArgumentException $e) {
@@ -136,8 +137,9 @@ class LoanRevisionController extends Controller implements HasMiddleware
         try {
             $revision = LoanRevision::with([
                 'loanApplication.customer',
-                'requestedBy',
-                'approvedBy',
+                'loanApplication.application',
+                'requester',
+                'approver',
                 'installments',
             ])->find($id);
 

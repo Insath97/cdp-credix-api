@@ -60,9 +60,9 @@ class LoanApplicationWorkflowService
                 'customer',
                 'loanProduct',
                 'branch',
-                'appliedBy',
-                'reviewedBy',
-                'approvedBy',
+                'appliedByUser',
+                'reviewedByUser',
+                'approvedByUser',
                 'assignedReviewer',
                 'installments',
             ]);
