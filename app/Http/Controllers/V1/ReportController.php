@@ -3,10 +3,6 @@
 namespace App\Http\Controllers\V1;
 
 use App\Enums\LoanApplicationStatus;
-use App\Exports\BranchWiseReportExport;
-use App\Exports\CustomerWiseReportExport;
-use App\Exports\LoanPortfolioReportExport;
-use App\Exports\RecoveryReportExport;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Customer;
@@ -15,13 +11,11 @@ use App\Models\LoanInstallment;
 use App\Models\Payment;
 use App\Models\RecoveryCase;
 use App\Traits\ActivityLogTrait;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
-use Maatwebsite\Excel\Facades\Excel;
 
 class ReportController extends Controller implements HasMiddleware
 {
@@ -31,7 +25,6 @@ class ReportController extends Controller implements HasMiddleware
     {
         return [
             new Middleware('permission:Report Index', only: ['branchWise', 'customerWise', 'loanPortfolio', 'recovery', 'recoveryShow']),
-            new Middleware('permission:Report Export', only: ['branchWiseExport', 'customerWiseExport', 'loanPortfolioExport', 'recoveryExport']),
         ];
     }
 
@@ -66,24 +59,6 @@ class ReportController extends Controller implements HasMiddleware
         }
 
         return implode('  |  ', $parts);
-    }
-
-    /**
-     * Stream a simple CSV download from headings + row arrays.
-     */
-    protected function downloadCsv(string $filename, array $headings, array $rows)
-    {
-        $handle = fopen('php://output', 'w');
-
-        return response()->streamDownload(function () use ($headings, $rows, $handle) {
-            // UTF-8 BOM so Excel opens it correctly
-            fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, $headings);
-            foreach ($rows as $row) {
-                fputcsv($handle, $row);
-            }
-            fclose($handle);
-        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     // -------------------------------------------------------------------
@@ -129,21 +104,6 @@ class ReportController extends Controller implements HasMiddleware
 
             if ($format === 'xlsx') {
                 return Excel::download(new BranchWiseReportExport($rows), 'branch-wise-report.xlsx');
-            }
-
-            if ($format === 'csv') {
-                return $this->downloadCsv(
-                    'branch-wise-report.csv',
-                    ['Branch Code', 'Branch Name', 'Applications', 'Total Disbursed', 'Outstanding Portfolio', 'Total Collected'],
-                    $rows->map(fn ($row) => [
-                        $row['branch_code'],
-                        $row['branch_name'],
-                        $row['applications_count'],
-                        $row['total_disbursed'],
-                        $row['outstanding_portfolio'],
-                        $row['total_collected'],
-                    ])->toArray()
-                );
             }
 
             return Pdf::loadView('reports.branch-wise', [
@@ -230,22 +190,6 @@ class ReportController extends Controller implements HasMiddleware
                 return Excel::download(new CustomerWiseReportExport($rows), 'customer-wise-report.xlsx');
             }
 
-            if ($format === 'csv') {
-                return $this->downloadCsv(
-                    'customer-wise-report.csv',
-                    ['Customer Code', 'Customer Name', 'Total Loans', 'Total Disbursed', 'Outstanding Balance', 'Total Paid', 'Overdue Amount'],
-                    $rows->map(fn ($row) => [
-                        $row['customer_code'],
-                        $row['full_name'],
-                        $row['total_loans'],
-                        $row['total_disbursed'],
-                        $row['outstanding_balance'],
-                        $row['total_paid'],
-                        $row['overdue_amount'],
-                    ])->toArray()
-                );
-            }
-
             return Pdf::loadView('reports.customer-wise', [
                 'title'   => 'Customer-wise Report',
                 'filters' => $this->filterSummary($request, $startDate, $endDate),
@@ -318,35 +262,6 @@ class ReportController extends Controller implements HasMiddleware
         }
     }
 
-    public function loanPortfolioExport(Request $request)
-    {
-        try {
-            [$startDate, $endDate] = $this->resolveDateRange($request);
-            $format = $request->get('format', 'pdf');
-
-            $rows = $this->loanPortfolioBaseQuery($request)->get()
-                ->map(fn ($loanApplication) => $this->shapeLoanPortfolioRow($loanApplication));
-
-            $this->logActivity('Export', 'Report', "Loan portfolio report exported ({$format})", ['user_id' => Auth::id()]);
-
-            if ($format === 'xlsx') {
-                return Excel::download(new LoanPortfolioReportExport($rows), 'loan-portfolio-report.xlsx');
-            }
-
-            return Pdf::loadView('reports.loan-portfolio', [
-                'title'   => 'Loan Portfolio Report',
-                'filters' => $this->filterSummary($request, $startDate, $endDate),
-                'rows'    => $rows,
-            ])->download('loan-portfolio-report.pdf');
-
-        } catch (\Throwable $th) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Failed to export loan portfolio report',
-                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
-            ], 500);
-        }
-    }
 
     protected function loanPortfolioBaseQuery(Request $request)
     {
@@ -409,37 +324,6 @@ class ReportController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to retrieve recovery report',
-                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
-            ], 500);
-        }
-    }
-
-    public function recoveryExport(Request $request)
-    {
-        try {
-            [$startDate, $endDate] = $this->resolveDateRange($request);
-            $format = $request->get('format', 'pdf');
-
-            $rows = $this->recoveryBaseQuery($request)->get()
-                ->map(fn ($case) => $this->shapeRecoveryRow($case));
-
-            $this->logActivity('Export', 'Report', "Recovery report exported ({$format})", ['user_id' => Auth::id()]);
-
-            if ($format === 'xlsx') {
-                return Excel::download(new RecoveryReportExport($rows), 'recovery-report.xlsx');
-            }
-
-            return Pdf::loadView('reports.recovery', [
-                'title'   => 'Recovery / Collection Report',
-                'filters' => $this->filterSummary($request, $startDate, $endDate),
-                'rows'    => $rows,
-                'summary' => $this->recoverySummary($request, $startDate, $endDate),
-            ])->download('recovery-report.pdf');
-
-        } catch (\Throwable $th) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Failed to export recovery report',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
