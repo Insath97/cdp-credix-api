@@ -244,7 +244,8 @@ class LoanApplication extends Model
         return $query->where(function ($q) use ($search) {
             $q->whereHas('customer', function ($customerQuery) use ($search) {
                 $customerQuery->where('full_name', 'like', "%$search%")
-                              ->orWhere('customer_code', 'like', "%$search%");
+                              ->orWhere('customer_code', 'like', "%$search%")
+                              ->orWhere('id_number', 'like', "%$search%");
             })
             ->orWhereHas('application', function ($appQuery) use ($search) {
                 $appQuery->where('application_no', 'like', "%$search%");
