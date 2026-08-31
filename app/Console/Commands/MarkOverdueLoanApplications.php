@@ -28,6 +28,7 @@ class MarkOverdueLoanApplications extends Command
         $installmentsMarked = 0;
         $applicationsMarkedOverdue = 0;
         $applicationsReverted = 0;
+        $penaltiesCharged = 0;
 
         $activeApplications = LoanApplication::whereIn('status', [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue])
             ->with(['loanProduct', 'installments'])
@@ -36,6 +37,7 @@ class MarkOverdueLoanApplications extends Command
         foreach ($activeApplications as $loanApplication) {
             $graceDays = $loanApplication->loanProduct?->grace_period_days
                 ?: Setting::get('installment_due_period_days', 30);
+            $penaltyValue = $loanApplication->loanProduct?->penalty_value;
 
             foreach ($loanApplication->installments as $installment) {
                 if (
@@ -43,9 +45,26 @@ class MarkOverdueLoanApplications extends Command
                     && $installment->balance > 0
                     && $installment->due_date->copy()->addDays($graceDays)->lt(now())
                 ) {
-                    $installment->update(['status' => 'overdue']);
+                    // A flat, one-time late fee: only ever charged the first time this
+                    // installment goes overdue (guarded by penalty_amount still being 0),
+                    // never re-charged on later scheduler runs for the same installment.
+                    if ($penaltyValue > 0 && $installment->penalty_amount == 0) {
+                        $installment->penalty_amount = $penaltyValue;
+                        $installment->recalculateBalance();
+                        if ($loanApplication->outstanding_balance !== null) {
+                            $loanApplication->outstanding_balance += $penaltyValue;
+                        }
+                        $penaltiesCharged++;
+                    }
+
+                    $installment->status = 'overdue';
+                    $installment->save();
                     $installmentsMarked++;
                 }
+            }
+
+            if ($loanApplication->isDirty('outstanding_balance')) {
+                $loanApplication->save();
             }
 
             $hasOverdueInstallment = $loanApplication->installments->contains(
@@ -75,11 +94,12 @@ class MarkOverdueLoanApplications extends Command
             }
         }
 
-        $summary = "Installments marked overdue: {$installmentsMarked}. Applications marked overdue: {$applicationsMarkedOverdue}. Applications reverted to active: {$applicationsReverted}.";
+        $summary = "Installments marked overdue: {$installmentsMarked}. Penalties charged: {$penaltiesCharged}. Applications marked overdue: {$applicationsMarkedOverdue}. Applications reverted to active: {$applicationsReverted}.";
         $this->info($summary);
 
         $this->logActivity('UPDATE', 'LoanApplication', $summary, [
             'installments_marked'        => $installmentsMarked,
+            'penalties_charged'          => $penaltiesCharged,
             'applications_marked_overdue' => $applicationsMarkedOverdue,
             'applications_reverted'       => $applicationsReverted,
         ]);
