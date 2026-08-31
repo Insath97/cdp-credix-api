@@ -70,4 +70,13 @@ class LoanInstallment extends Model
     {
         return $this->hasMany(Payment::class);
     }
+
+    /**
+     * Recompute balance from amount_due + penalty_amount - amount_paid, floored
+     * at 0. Does not save() -- callers persist alongside their other changes.
+     */
+    public function recalculateBalance(): void
+    {
+        $this->balance = max(0, $this->amount_due + $this->penalty_amount - $this->amount_paid);
+    }
 }

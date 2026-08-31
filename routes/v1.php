@@ -43,6 +43,7 @@ use App\Http\Controllers\V1\NotificationController;
 use App\Http\Controllers\V1\PasswordChangeController;
 use App\Http\Controllers\V1\SettingController;
 use App\Http\Controllers\V1\AdminDashboardController;
+use App\Http\Controllers\V1\ReportController;
 use App\Http\Controllers\V1\Customer\CustomerDashboardController;
 use App\Http\Controllers\V1\Customer\CustomerProfileController;
 use App\Http\Controllers\V1\Customer\CustomerLoanController;
@@ -293,6 +294,22 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::get('recent-loan-applications', [AdminDashboardController::class, 'recentLoanApplications']);
 
         Route::get('targets', [AdminDashboardController::class, 'targetIndex']);
+    });
+
+    // Reports
+    Route::prefix('reports')->group(function () {
+        Route::get('branch-wise', [ReportController::class, 'branchWise']);
+        Route::get('branch-wise/export', [ReportController::class, 'branchWiseExport']);
+
+        Route::get('customer-wise', [ReportController::class, 'customerWise']);
+        Route::get('customer-wise/export', [ReportController::class, 'customerWiseExport']);
+
+        Route::get('loan-portfolio', [ReportController::class, 'loanPortfolio']);
+        Route::get('loan-portfolio/export', [ReportController::class, 'loanPortfolioExport']);
+
+        Route::get('recovery', [ReportController::class, 'recovery']);
+        Route::get('recovery/export', [ReportController::class, 'recoveryExport']);
+        Route::get('recovery/{id}', [ReportController::class, 'recoveryShow']);
     });
 
 });
