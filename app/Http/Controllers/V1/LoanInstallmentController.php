@@ -5,6 +5,7 @@ namespace App\Http\Controllers\V1;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use App\Models\LoanInstallment;
 use App\Models\LoanApplication;
 use App\Traits\ActivityLogTrait;
@@ -192,7 +193,23 @@ class LoanInstallmentController extends Controller implements HasMiddleware
             }
 
             $data = $request->validated();
-            $installment->update($data);
+
+            DB::transaction(function () use ($installment, $data) {
+                $penaltyBefore = $installment->penalty_amount;
+
+                $installment->fill($data);
+                $installment->recalculateBalance();
+                $installment->save();
+
+                $penaltyDelta = $installment->penalty_amount - $penaltyBefore;
+                if ($penaltyDelta != 0) {
+                    $loanApplication = $installment->loanApplication()->lockForUpdate()->first();
+                    if ($loanApplication && $loanApplication->outstanding_balance !== null) {
+                        $loanApplication->outstanding_balance = max(0, $loanApplication->outstanding_balance + $penaltyDelta);
+                        $loanApplication->save();
+                    }
+                }
+            });
 
             $this->logActivity('UPDATE', 'LoanInstallment', "Updated loan installment ID: {$installment->id}", $data);
 

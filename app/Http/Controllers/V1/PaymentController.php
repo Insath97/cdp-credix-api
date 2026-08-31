@@ -113,7 +113,7 @@ class PaymentController extends Controller implements HasMiddleware
                 if (!empty($data['loan_installment_id'])) {
                     $installment = LoanInstallment::lockForUpdate()->find($data['loan_installment_id']);
                     $installment->amount_paid += $payment->amount;
-                    $installment->balance = max(0, $installment->amount_due - $installment->amount_paid);
+                    $installment->recalculateBalance();
                     $installment->status = $installment->balance <= 0 ? 'paid' : 'partially_paid';
                     if ($installment->balance <= 0) {
                         $installment->paid_at = $payment->paid_at;
@@ -262,7 +262,7 @@ class PaymentController extends Controller implements HasMiddleware
                     $installment = LoanInstallment::lockForUpdate()->find($payment->loan_installment_id);
                     if ($installment) {
                         $installment->amount_paid = max(0, $installment->amount_paid - $payment->amount);
-                        $installment->balance = $installment->amount_due - $installment->amount_paid;
+                        $installment->recalculateBalance();
                         $installment->status = $installment->amount_paid <= 0
                             ? 'upcoming'
                             : ($installment->balance <= 0 ? 'paid' : 'partially_paid');

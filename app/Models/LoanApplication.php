@@ -27,6 +27,7 @@ class LoanApplication extends Model
         'term_months',
         'monthly_installment',
         'processing_fee',
+        'net_disbursement_amount',
         'monthly_repayment_date',
         'applied_by',
         'reviewed_by',
@@ -41,7 +42,6 @@ class LoanApplication extends Model
         'is_active',
         'status',
         'assigned_reviewer_id',
-        'current_approval_level',
     ];
 
     protected $casts = [
@@ -55,6 +55,7 @@ class LoanApplication extends Model
         'term_months'         => 'integer',
         'monthly_installment' => 'decimal:2',
         'processing_fee'      => 'decimal:2',
+        'net_disbursement_amount' => 'decimal:2',
         'applied_by'          => 'integer',
         'reviewed_by'         => 'integer',
         'approved_by'         => 'integer',
@@ -66,7 +67,6 @@ class LoanApplication extends Model
         'is_active'            => 'boolean',
         'status'                => LoanApplicationStatus::class,
         'assigned_reviewer_id'  => 'integer',
-        'current_approval_level' => 'integer',
     ];
 
     /**

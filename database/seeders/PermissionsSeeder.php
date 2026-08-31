@@ -266,6 +266,10 @@ class PermissionsSeeder extends Seeder
 
             /* Admin Dashboard Management */
             ['name' => 'Admin Dashboard Index', 'group_name' => 'Admin Dashboard Management Permissions'],
+
+            /* Report Management */
+            ['name' => 'Report Index', 'group_name' => 'Report Management Permissions'],
+            ['name' => 'Report Export', 'group_name' => 'Report Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {

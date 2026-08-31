@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Application;
 use App\Models\Branch;
 use App\Models\LoanApplication;
+use App\Models\LoanProduct;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationRequest;
 use App\Http\Requests\UpdateLoanApplicationRequest;
@@ -489,6 +490,17 @@ class LoanApplicationController extends Controller implements HasMiddleware
             $totalRepayment = round($approvedAmount + $interest, 2);
             $extra['monthly_installment'] = round($totalRepayment / $loanApplication->term_months, 2);
 
+            // Processing fee defaults to the product's configured rule unless the
+            // approver explicitly overrides it. It is deducted from the cash the
+            // customer actually receives at disbursement (net_disbursement_amount) —
+            // it never changes what they owe: interest, installments and
+            // outstanding_balance all stay based on the full approved_amount.
+            $processingFee = $request->filled('processing_fee')
+                ? round((float) $request->input('processing_fee'), 2)
+                : $this->calculateProcessingFee($loanApplication->loanProduct, $approvedAmount);
+            $extra['processing_fee'] = $processingFee;
+            $extra['net_disbursement_amount'] = max(0, round($approvedAmount - $processingFee, 2));
+
             $loanApplication = $this->workflowService->transition(
                 $loanApplication,
                 LoanApplicationStatus::Approved,
@@ -623,10 +635,13 @@ class LoanApplicationController extends Controller implements HasMiddleware
             ]);
 
             if ($loanApplication->customer && !empty($loanApplication->customer->phone_primary)) {
+                $netAmountLine = $loanApplication->net_disbursement_amount !== null
+                    ? "\nNet amount disbursed: {$loanApplication->net_disbursement_amount} (after processing fee of {$loanApplication->processing_fee})."
+                    : '';
                 $this->notificationService->sendSms(
                     'loan_disbursed',
                     $loanApplication->customer->phone_primary,
-                    'Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.',
+                    "Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.{$netAmountLine}",
                     ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
                 );
             }
@@ -731,5 +746,20 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'error'   => $th->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Derive the processing fee from the loan product's configured rule
+     * (fixed amount, or a percentage of the approved amount).
+     */
+    private function calculateProcessingFee(?LoanProduct $product, $approvedAmount): float
+    {
+        if (!$product || !$product->processing_fee_value) {
+            return 0.0;
+        }
+
+        return $product->processing_fee_type === 'percentage'
+            ? round($approvedAmount * $product->processing_fee_value / 100, 2)
+            : round((float) $product->processing_fee_value, 2);
     }
 }

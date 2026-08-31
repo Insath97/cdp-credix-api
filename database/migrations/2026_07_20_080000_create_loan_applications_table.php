@@ -28,7 +28,8 @@ return new class extends Migration
             $table->unsignedInteger('term_months');
             $table->decimal('monthly_installment', 15, 2)->nullable();
             $table->decimal('processing_fee', 10, 2)->nullable();
-            
+            $table->decimal('net_disbursement_amount', 15, 2)->nullable();
+
             $table->string('monthly_repayment_date')->nullable();
             
             $table->foreignId('applied_by')->nullable()->constrained('users')->nullOnDelete();
@@ -47,7 +48,6 @@ return new class extends Migration
 
             $table->string('status', 30)->default('pending')->index();
             $table->foreignId('assigned_reviewer_id')->nullable()->constrained('users')->nullOnDelete();
-            $table->unsignedTinyInteger('current_approval_level')->nullable();
 
             $table->boolean('is_active')->default(true);
 
