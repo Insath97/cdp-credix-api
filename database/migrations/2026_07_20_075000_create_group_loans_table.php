@@ -26,11 +26,10 @@ return new class extends Migration
             $table->decimal('requested_amount', 15, 2);
             $table->decimal('approved_amount', 15, 2)->nullable();
 
-            $table->decimal('interest_rate', 6, 3);
-            $table->string('interest_type')->default('flat');
+            $table->decimal('service_charge_percentage', 6, 3);
             $table->unsignedInteger('term_months');
 
-            $table->decimal('interest_amount', 15, 2)->nullable();
+            $table->decimal('service_charge_amount', 15, 2)->nullable();
             $table->decimal('total_repayment_amount', 15, 2)->nullable();
             $table->decimal('amount_per_member', 15, 2)->nullable();
 

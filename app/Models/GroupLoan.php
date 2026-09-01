@@ -23,10 +23,9 @@ class GroupLoan extends Model
         'competency',
         'requested_amount',
         'approved_amount',
-        'interest_rate',
-        'interest_type',
+        'service_charge_percentage',
         'term_months',
-        'interest_amount',
+        'service_charge_amount',
         'total_repayment_amount',
         'amount_per_member',
         'applied_by',
@@ -49,9 +48,9 @@ class GroupLoan extends Model
         'number_of_members'       => 'integer',
         'requested_amount'        => 'decimal:2',
         'approved_amount'         => 'decimal:2',
-        'interest_rate'           => 'decimal:3',
+        'service_charge_percentage' => 'decimal:3',
         'term_months'             => 'integer',
-        'interest_amount'         => 'decimal:2',
+        'service_charge_amount'   => 'decimal:2',
         'total_repayment_amount'  => 'decimal:2',
         'amount_per_member'       => 'decimal:2',
         'applied_by'              => 'integer',
@@ -78,7 +77,11 @@ class GroupLoan extends Model
             if (empty($groupLoan->group_loan_no)) {
                 $prefix = 'GRP-' . date('ym');
 
-                $lastGroupLoan = self::where('group_loan_no', 'like', $prefix . '%')
+                // withTrashed() so a soft-deleted row's number is never
+                // reissued to a new group loan (the unique constraint on
+                // group_loan_no would otherwise reject the collision).
+                $lastGroupLoan = self::withTrashed()
+                    ->where('group_loan_no', 'like', $prefix . '%')
                     ->orderBy('group_loan_no', 'desc')
                     ->first();
 
@@ -115,6 +118,16 @@ class GroupLoan extends Model
     public function memberLoanApplications(): HasMany
     {
         return $this->hasMany(LoanApplication::class, 'group_loan_id')->orderBy('group_member_no');
+    }
+
+    /**
+     * Relationship with each member's supplementary details (Member Name,
+     * NIC, Address, Phone Number, GN Division, DS Division). One per member,
+     * alongside their own loan application row.
+     */
+    public function members(): HasMany
+    {
+        return $this->hasMany(GroupLoanMember::class);
     }
 
     public function appliedByUser(): BelongsTo
