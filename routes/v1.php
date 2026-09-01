@@ -27,6 +27,7 @@ use App\Http\Controllers\V1\LoanTermController;
 use App\Http\Controllers\V1\LoanTypeController;
 use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LoanApplicationController;
+use App\Http\Controllers\V1\GroupLoanController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
 use App\Http\Controllers\V1\LoanApplicationFixedAssetController;
 use App\Http\Controllers\V1\LoanApplicationMovingAssetController;
@@ -227,6 +228,19 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });
     Route::apiResource('loan-applications', LoanApplicationController::class);
+
+    // Group Loans
+    Route::prefix('group-loans')->group(function () {
+        Route::patch('{id}/toggle-status', [GroupLoanController::class, 'toggleStatus']);
+        Route::patch('{id}/activate', [GroupLoanController::class, 'activate']);
+        Route::patch('{id}/deactivate', [GroupLoanController::class, 'deactivate']);
+        Route::patch('{id}/verify', [GroupLoanController::class, 'verify']);
+        Route::patch('{id}/approve', [GroupLoanController::class, 'approve']);
+        Route::patch('{id}/reject', [GroupLoanController::class, 'reject']);
+        Route::patch('{id}/disburse', [GroupLoanController::class, 'disburse']);
+        Route::patch('{id}/cancel', [GroupLoanController::class, 'cancel']);
+    });
+    Route::apiResource('group-loans', GroupLoanController::class);
 
     // Loan Application Guarantors
     Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);

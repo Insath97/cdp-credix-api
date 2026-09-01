@@ -128,6 +128,15 @@ return new class extends Migration
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'key' => 'group_loan_competency',
+                'value' => 'Entrepreneurship',
+                'type' => 'string',
+                'group' => 'group_loan',
+                'description' => "Required competency confirmation value that a Group Loan application's competency field must match.",
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 

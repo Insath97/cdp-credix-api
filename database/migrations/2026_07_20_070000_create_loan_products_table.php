@@ -31,6 +31,7 @@ return new class extends Migration
             $table->unsignedInteger('grace_period_days')->default(0);
             $table->boolean('is_active')->default(true);
             $table->boolean('is_islamic')->default(true);
+            $table->boolean('is_group_loan')->default(false);
             $table->softDeletes();
             $table->timestamps();
         });
