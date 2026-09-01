@@ -67,7 +67,12 @@ class CustomerDashboardController extends Controller
                 'total_outstanding_amount' => $activeLoans->sum('outstanding_balance'),
                 'loan_summary' => $loanSummary,
                 'next_installment' => $nextInstallment ? [
-                    'amount' => $nextInstallment->amount_due,
+                    // 'amount' reflects the live balance still owed (net of
+                    // any overpayment carried forward from a prior
+                    // installment) -- amount_due is kept alongside as the
+                    // originally scheduled figure for anything that needs it.
+                    'amount' => $nextInstallment->balance,
+                    'amount_due' => $nextInstallment->amount_due,
                     'due_date' => $nextInstallment->due_date,
                     'loan_application_id' => $nextInstallment->loan_application_id,
                     'application_no' => $nextInstallment->loanApplication?->application?->application_no,

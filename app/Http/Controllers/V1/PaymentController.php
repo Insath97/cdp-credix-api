@@ -110,15 +110,10 @@ class PaymentController extends Controller implements HasMiddleware
                 $payment->receipt_no = 'RCPT-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT);
                 $payment->save();
 
+                $unappliedExcess = 0.0;
                 if (!empty($data['loan_installment_id'])) {
                     $installment = LoanInstallment::lockForUpdate()->find($data['loan_installment_id']);
-                    $installment->amount_paid += $payment->amount;
-                    $installment->recalculateBalance();
-                    $installment->status = $installment->balance <= 0 ? 'paid' : 'partially_paid';
-                    if ($installment->balance <= 0) {
-                        $installment->paid_at = $payment->paid_at;
-                    }
-                    $installment->save();
+                    $unappliedExcess = $this->applyPaymentToInstallment($installment, $payment);
                 }
 
                 $loanApplication = $payment->loanApplication()->lockForUpdate()->first();
@@ -137,10 +132,10 @@ class PaymentController extends Controller implements HasMiddleware
                     }
                 }
 
-                return [$payment, $loanApplication, $loanClosed];
+                return [$payment, $loanApplication, $loanClosed, $unappliedExcess];
             });
 
-            [$payment, $loanApplication, $loanClosed] = $payment;
+            [$payment, $loanApplication, $loanClosed, $unappliedExcess] = $payment;
 
             $this->logActivity('CREATE', 'Payment', "Created payment ID: {$payment->id} ({$payment->receipt_no})", $data);
 
@@ -163,9 +158,10 @@ class PaymentController extends Controller implements HasMiddleware
             }
 
             return response()->json([
-                'status'  => 'success',
-                'message' => 'Payment recorded successfully',
-                'data'    => $payment->load(['loanApplication', 'loanInstallment', 'receivedBy']),
+                'status'          => 'success',
+                'message'         => 'Payment recorded successfully',
+                'data'            => $payment->load(['loanApplication', 'loanInstallment', 'receivedBy']),
+                'unapplied_excess' => $unappliedExcess > 0 ? $unappliedExcess : null,
             ], 201);
 
         } catch (\Throwable $th) {
@@ -258,10 +254,15 @@ class PaymentController extends Controller implements HasMiddleware
             }
 
             DB::transaction(function () use ($payment) {
+                $carriedForward = collect($payment->carry_forward_breakdown ?? [])->sum('amount');
+
                 if ($payment->loan_installment_id) {
                     $installment = LoanInstallment::lockForUpdate()->find($payment->loan_installment_id);
                     if ($installment) {
-                        $installment->amount_paid = max(0, $installment->amount_paid - $payment->amount);
+                        // Only reverse what actually landed on this installment --
+                        // the rest was carried forward and is reversed separately below.
+                        $appliedHere = $payment->amount - $carriedForward;
+                        $installment->amount_paid = max(0, $installment->amount_paid - $appliedHere);
                         $installment->recalculateBalance();
                         $installment->status = $installment->amount_paid <= 0
                             ? 'upcoming'
@@ -271,6 +272,22 @@ class PaymentController extends Controller implements HasMiddleware
                         }
                         $installment->save();
                     }
+                }
+
+                foreach ($payment->carry_forward_breakdown ?? [] as $entry) {
+                    $target = LoanInstallment::lockForUpdate()->find($entry['loan_installment_id']);
+                    if (!$target) {
+                        continue;
+                    }
+                    $target->amount_paid = max(0, $target->amount_paid - $entry['amount']);
+                    $target->recalculateBalance();
+                    $target->status = $target->amount_paid <= 0
+                        ? 'upcoming'
+                        : ($target->balance <= 0 ? 'paid' : 'partially_paid');
+                    if ($target->status !== 'paid') {
+                        $target->paid_at = null;
+                    }
+                    $target->save();
                 }
 
                 $loanApplication = $payment->loanApplication()->lockForUpdate()->first();
@@ -299,5 +316,96 @@ class PaymentController extends Controller implements HasMiddleware
                 'error'   => $th->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Apply a payment to its targeted installment, capping the amount
+     * actually credited there at what the installment still owed, and
+     * carrying any excess forward onto the loan's subsequent installments.
+     *
+     * @return float Any excess that could not be applied anywhere (the
+     *                customer overpaid beyond the entire remaining loan).
+     */
+    private function applyPaymentToInstallment(LoanInstallment $installment, Payment $payment): float
+    {
+        $incoming = (float) $payment->amount;
+        $preBalance = (float) $installment->balance;
+
+        $appliedHere = min($incoming, $preBalance);
+        $excess = round($incoming - $appliedHere, 2);
+
+        $installment->amount_paid += $appliedHere;
+        $installment->recalculateBalance();
+        $installment->status = $installment->balance <= 0 ? 'paid' : 'partially_paid';
+        if ($installment->balance <= 0) {
+            $installment->paid_at = $payment->paid_at;
+        }
+        $installment->save();
+
+        if ($excess > 0) {
+            return $this->carryForwardExcess($installment, $payment, $excess);
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Walk forward through the loan's remaining unpaid/live installments in
+     * installment_no order, applying as much of the excess as each one's own
+     * (pre-existing) balance can absorb, until the excess is exhausted or
+     * there are no more eligible installments. Records what was carried
+     * forward on the Payment row itself, for audit and reversal purposes.
+     *
+     * @return float Any excess that could not be applied anywhere.
+     */
+    private function carryForwardExcess(LoanInstallment $fromInstallment, Payment $payment, float $excess): float
+    {
+        $breakdown = [];
+        $notes = [];
+
+        $candidates = LoanInstallment::where('loan_application_id', $fromInstallment->loan_application_id)
+            ->where('installment_no', '>', $fromInstallment->installment_no)
+            ->whereNotIn('status', ['paid', 'waived', 'revised'])
+            ->orderBy('installment_no')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($candidates as $next) {
+            if ($excess <= 0) {
+                break;
+            }
+
+            $portion = min($excess, (float) $next->balance);
+            if ($portion <= 0) {
+                continue;
+            }
+
+            $next->amount_paid += $portion;
+            $next->recalculateBalance();
+            $next->status = $next->balance <= 0 ? 'paid' : 'partially_paid';
+            if ($next->balance <= 0) {
+                $next->paid_at = $payment->paid_at;
+            }
+            $next->save();
+
+            $breakdown[] = ['loan_installment_id' => $next->id, 'installment_no' => $next->installment_no, 'amount' => $portion];
+            $notes[] = "{$portion} carried forward to installment #{$next->installment_no}";
+            $excess = round($excess - $portion, 2);
+        }
+
+        if (!empty($breakdown)) {
+            $payment->carry_forward_breakdown = $breakdown;
+            $payment->remarks = trim(($payment->remarks ? $payment->remarks . ' ' : '') . 'Includes ' . implode(', ', $notes) . '.');
+        }
+
+        if ($excess > 0) {
+            $payment->remarks = trim(($payment->remarks ? $payment->remarks . ' ' : '') . "Overpayment of {$excess} could not be applied to any installment.");
+        }
+
+        if (!empty($breakdown) || $excess > 0) {
+            $payment->save();
+        }
+
+        return $excess;
     }
 }
