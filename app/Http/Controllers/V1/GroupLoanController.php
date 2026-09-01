@@ -19,14 +19,18 @@ use Illuminate\Routing\Controllers\Middleware;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Services\GroupLoanWorkflowService;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\Validator;
+use Spatie\Permission\Models\Role;
 
 class GroupLoanController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
 
-    public function __construct(protected GroupLoanWorkflowService $workflowService)
-    {
+    public function __construct(
+        protected GroupLoanWorkflowService $workflowService,
+        protected NotificationService $notificationService,
+    ) {
     }
 
     public static function middleware(): array
@@ -193,6 +197,21 @@ class GroupLoanController extends Controller implements HasMiddleware
             });
 
             $this->logActivity('CREATE', 'GroupLoan', "Created group loan ID: {$groupLoan->id}", $data);
+
+            $staffRole = Role::where('name', config('notifications.staff_role'))->first();
+            if ($staffRole) {
+                foreach ($staffRole->users as $staffUser) {
+                    $staffPhone = $staffUser->employee?->phone_primary;
+                    if (!empty($staffPhone)) {
+                        $this->notificationService->sendSms(
+                            'group_loan_submitted',
+                            $staffPhone,
+                            'CDP Crdix: New group loan application pending for review.',
+                            ['user_id' => $staffUser->id]
+                        );
+                    }
+                }
+            }
 
             return response()->json([
                 'status'  => 'success',
@@ -546,10 +565,22 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $groupLoan = $this->workflowService->reject($groupLoan, $request->input('rejection_reason'), Auth::id());
+            $groupLoan->load('members');
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} rejected", [
                 'group_loan_id' => $groupLoan->id,
             ]);
+
+            foreach ($groupLoan->members as $member) {
+                if (!empty($member->phone_number)) {
+                    $this->notificationService->sendSms(
+                        'group_loan_rejected',
+                        $member->phone_number,
+                        "Your group loan application has been rejected.\nReason: {$groupLoan->rejection_reason}",
+                        ['loan_application_id' => $member->loan_application_id, 'customer_id' => $member->customer_id]
+                    );
+                }
+            }
 
             return response()->json([
                 'status'  => 'success',
@@ -587,10 +618,22 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $groupLoan = $this->workflowService->disburse($groupLoan, Auth::id());
+            $groupLoan->load('members');
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} disbursed", [
                 'group_loan_id' => $groupLoan->id,
             ]);
+
+            foreach ($groupLoan->members as $member) {
+                if (!empty($member->phone_number)) {
+                    $this->notificationService->sendSms(
+                        'group_loan_disbursed',
+                        $member->phone_number,
+                        'Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.',
+                        ['loan_application_id' => $member->loan_application_id, 'customer_id' => $member->customer_id]
+                    );
+                }
+            }
 
             return response()->json([
                 'status'  => 'success',

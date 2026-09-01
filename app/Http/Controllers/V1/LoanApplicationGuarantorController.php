@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\LoanApplicationGuarantor;
+use App\Enums\LoanApplicationStatus;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationGuarantorRequest;
 use App\Http\Requests\UpdateLoanApplicationGuarantorRequest;
@@ -179,6 +180,18 @@ class LoanApplicationGuarantorController extends Controller implements HasMiddle
                     'status'  => 'error',
                     'message' => 'Loan application guarantor not found',
                 ], 404);
+            }
+
+            $loanApplication = $record->loanApplication;
+
+            if ($loanApplication
+                && $loanApplication->group_loan_id === null
+                && $loanApplication->status !== LoanApplicationStatus::Submitted
+                && $loanApplication->loanApplicationGuarantors()->count() <= 1) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This is the last remaining guarantor and cannot be removed once the loan application has passed verification.',
+                ], 422);
             }
 
             $record->delete();

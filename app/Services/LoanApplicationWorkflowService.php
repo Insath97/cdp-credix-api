@@ -35,6 +35,16 @@ class LoanApplicationWorkflowService
             );
         }
 
+        // A guarantor is mandatory for Individual Loan before it can be
+        // verified, but stays optional for Group Loan members.
+        if ($to === LoanApplicationStatus::Verified
+            && $loanApplication->group_loan_id === null
+            && $loanApplication->loanApplicationGuarantors()->count() === 0) {
+            throw new InvalidLoanApplicationTransitionException(
+                'At least one guarantor is required before this loan application can be verified.'
+            );
+        }
+
         return DB::transaction(function () use ($loanApplication, $from, $to, $actorId, $remarks, $extra) {
             $loanApplication->update(array_merge($extra, [
                 'status' => $to,

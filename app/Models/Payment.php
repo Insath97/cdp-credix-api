@@ -18,15 +18,17 @@ class Payment extends Model
         'payment_method',
         'received_by',
         'remarks',
+        'carry_forward_breakdown',
         'paid_at',
     ];
 
     protected $casts = [
-        'loan_application_id'  => 'integer',
-        'loan_installment_id'  => 'integer',
-        'amount'                => 'decimal:2',
-        'received_by'           => 'integer',
-        'paid_at'               => 'datetime',
+        'loan_application_id'      => 'integer',
+        'loan_installment_id'      => 'integer',
+        'amount'                    => 'decimal:2',
+        'received_by'               => 'integer',
+        'carry_forward_breakdown'   => 'array',
+        'paid_at'                   => 'datetime',
     ];
 
     /**
