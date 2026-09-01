@@ -36,9 +36,10 @@ class CreateGroupLoanRequest extends FormRequest
             'group_name'        => 'required|string|max:255',
             'number_of_members' => 'required|integer|min:2',
             'competency'        => ['required', 'string', function ($attribute, $value, $fail) {
-                $required = Setting::get('group_loan_competency');
-                if ($required !== null && trim(mb_strtolower($value)) !== trim(mb_strtolower($required))) {
-                    $fail("The competency confirmation does not match the configured requirement ('{$required}').");
+                $allowed = Setting::get('group_loan_competency', []);
+                $normalized = array_map(fn ($c) => trim(mb_strtolower($c)), $allowed);
+                if (!empty($allowed) && !in_array(trim(mb_strtolower($value)), $normalized, true)) {
+                    $fail("The competency must be one of the configured options: " . implode(', ', $allowed) . '.');
                 }
             }],
             'term_months' => 'required|integer|min:1',

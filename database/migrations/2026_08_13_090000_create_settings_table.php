@@ -130,10 +130,12 @@ return new class extends Migration
             ],
             [
                 'key' => 'group_loan_competency',
-                'value' => 'Entrepreneurship',
-                'type' => 'string',
+                'value' => json_encode([
+                    'Entrepreneurship',
+                ]),
+                'type' => 'json',
                 'group' => 'group_loan',
-                'description' => "Required competency confirmation value that a Group Loan application's competency field must match.",
+                'description' => "Competency options offered for a Group Loan application's competency field — the submitted value must match one of these.",
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
