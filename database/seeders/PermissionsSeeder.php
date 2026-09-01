@@ -200,6 +200,11 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Group Loan Disburse', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Cancel', 'group_name' => 'Group Loan Management Permissions'],
 
+            /* Group Loan Item Management */
+            ['name' => 'Group Loan Item Index', 'group_name' => 'Group Loan Item Management Permissions'],
+            ['name' => 'Group Loan Item Create', 'group_name' => 'Group Loan Item Management Permissions'],
+            ['name' => 'Group Loan Item Delete', 'group_name' => 'Group Loan Item Management Permissions'],
+
             /* Loan Revision Management */
             ['name' => 'Loan Revision Index', 'group_name' => 'Loan Revision Management Permissions'],
             ['name' => 'Loan Revision Create', 'group_name' => 'Loan Revision Management Permissions'],

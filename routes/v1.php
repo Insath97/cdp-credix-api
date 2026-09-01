@@ -28,6 +28,7 @@ use App\Http\Controllers\V1\LoanTypeController;
 use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LoanApplicationController;
 use App\Http\Controllers\V1\GroupLoanController;
+use App\Http\Controllers\V1\GroupLoanItemController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
 use App\Http\Controllers\V1\LoanApplicationFixedAssetController;
 use App\Http\Controllers\V1\LoanApplicationMovingAssetController;
@@ -241,6 +242,9 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/cancel', [GroupLoanController::class, 'cancel']);
     });
     Route::apiResource('group-loans', GroupLoanController::class);
+
+    // Group Loan Items
+    Route::apiResource('group-loan-items', GroupLoanItemController::class)->only(['index', 'store', 'show', 'destroy']);
 
     // Loan Application Guarantors
     Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);
