@@ -50,7 +50,7 @@ class CreateGroupLoanRequest extends FormRequest
             'items.*.unit_price' => 'required|numeric|min:0',
 
             'members'                    => ['required', 'array', new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
-            'members.*.customer_id'      => 'required|integer|exists:customers,id|distinct',
+            'members.*.customer_id'      => 'nullable|integer|exists:customers,id',
             'members.*.member_name'      => 'required|string|max:255',
             'members.*.nic'              => 'required|string|max:50',
             'members.*.address'          => 'required|string|max:500',

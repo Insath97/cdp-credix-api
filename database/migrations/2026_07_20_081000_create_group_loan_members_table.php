@@ -16,7 +16,7 @@ return new class extends Migration
 
             $table->foreignId('group_loan_id')->constrained('group_loans')->cascadeOnDelete();
             $table->foreignId('loan_application_id')->unique()->constrained('loan_applications')->cascadeOnDelete();
-            $table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
 
             $table->string('member_name');
             $table->string('nic');

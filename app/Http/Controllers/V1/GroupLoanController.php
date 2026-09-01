@@ -164,7 +164,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                     // naturally computes the service charge amount.
                     $memberLoanApplication = $groupLoan->memberLoanApplications()->create([
                         'application_id'    => $application->id,
-                        'customer_id'       => $member['customer_id'],
+                        'customer_id'       => $member['customer_id'] ?? null,
                         'loan_product_id'   => $data['loan_product_id'],
                         'branch_id'         => $data['branch_id'] ?? null,
                         'group_member_no'   => $index + 1,
@@ -179,7 +179,7 @@ class GroupLoanController extends Controller implements HasMiddleware
 
                     $groupLoan->members()->create([
                         'loan_application_id' => $memberLoanApplication->id,
-                        'customer_id'         => $member['customer_id'],
+                        'customer_id'         => $member['customer_id'] ?? null,
                         'member_name'         => $member['member_name'],
                         'nic'                 => $member['nic'],
                         'address'             => $member['address'],
