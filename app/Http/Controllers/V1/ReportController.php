@@ -40,6 +40,27 @@ class ReportController extends Controller implements HasMiddleware
         return [$startDate, $endDate];
     }
 
+    /**
+     * Human-readable summary of the filters applied, shown on PDF exports.
+     */
+    protected function filterSummary(Request $request, Carbon $startDate, Carbon $endDate): string
+    {
+        $parts = ["{$startDate->toDateString()} to {$endDate->toDateString()}"];
+
+        if ($request->filled('branch_id')) {
+            $branchName = Branch::find($request->branch_id)?->name ?? "#{$request->branch_id}";
+            $parts[] = "Branch: {$branchName}";
+        }
+        if ($request->filled('search')) {
+            $parts[] = "Search: \"{$request->search}\"";
+        }
+        if ($request->filled('status')) {
+            $parts[] = "Status: {$request->status}";
+        }
+
+        return implode('  |  ', $parts);
+    }
+
     // -------------------------------------------------------------------
     // Branch-wise report
     // -------------------------------------------------------------------
@@ -65,6 +86,36 @@ class ReportController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to retrieve branch-wise report',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    public function branchWiseExport(Request $request)
+    {
+        try {
+            [$startDate, $endDate] = $this->resolveDateRange($request);
+            $format = $request->get('format', 'pdf');
+
+            $rows = $this->branchWiseBaseQuery($request)->get()
+                ->map(fn ($branch) => $this->shapeBranchRow($branch, $startDate, $endDate));
+
+            $this->logActivity('Export', 'Report', "Branch-wise report exported ({$format})", ['user_id' => Auth::id()]);
+
+            if ($format === 'xlsx') {
+                return Excel::download(new BranchWiseReportExport($rows), 'branch-wise-report.xlsx');
+            }
+
+            return Pdf::loadView('reports.branch-wise', [
+                'title'   => 'Branch-wise Report',
+                'filters' => $this->filterSummary($request, $startDate, $endDate),
+                'rows'    => $rows,
+            ])->download('branch-wise-report.pdf');
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to export branch-wise report',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
@@ -119,6 +170,36 @@ class ReportController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to retrieve customer-wise report',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    public function customerWiseExport(Request $request)
+    {
+        try {
+            [$startDate, $endDate] = $this->resolveDateRange($request);
+            $format = $request->get('format', 'pdf');
+
+            $rows = $this->customerWiseBaseQuery($request)->get()
+                ->map(fn ($customer) => $this->shapeCustomerRow($customer, $startDate, $endDate));
+
+            $this->logActivity('Export', 'Report', "Customer-wise report exported ({$format})", ['user_id' => Auth::id()]);
+
+            if ($format === 'xlsx') {
+                return Excel::download(new CustomerWiseReportExport($rows), 'customer-wise-report.xlsx');
+            }
+
+            return Pdf::loadView('reports.customer-wise', [
+                'title'   => 'Customer-wise Report',
+                'filters' => $this->filterSummary($request, $startDate, $endDate),
+                'rows'    => $rows,
+            ])->download('customer-wise-report.pdf');
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to export customer-wise report',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
