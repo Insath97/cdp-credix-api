@@ -23,6 +23,7 @@ return new class extends Migration
 
             $table->foreignId('received_by')->nullable()->constrained('users')->nullOnDelete();
             $table->text('remarks')->nullable();
+            $table->json('carry_forward_breakdown')->nullable();
 
             $table->timestamp('paid_at')->useCurrent();
             $table->timestamps();
