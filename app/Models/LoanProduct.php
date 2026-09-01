@@ -31,6 +31,7 @@ class LoanProduct extends Model
         'grace_period_days',
         'is_active',
         'is_islamic',
+        'is_group_loan',
     ];
 
     protected $casts = [
@@ -46,6 +47,7 @@ class LoanProduct extends Model
         'grace_period_days'    => 'integer',
         'is_active'            => 'boolean',
         'is_islamic'           => 'boolean',
+        'is_group_loan'        => 'boolean',
     ];
 
     /**
@@ -62,6 +64,14 @@ class LoanProduct extends Model
     public function scopeIslamic(Builder $query): Builder
     {
         return $query->where('is_islamic', true);
+    }
+
+    /**
+     * Scope for products designated as usable for a Group Loan.
+     */
+    public function scopeGroupLoanEligible(Builder $query): Builder
+    {
+        return $query->where('is_group_loan', true);
     }
 
     public function loanApplications(): HasMany

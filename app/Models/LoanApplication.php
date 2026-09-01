@@ -20,6 +20,8 @@ class LoanApplication extends Model
         'customer_id',
         'loan_product_id',
         'branch_id',
+        'group_loan_id',
+        'group_member_no',
         'requested_amount',
         'approved_amount',
         'interest_rate',
@@ -49,6 +51,8 @@ class LoanApplication extends Model
         'customer_id'         => 'integer',
         'loan_product_id'     => 'integer',
         'branch_id'           => 'integer',
+        'group_loan_id'       => 'integer',
+        'group_member_no'     => 'integer',
         'requested_amount'    => 'decimal:2',
         'approved_amount'     => 'decimal:2',
         'interest_rate'        => 'decimal:3',
@@ -99,6 +103,14 @@ class LoanApplication extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * Relationship with the Group Loan this application is a member of, if any.
+     */
+    public function groupLoan(): BelongsTo
+    {
+        return $this->belongsTo(GroupLoan::class);
     }
 
     /**

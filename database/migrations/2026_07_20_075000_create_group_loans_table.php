@@ -11,46 +11,43 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('loan_applications', function (Blueprint $table) {
+        Schema::create('group_loans', function (Blueprint $table) {
             $table->id();
-            
-            $table->foreignId('application_id')->constrained('applications')->cascadeOnDelete();
-            $table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();
+
+            $table->string('group_loan_no')->unique();
+
             $table->foreignId('loan_product_id')->constrained('loan_products')->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained('branches')->nullOnDelete();
-            $table->foreignId('group_loan_id')->nullable()->constrained('group_loans')->nullOnDelete();
-            $table->unsignedInteger('group_member_no')->nullable();
+
+            $table->string('group_name');
+            $table->unsignedInteger('number_of_members');
+            $table->string('competency');
 
             $table->decimal('requested_amount', 15, 2);
             $table->decimal('approved_amount', 15, 2)->nullable();
-            
+
             $table->decimal('interest_rate', 6, 3);
             $table->string('interest_type')->default('flat');
-            
             $table->unsignedInteger('term_months');
-            $table->decimal('monthly_installment', 15, 2)->nullable();
-            $table->decimal('processing_fee', 10, 2)->nullable();
-            $table->decimal('net_disbursement_amount', 15, 2)->nullable();
 
-            $table->string('monthly_repayment_date')->nullable();
-            
+            $table->decimal('interest_amount', 15, 2)->nullable();
+            $table->decimal('total_repayment_amount', 15, 2)->nullable();
+            $table->decimal('amount_per_member', 15, 2)->nullable();
+
             $table->foreignId('applied_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('reviewed_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('approved_by')->nullable()->constrained('users')->nullOnDelete();
-            
+            $table->foreignId('assigned_reviewer_id')->nullable()->constrained('users')->nullOnDelete();
+
             $table->text('approval_remarks')->nullable();
             $table->text('rejection_reason')->nullable();
-            
+
             $table->timestamp('applied_at')->useCurrent();
             $table->timestamp('reviewed_at')->nullable();
             $table->timestamp('approved_at')->nullable();
             $table->timestamp('disbursed_at')->nullable();
-            
-            $table->decimal('outstanding_balance', 15, 2)->nullable();
 
-            $table->string('status', 30)->default('pending')->index();
-            $table->foreignId('assigned_reviewer_id')->nullable()->constrained('users')->nullOnDelete();
-
+            $table->string('status', 30)->default('submitted')->index();
             $table->boolean('is_active')->default(true);
 
             $table->softDeletes();
@@ -65,6 +62,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('loan_applications');
+        Schema::dropIfExists('group_loans');
     }
 };
