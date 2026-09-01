@@ -24,8 +24,6 @@ class UpdateGroupLoanRequest extends FormRequest
         return [
             'branch_id'      => 'nullable|integer|exists:branches,id',
             'group_name'     => 'nullable|string|max:255',
-            'interest_rate'  => 'nullable|numeric|min:0|max:999.999',
-            'interest_type'  => 'nullable|string|max:255',
             'term_months'    => 'nullable|integer|min:1',
             'is_active'      => 'nullable|boolean',
         ];

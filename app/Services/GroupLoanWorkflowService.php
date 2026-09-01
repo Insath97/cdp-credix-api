@@ -77,11 +77,13 @@ class GroupLoanWorkflowService
     /**
      * Approve the group loan: split the approved principal evenly across
      * members (last member absorbs the rounding remainder), then let each
-     * member's own copied-down interest_rate/term_months independently
-     * derive their own interest/monthly_installment via the exact same
-     * formula LoanApplicationController::approve() already uses. Splitting
-     * the principal (not the total repayment) is what avoids double-applying
-     * interest.
+     * member's own copied-down interest_rate (which, for a group-loan
+     * member row, holds the service charge percentage snapshotted at
+     * submission) and term_months independently derive their own service
+     * charge/monthly_installment via the exact same formula
+     * LoanApplicationController::approve() already uses. Splitting the
+     * principal (not the total repayment) is what avoids double-applying
+     * the service charge.
      */
     public function approve(GroupLoan $groupLoan, ?float $approvedAmountOverride, int $actorId, ?string $remarks): GroupLoan
     {
@@ -90,15 +92,15 @@ class GroupLoanWorkflowService
 
             $approvedAmount = $approvedAmountOverride ?? (float) $groupLoan->requested_amount;
 
-            $interest = round($approvedAmount * $groupLoan->interest_rate / 100, 2);
-            $totalRepayment = round($approvedAmount + $interest, 2);
+            $serviceCharge = round($approvedAmount * $groupLoan->service_charge_percentage / 100, 2);
+            $totalRepayment = round($approvedAmount + $serviceCharge, 2);
             $amountPerMember = round($totalRepayment / $groupLoan->number_of_members, 2);
 
             $groupLoan = $this->transition($groupLoan, LoanApplicationStatus::Approved, $actorId, $remarks, [
                 'approved_by'            => $actorId,
                 'approved_at'            => now(),
                 'approved_amount'        => $approvedAmount,
-                'interest_amount'        => $interest,
+                'service_charge_amount'  => $serviceCharge,
                 'total_repayment_amount' => $totalRepayment,
                 'amount_per_member'      => $amountPerMember,
                 'approval_remarks'       => $remarks,
@@ -116,8 +118,8 @@ class GroupLoanWorkflowService
                     : $principalPerMember;
                 $runningPrincipal += $memberPrincipal;
 
-                $memberInterest = round($memberPrincipal * $member->interest_rate / 100, 2);
-                $memberTotalRepayment = round($memberPrincipal + $memberInterest, 2);
+                $memberServiceCharge = round($memberPrincipal * $member->interest_rate / 100, 2);
+                $memberTotalRepayment = round($memberPrincipal + $memberServiceCharge, 2);
                 $memberMonthlyInstallment = round($memberTotalRepayment / $member->term_months, 2);
 
                 $this->loanApplicationWorkflowService->transition(

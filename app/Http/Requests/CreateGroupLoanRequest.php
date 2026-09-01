@@ -41,17 +41,21 @@ class CreateGroupLoanRequest extends FormRequest
                     $fail("The competency confirmation does not match the configured requirement ('{$required}').");
                 }
             }],
-            'interest_rate' => 'required|numeric|min:0|max:999.999',
-            'interest_type' => 'nullable|string|max:255',
-            'term_months'   => 'required|integer|min:1',
+            'term_months' => 'required|integer|min:1',
 
             'items'              => 'required|array|min:1',
             'items.*.item_name'  => 'required|string|max:255',
             'items.*.quantity'   => 'required|numeric|min:0.01',
             'items.*.unit_price' => 'required|numeric|min:0',
 
-            'members'               => ['required', 'array', new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
-            'members.*.customer_id' => 'required|integer|exists:customers,id|distinct',
+            'members'                    => ['required', 'array', new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
+            'members.*.customer_id'      => 'required|integer|exists:customers,id|distinct',
+            'members.*.member_name'      => 'required|string|max:255',
+            'members.*.nic'              => 'required|string|max:50',
+            'members.*.address'          => 'required|string|max:500',
+            'members.*.phone_number'     => 'required|string|max:20',
+            'members.*.gn_division'      => 'required|string|max:255',
+            'members.*.ds_division'      => 'required|string|max:255',
         ];
     }
 

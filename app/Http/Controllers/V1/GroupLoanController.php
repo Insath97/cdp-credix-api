@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Application;
 use App\Models\Branch;
 use App\Models\GroupLoan;
+use App\Models\Setting;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateGroupLoanRequest;
 use App\Http\Requests\UpdateGroupLoanRequest;
@@ -110,19 +111,23 @@ class GroupLoanController extends Controller implements HasMiddleware
                 // requested items — never trusted from the client.
                 $requestedAmount = round($items->sum('line_total'), 2);
 
+                // Group Loan uses a service charge in place of interest,
+                // snapshotted from System Settings at submission time rather
+                // than taken as an officer-entered figure.
+                $serviceChargePercentage = (float) Setting::get('group_loan_service_charge_percentage', 0);
+
                 $groupLoan = GroupLoan::create([
-                    'loan_product_id'    => $data['loan_product_id'],
-                    'branch_id'          => $data['branch_id'] ?? null,
-                    'group_name'         => $data['group_name'],
-                    'number_of_members'  => $data['number_of_members'],
-                    'competency'         => $data['competency'],
-                    'requested_amount'   => $requestedAmount,
-                    'interest_rate'      => $data['interest_rate'],
-                    'interest_type'      => $data['interest_type'] ?? 'flat',
-                    'term_months'        => $data['term_months'],
-                    'applied_by'         => Auth::id(),
-                    'applied_at'         => now(),
-                    'status'             => LoanApplicationStatus::Submitted,
+                    'loan_product_id'           => $data['loan_product_id'],
+                    'branch_id'                 => $data['branch_id'] ?? null,
+                    'group_name'                => $data['group_name'],
+                    'number_of_members'         => $data['number_of_members'],
+                    'competency'                => $data['competency'],
+                    'requested_amount'          => $requestedAmount,
+                    'service_charge_percentage' => $serviceChargePercentage,
+                    'term_months'               => $data['term_months'],
+                    'applied_by'                => Auth::id(),
+                    'applied_at'                => now(),
+                    'status'                    => LoanApplicationStatus::Submitted,
                 ]);
 
                 foreach ($items as $item) {
@@ -151,19 +156,36 @@ class GroupLoanController extends Controller implements HasMiddleware
                         'repayment_period_months'  => $data['term_months'],
                     ]);
 
-                    $groupLoan->memberLoanApplications()->create([
+                    // loan_applications.interest_rate is a shared, required
+                    // column also used by Individual Loan — for a group-loan
+                    // member row it holds the service charge percentage, so
+                    // the existing per-loan interest formula (reused
+                    // unmodified in GroupLoanWorkflowService::approve())
+                    // naturally computes the service charge amount.
+                    $memberLoanApplication = $groupLoan->memberLoanApplications()->create([
                         'application_id'    => $application->id,
                         'customer_id'       => $member['customer_id'],
                         'loan_product_id'   => $data['loan_product_id'],
                         'branch_id'         => $data['branch_id'] ?? null,
                         'group_member_no'   => $index + 1,
                         'requested_amount'  => $memberRequestedAmount,
-                        'interest_rate'     => $data['interest_rate'],
-                        'interest_type'     => $data['interest_type'] ?? 'flat',
+                        'interest_rate'     => $serviceChargePercentage,
+                        'interest_type'     => 'flat',
                         'term_months'       => $data['term_months'],
                         'applied_by'        => Auth::id(),
                         'applied_at'        => now(),
                         'status'            => LoanApplicationStatus::Submitted,
+                    ]);
+
+                    $groupLoan->members()->create([
+                        'loan_application_id' => $memberLoanApplication->id,
+                        'customer_id'         => $member['customer_id'],
+                        'member_name'         => $member['member_name'],
+                        'nic'                 => $member['nic'],
+                        'address'             => $member['address'],
+                        'phone_number'        => $member['phone_number'],
+                        'gn_division'         => $member['gn_division'],
+                        'ds_division'         => $member['ds_division'],
                     ]);
                 }
 
@@ -180,6 +202,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'branch',
                     'items',
                     'memberLoanApplications.customer',
+                    'members',
                     'appliedByUser',
                 ]),
             ], 201);
@@ -203,6 +226,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                 'loanProduct',
                 'branch',
                 'items',
+                'members',
                 'memberLoanApplications.customer',
                 'memberLoanApplications.installments',
                 'memberLoanApplications.statusHistory.changedBy',
