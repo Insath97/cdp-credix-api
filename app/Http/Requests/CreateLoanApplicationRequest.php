@@ -26,6 +26,8 @@ class CreateLoanApplicationRequest extends FormRequest
         return [
             'application_id'         => 'nullable|integer|exists:applications,id',
             'customer_id'            => 'required|integer|exists:customers,id',
+            'joint_customer_ids'     => 'nullable|array',
+            'joint_customer_ids.*'   => ['integer', 'distinct', 'exists:customers,id', Rule::notIn([$this->input('customer_id')])],
             'loan_product_id'        => 'required|integer|exists:loan_products,id',
             'branch_id'              => 'nullable|integer|exists:branches,id',
             'requested_amount'       => 'required|numeric|min:0',

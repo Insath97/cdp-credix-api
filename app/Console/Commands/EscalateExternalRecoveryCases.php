@@ -91,13 +91,27 @@ class EscalateExternalRecoveryCases extends Command
             $externalCase->case_no = 'RC-' . str_pad($externalCase->id, 6, '0', STR_PAD_LEFT);
             $externalCase->save();
 
-            if (!empty($loanApplication->customer?->phone_primary)) {
-                $notificationService->sendSms(
-                    'recovery_case_escalated_external_customer',
-                    $loanApplication->customer->phone_primary,
-                    "CDP Credix: Your overdue loan account (Loan Application ID: {$loanApplication->id}) has been referred to external recovery. Please settle your outstanding balance immediately.",
-                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
-                );
+            $externalEscalationMessage = "CDP Credix: Your overdue loan account (Loan Application ID: {$loanApplication->id}) has been referred to external recovery. Please settle your outstanding balance immediately.";
+
+            foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                if (!empty($notifyCustomer->phone_primary)) {
+                    $notificationService->sendSms(
+                        'recovery_case_escalated_external_customer',
+                        $notifyCustomer->phone_primary,
+                        $externalEscalationMessage,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+
+                if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                    $notificationService->sendEmail(
+                        'recovery_case_escalated_external_customer',
+                        $notifyCustomer->email,
+                        'Recovery Case Escalated',
+                        $externalEscalationMessage,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
             }
 
             $escalated++;

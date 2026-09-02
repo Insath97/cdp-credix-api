@@ -120,16 +120,6 @@ class GroupLoan extends Model
         return $this->hasMany(LoanApplication::class, 'group_loan_id')->orderBy('group_member_no');
     }
 
-    /**
-     * Relationship with each member's supplementary details (Member Name,
-     * NIC, Address, Phone Number, GN Division, DS Division). One per member,
-     * alongside their own loan application row.
-     */
-    public function members(): HasMany
-    {
-        return $this->hasMany(GroupLoanMember::class);
-    }
-
     public function appliedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'applied_by');

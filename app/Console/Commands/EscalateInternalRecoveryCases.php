@@ -76,13 +76,27 @@ class EscalateInternalRecoveryCases extends Command
             $case->case_no = 'RC-' . str_pad($case->id, 6, '0', STR_PAD_LEFT);
             $case->save();
 
-            if (!empty($loanApplication->customer?->phone_primary)) {
-                $notificationService->sendSms(
-                    'recovery_case_opened_customer',
-                    $loanApplication->customer->phone_primary,
-                    "CDP Credix: Your loan account (Loan Application ID: {$loanApplication->id}) has become overdue. Please contact us immediately to avoid further recovery actions.",
-                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
-                );
+            $internalEscalationMessage = "CDP Credix: Your loan account (Loan Application ID: {$loanApplication->id}) has become overdue. Please contact us immediately to avoid further recovery actions.";
+
+            foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                if (!empty($notifyCustomer->phone_primary)) {
+                    $notificationService->sendSms(
+                        'recovery_case_opened_customer',
+                        $notifyCustomer->phone_primary,
+                        $internalEscalationMessage,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+
+                if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                    $notificationService->sendEmail(
+                        'recovery_case_opened_customer',
+                        $notifyCustomer->email,
+                        'Recovery Case Opened',
+                        $internalEscalationMessage,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
             }
 
             $escalated++;

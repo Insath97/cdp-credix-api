@@ -218,6 +218,11 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Guarantor Update', 'group_name' => 'Loan Application Guarantor Management Permissions'],
             ['name' => 'Loan Application Guarantor Delete', 'group_name' => 'Loan Application Guarantor Management Permissions'],
 
+            /* Loan Application Customer Management (Joint Loan co-borrowers) */
+            ['name' => 'Loan Application Customer Index', 'group_name' => 'Loan Application Customer Management Permissions'],
+            ['name' => 'Loan Application Customer Create', 'group_name' => 'Loan Application Customer Management Permissions'],
+            ['name' => 'Loan Application Customer Delete', 'group_name' => 'Loan Application Customer Management Permissions'],
+
             /* Loan Application Fixed Asset Management */
             ['name' => 'Loan Application Fixed Asset Index', 'group_name' => 'Loan Application Fixed Asset Management Permissions'],
             ['name' => 'Loan Application Fixed Asset Create', 'group_name' => 'Loan Application Fixed Asset Management Permissions'],

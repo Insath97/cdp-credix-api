@@ -166,9 +166,9 @@ class GroupLoanController extends Controller implements HasMiddleware
                     // the existing per-loan interest formula (reused
                     // unmodified in GroupLoanWorkflowService::approve())
                     // naturally computes the service charge amount.
-                    $memberLoanApplication = $groupLoan->memberLoanApplications()->create([
+                    $groupLoan->memberLoanApplications()->create([
                         'application_id'    => $application->id,
-                        'customer_id'       => $member['customer_id'] ?? null,
+                        'customer_id'       => $member['customer_id'],
                         'loan_product_id'   => $data['loan_product_id'],
                         'branch_id'         => $data['branch_id'] ?? null,
                         'group_member_no'   => $index + 1,
@@ -179,17 +179,6 @@ class GroupLoanController extends Controller implements HasMiddleware
                         'applied_by'        => Auth::id(),
                         'applied_at'        => now(),
                         'status'            => LoanApplicationStatus::Submitted,
-                    ]);
-
-                    $groupLoan->members()->create([
-                        'loan_application_id' => $memberLoanApplication->id,
-                        'customer_id'         => $member['customer_id'] ?? null,
-                        'member_name'         => $member['member_name'],
-                        'nic'                 => $member['nic'],
-                        'address'             => $member['address'],
-                        'phone_number'        => $member['phone_number'],
-                        'gn_division'         => $member['gn_division'],
-                        'ds_division'         => $member['ds_division'],
                     ]);
                 }
 
@@ -220,8 +209,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'loanProduct',
                     'branch',
                     'items',
-                    'memberLoanApplications.customer',
-                    'members',
+                    'memberLoanApplications.customer.customerDetail',
                     'appliedByUser',
                 ]),
             ], 201);
@@ -245,8 +233,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                 'loanProduct',
                 'branch',
                 'items',
-                'members',
-                'memberLoanApplications.customer',
+                'memberLoanApplications.customer.customerDetail',
                 'memberLoanApplications.installments',
                 'memberLoanApplications.statusHistory.changedBy',
                 'appliedByUser',
@@ -565,20 +552,27 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $groupLoan = $this->workflowService->reject($groupLoan, $request->input('rejection_reason'), Auth::id());
-            $groupLoan->load('members');
+            $groupLoan->load('memberLoanApplications.customer');
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} rejected", [
                 'group_loan_id' => $groupLoan->id,
             ]);
 
-            foreach ($groupLoan->members as $member) {
-                if (!empty($member->phone_number)) {
-                    $this->notificationService->sendSms(
-                        'group_loan_rejected',
-                        $member->phone_number,
-                        "Your group loan application has been rejected.\nReason: {$groupLoan->rejection_reason}",
-                        ['loan_application_id' => $member->loan_application_id, 'customer_id' => $member->customer_id]
-                    );
+            foreach ($groupLoan->memberLoanApplications as $member) {
+                $customer = $member->customer;
+                if (!$customer) {
+                    continue;
+                }
+
+                $message = "Your group loan application has been rejected.\nReason: {$groupLoan->rejection_reason}";
+                $context = ['loan_application_id' => $member->id, 'customer_id' => $customer->id];
+
+                if (!empty($customer->phone_primary)) {
+                    $this->notificationService->sendSms('group_loan_rejected', $customer->phone_primary, $message, $context);
+                }
+
+                if (!empty($customer->email)) {
+                    $this->notificationService->sendEmail('group_loan_rejected', $customer->email, 'Group Loan Application Rejected', $message, $context);
                 }
             }
 
@@ -618,20 +612,27 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $groupLoan = $this->workflowService->disburse($groupLoan, Auth::id());
-            $groupLoan->load('members');
+            $groupLoan->load('memberLoanApplications.customer');
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} disbursed", [
                 'group_loan_id' => $groupLoan->id,
             ]);
 
-            foreach ($groupLoan->members as $member) {
-                if (!empty($member->phone_number)) {
-                    $this->notificationService->sendSms(
-                        'group_loan_disbursed',
-                        $member->phone_number,
-                        'Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.',
-                        ['loan_application_id' => $member->loan_application_id, 'customer_id' => $member->customer_id]
-                    );
+            foreach ($groupLoan->memberLoanApplications as $member) {
+                $customer = $member->customer;
+                if (!$customer) {
+                    continue;
+                }
+
+                $message = 'Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.';
+                $context = ['loan_application_id' => $member->id, 'customer_id' => $customer->id];
+
+                if (!empty($customer->phone_primary)) {
+                    $this->notificationService->sendSms('group_loan_disbursed', $customer->phone_primary, $message, $context);
+                }
+
+                if (!empty($customer->email)) {
+                    $this->notificationService->sendEmail('group_loan_disbursed', $customer->email, 'Group Loan Disbursed', $message, $context);
                 }
             }
 

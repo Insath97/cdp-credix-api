@@ -35,15 +35,15 @@ class SendOverdueSmsReminders extends Command
         $durationDays = Setting::get('overdue_sms_duration_weeks', 3) * 7;
 
         $loanApplications = LoanApplication::where('status', LoanApplicationStatus::Overdue)
-            ->with(['customer', 'installments'])
+            ->with(['customer', 'installments', 'loanApplicationCustomers.customer'])
             ->get();
 
         $sent = 0;
 
         foreach ($loanApplications as $loanApplication) {
-            $customer = $loanApplication->customer;
+            $notifyCustomers = $loanApplication->notifiableCustomers();
 
-            if (!$customer || empty($customer->phone_primary)) {
+            if ($notifyCustomers->isEmpty()) {
                 continue;
             }
 
@@ -62,24 +62,44 @@ class SendOverdueSmsReminders extends Command
                 continue;
             }
 
-            $alreadySentToday = Notification::where('loan_application_id', $loanApplication->id)
-                ->where('type', 'overdue_sms_reminder')
-                ->where('channel', 'sms')
-                ->whereDate('created_at', now()->toDateString())
-                ->exists();
+            $isJoint = $loanApplication->isJointLoan();
+            $overdueMessage = "CDP Credix: Your loan installment is {$daysOverdue} day(s) overdue. Please make your payment as soon as possible to avoid recovery action.";
 
-            if ($alreadySentToday) {
-                continue;
+            foreach ($notifyCustomers as $customer) {
+                if (empty($customer->phone_primary)) {
+                    continue;
+                }
+
+                $alreadySentToday = Notification::where('loan_application_id', $loanApplication->id)
+                    ->where('customer_id', $customer->id)
+                    ->where('type', 'overdue_sms_reminder')
+                    ->where('channel', 'sms')
+                    ->whereDate('created_at', now()->toDateString())
+                    ->exists();
+
+                if ($alreadySentToday) {
+                    continue;
+                }
+
+                $notificationService->sendSms(
+                    'overdue_sms_reminder',
+                    $customer->phone_primary,
+                    $overdueMessage,
+                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $customer->id]
+                );
+
+                if ($isJoint && !empty($customer->email)) {
+                    $notificationService->sendEmail(
+                        'overdue_sms_reminder',
+                        $customer->email,
+                        'Installment Overdue Reminder',
+                        $overdueMessage,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $customer->id]
+                    );
+                }
+
+                $sent++;
             }
-
-            $notificationService->sendSms(
-                'overdue_sms_reminder',
-                $customer->phone_primary,
-                "CDP Credix: Your loan installment is {$daysOverdue} day(s) overdue. Please make your payment as soon as possible to avoid recovery action.",
-                ['loan_application_id' => $loanApplication->id, 'customer_id' => $customer->id]
-            );
-
-            $sent++;
         }
 
         $summary = "Overdue SMS reminders sent: {$sent}.";

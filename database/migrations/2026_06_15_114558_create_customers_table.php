@@ -18,7 +18,7 @@ return new class extends Migration
             $table->string('full_name');
             $table->string('name_with_initials')->nullable();
             $table->string('id_type')->nullable();
-            $table->string('id_number')->nullable();
+            $table->string('id_number')->nullable()->unique();
             $table->date('date_of_birth')->nullable();
             $table->string('address_line_1')->nullable();
             $table->string('address_line_2')->nullable();
