@@ -27,6 +27,7 @@ class UpdateLoanTypeRequest extends FormRequest
             'code' => 'sometimes|string|max:50|unique:loan_types,code,' . $id,
             'title' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
+            'loan_term_id' => 'sometimes|integer|exists:loan_terms,id',
             'is_active' => 'sometimes|boolean',
         ];
     }

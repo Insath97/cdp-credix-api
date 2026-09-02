@@ -190,7 +190,7 @@ class LoanTypeController extends Controller implements HasMiddleware
     public function getActiveList()
     {
         try {
-            $loanTypes = LoanType::active()->orderBy('title', 'asc')->get(['id', 'title', 'code']);
+            $loanTypes = LoanType::active()->orderBy('title', 'asc')->get(['id', 'title', 'code', 'loan_term_id']);
 
             return response()->json([
                 'status' => 'success',
@@ -209,12 +209,12 @@ class LoanTypeController extends Controller implements HasMiddleware
     public function toggleStatus(string $id)
     {
         try {
-            $loanType = LoanType::find($id);
+            $loanType = LoanType::with('loanTerm')->find($id);
 
-            if (!$loanType) {
+            if (! $loanType) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Loan type not found'
+                    'message' => 'Loan type not found',
                 ], 404);
             }
 

@@ -25,6 +25,7 @@ class CreateLoanTypeRequest extends FormRequest
             'code' => 'required|string|unique:loan_types,code|max:50',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'loan_term_id' => 'required|integer|exists:loan_terms,id',
             'is_active' => 'sometimes|boolean',
         ];
     }

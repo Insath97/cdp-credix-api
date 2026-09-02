@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -16,11 +17,13 @@ class LoanType extends Model
         'code',
         'title',
         'description',
+        'loan_term_id',
         'is_active',
     ];
 
     protected $casts = [
-        'is_active' => 'boolean',
+        'loan_term_id' => 'integer',
+        'is_active'    => 'boolean',
     ];
 
     /**
@@ -48,7 +51,15 @@ class LoanType extends Model
     }
 
     /**
-     * The loan terms associated with this loan type.
+     * The loan term this loan type belongs to (via loan_types.loan_term_id).
+     */
+    public function loanTerm(): BelongsTo
+    {
+        return $this->belongsTo(LoanTerm::class);
+    }
+
+    /**
+     * The loan terms associated with this loan type (many-to-many, legacy pivot).
      */
     public function loanTerms(): BelongsToMany
     {
