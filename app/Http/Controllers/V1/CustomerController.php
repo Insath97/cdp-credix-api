@@ -49,7 +49,7 @@ class CustomerController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Customer::with(['user']);
+            $query = Customer::with(['user', 'customerDetail']);
 
             if ($request->has('search') ) {
                 $query->search($request->search);
@@ -101,6 +101,15 @@ class CustomerController extends Controller implements HasMiddleware
             $data = $request->validated();
 
             $customer = Customer::create($data);
+
+            if (array_filter($data, fn ($key) => in_array($key, ['gn_division', 'ds_division', 'district', 'province']) && !empty($data[$key]), ARRAY_FILTER_USE_KEY)) {
+                $customer->customerDetail()->create([
+                    'gn_division' => $data['gn_division'] ?? null,
+                    'ds_division' => $data['ds_division'] ?? null,
+                    'district'    => $data['district'] ?? null,
+                    'province'    => $data['province'] ?? null,
+                ]);
+            }
 
             if (!empty($data['bank_details'])) {
                 foreach ($data['bank_details'] as $bankDetail) {
@@ -208,7 +217,7 @@ class CustomerController extends Controller implements HasMiddleware
 
             DB::commit();
 
-            $customer->load(['bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
+            $customer->load(['customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
 
             $credentialsMessage = "Welcome! Your CDP Credix account has been created.\nUsername: {$user->username}\nPassword: {$plainPassword}\nPlease keep this information secure and change your password after logging in.";
 
@@ -294,7 +303,7 @@ class CustomerController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $customer = Customer::with(['user', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents'])->find($id);
+            $customer = Customer::with(['user', 'customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents'])->find($id);
 
             if (!$customer) {
                 return response()->json([
@@ -332,6 +341,15 @@ class CustomerController extends Controller implements HasMiddleware
 
             $data = $request->validated();
             $customer->update($data);
+
+            if (array_filter($data, fn ($key) => in_array($key, ['gn_division', 'ds_division', 'district', 'province']) && !empty($data[$key]), ARRAY_FILTER_USE_KEY)) {
+                $customer->customerDetail()->updateOrCreate([], [
+                    'gn_division' => $data['gn_division'] ?? null,
+                    'ds_division' => $data['ds_division'] ?? null,
+                    'district'    => $data['district'] ?? null,
+                    'province'    => $data['province'] ?? null,
+                ]);
+            }
 
             // Bank Details
             $customer->bankDetails()->delete();
@@ -396,7 +414,7 @@ class CustomerController extends Controller implements HasMiddleware
 
             DB::commit();
 
-            $customer->load(['bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
+            $customer->load(['customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
 
             $this->logActivity('Update', 'Customer', 'Customer updated', [
                 'updater_id' => Auth::id(),

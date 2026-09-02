@@ -139,21 +139,53 @@ class PaymentController extends Controller implements HasMiddleware
 
             $this->logActivity('CREATE', 'Payment', "Created payment ID: {$payment->id} ({$payment->receipt_no})", $data);
 
-            if ($loanApplication && $loanApplication->customer && !empty($loanApplication->customer->phone_primary)) {
-                $this->notificationService->sendSms(
-                    'payment_received',
-                    $loanApplication->customer->phone_primary,
-                    "Payment received successfully.\nAmount: {$payment->amount}\nThank you for your payment.",
-                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
-                );
+            if ($loanApplication) {
+                $isJoint = $loanApplication->isJointLoan();
 
-                if ($loanClosed) {
-                    $this->notificationService->sendSms(
-                        'loan_closed',
-                        $loanApplication->customer->phone_primary,
-                        'Congratulations! Your loan has been successfully closed. Thank you for banking with us.',
-                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
-                    );
+                foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                    $receivedMessage = "Payment received successfully.\nAmount: {$payment->amount}\nThank you for your payment.";
+
+                    if (!empty($notifyCustomer->phone_primary)) {
+                        $this->notificationService->sendSms(
+                            'payment_received',
+                            $notifyCustomer->phone_primary,
+                            $receivedMessage,
+                            ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                        );
+                    }
+
+                    if ($isJoint && !empty($notifyCustomer->email)) {
+                        $this->notificationService->sendEmail(
+                            'payment_received',
+                            $notifyCustomer->email,
+                            'Payment Received',
+                            $receivedMessage,
+                            ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                        );
+                    }
+
+                    if ($loanClosed) {
+                        $closedMessage = 'Congratulations! Your loan has been successfully closed. Thank you for banking with us.';
+
+                        if (!empty($notifyCustomer->phone_primary)) {
+                            $this->notificationService->sendSms(
+                                'loan_closed',
+                                $notifyCustomer->phone_primary,
+                                $closedMessage,
+                                ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                            );
+                        }
+
+                        if ($isJoint && !empty($notifyCustomer->email)) {
+                            $this->notificationService->sendEmail(
+                                'loan_closed',
+                                $notifyCustomer->email,
+                                'Loan Closed',
+                                $closedMessage,
+                                ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                            );
+                        }
+                    }
                 }
             }
 

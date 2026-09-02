@@ -178,6 +178,36 @@ class LoanApplication extends Model
     }
 
     /**
+     * Relationship with the additional customers attached to this loan application
+     * (Joint Loan co-borrowers, via the pivot). Empty for a plain Individual Loan.
+     */
+    public function loanApplicationCustomers(): HasMany
+    {
+        return $this->hasMany(LoanApplicationCustomer::class);
+    }
+
+    /**
+     * Whether this loan application has more than one customer attached.
+     */
+    public function isJointLoan(): bool
+    {
+        return $this->loanApplicationCustomers()->exists();
+    }
+
+    /**
+     * All customers who should receive notifications for this loan application:
+     * every attached Joint Loan customer, or just the primary customer otherwise.
+     */
+    public function notifiableCustomers(): \Illuminate\Support\Collection
+    {
+        if ($this->loanApplicationCustomers()->exists()) {
+            return $this->loanApplicationCustomers()->with('customer')->get()->pluck('customer')->filter()->values();
+        }
+
+        return $this->customer ? collect([$this->customer]) : collect();
+    }
+
+    /**
      * Relationship with the assigned reviewer.
      */
     public function assignedReviewer(): BelongsTo
@@ -245,6 +275,20 @@ class LoanApplication extends Model
     }
 
     /**
+     * Scope to loan applications belonging to a given customer, whether as the
+     * primary applicant or as a Joint Loan co-borrower attached via the pivot.
+     */
+    public function scopeForCustomer(Builder $query, int $customerId): Builder
+    {
+        return $query->where(function ($q) use ($customerId) {
+            $q->where('customer_id', $customerId)
+              ->orWhereHas('loanApplicationCustomers', function ($jointQuery) use ($customerId) {
+                  $jointQuery->where('customer_id', $customerId);
+              });
+        });
+    }
+
+    /**
      * Scope for searching.
      */
     public function scopeSearch(Builder $query, ?string $search): Builder
@@ -255,6 +299,11 @@ class LoanApplication extends Model
 
         return $query->where(function ($q) use ($search) {
             $q->whereHas('customer', function ($customerQuery) use ($search) {
+                $customerQuery->where('full_name', 'like', "%$search%")
+                              ->orWhere('customer_code', 'like', "%$search%")
+                              ->orWhere('id_number', 'like', "%$search%");
+            })
+            ->orWhereHas('loanApplicationCustomers.customer', function ($customerQuery) use ($search) {
                 $customerQuery->where('full_name', 'like', "%$search%")
                               ->orWhere('customer_code', 'like', "%$search%")
                               ->orWhere('id_number', 'like', "%$search%");

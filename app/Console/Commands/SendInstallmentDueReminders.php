@@ -24,29 +24,51 @@ class SendInstallmentDueReminders extends Command
 
         $installments = LoanInstallment::whereDate('due_date', $targetDate)
             ->whereIn('status', ['upcoming', 'partially_paid'])
-            ->with('loanApplication.customer')
+            ->with('loanApplication.customer', 'loanApplication.loanApplicationCustomers.customer')
             ->get();
 
         $sent = 0;
 
         foreach ($installments as $installment) {
-            $customer = $installment->loanApplication?->customer;
+            $loanApplication = $installment->loanApplication;
 
-            if (!$customer || empty($customer->phone_primary)) {
+            if (!$loanApplication) {
                 continue;
             }
 
-            $notificationService->sendSms(
-                'installment_due_reminder',
-                $customer->phone_primary,
-                "Reminder: Your loan installment is due on {$installment->due_date->format('Y-m-d')}. Please make your payment on time.",
-                [
-                    'loan_application_id' => $installment->loan_application_id,
-                    'customer_id' => $customer->id,
-                ]
-            );
+            $isJoint = $loanApplication->isJointLoan();
+            $dueMessage = "Reminder: Your loan installment is due on {$installment->due_date->format('Y-m-d')}. Please make your payment on time.";
 
-            $sent++;
+            foreach ($loanApplication->notifiableCustomers() as $customer) {
+                if (empty($customer->phone_primary)) {
+                    continue;
+                }
+
+                $notificationService->sendSms(
+                    'installment_due_reminder',
+                    $customer->phone_primary,
+                    $dueMessage,
+                    [
+                        'loan_application_id' => $installment->loan_application_id,
+                        'customer_id' => $customer->id,
+                    ]
+                );
+
+                if ($isJoint && !empty($customer->email)) {
+                    $notificationService->sendEmail(
+                        'installment_due_reminder',
+                        $customer->email,
+                        'Installment Due Reminder',
+                        $dueMessage,
+                        [
+                            'loan_application_id' => $installment->loan_application_id,
+                            'customer_id' => $customer->id,
+                        ]
+                    );
+                }
+
+                $sent++;
+            }
         }
 
         $this->info("Installment due reminders sent: {$sent}");

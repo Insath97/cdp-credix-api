@@ -192,13 +192,29 @@ class LoanRevisionController extends Controller implements HasMiddleware
             ]);
 
             $loanApplication = $revision->loanApplication;
-            if ($loanApplication?->customer && !empty($loanApplication->customer->phone_primary)) {
-                $this->notificationService->sendSms(
-                    'loan_revision_approved',
-                    $loanApplication->customer->phone_primary,
-                    "Your loan repayment schedule has been revised. New installment: {$revision->revised_installment_amount}. Effective {$revision->effective_date}.",
-                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
-                );
+            if ($loanApplication) {
+                $revisionMessage = "Your loan repayment schedule has been revised. New installment: {$revision->revised_installment_amount}. Effective {$revision->effective_date}.";
+
+                foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                    if (!empty($notifyCustomer->phone_primary)) {
+                        $this->notificationService->sendSms(
+                            'loan_revision_approved',
+                            $notifyCustomer->phone_primary,
+                            $revisionMessage,
+                            ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                        );
+                    }
+
+                    if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                        $this->notificationService->sendEmail(
+                            'loan_revision_approved',
+                            $notifyCustomer->email,
+                            'Loan Revision Approved',
+                            $revisionMessage,
+                            ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                        );
+                    }
+                }
             }
 
             return response()->json([

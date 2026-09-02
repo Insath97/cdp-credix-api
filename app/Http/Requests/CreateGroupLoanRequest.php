@@ -49,14 +49,8 @@ class CreateGroupLoanRequest extends FormRequest
             'items.*.quantity'   => 'required|numeric|min:0.01',
             'items.*.unit_price' => 'required|numeric|min:0',
 
-            'members'                    => ['required', 'array', new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
-            'members.*.customer_id'      => 'nullable|integer|exists:customers,id',
-            'members.*.member_name'      => 'required|string|max:255',
-            'members.*.nic'              => 'required|string|max:50',
-            'members.*.address'          => 'required|string|max:500',
-            'members.*.phone_number'     => 'required|string|max:20',
-            'members.*.gn_division'      => 'required|string|max:255',
-            'members.*.ds_division'      => 'required|string|max:255',
+            'members'               => ['required', 'array', new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
+            'members.*.customer_id' => 'required|integer|exists:customers,id',
         ];
     }
 

@@ -29,7 +29,7 @@ class CustomerLoanController extends Controller
             $customerId = $this->myCustomerId();
             $perPage = $request->get('per_page', 15);
 
-            $query = LoanApplication::where('customer_id', $customerId)
+            $query = LoanApplication::forCustomer($customerId)
                 ->with(['application', 'loanProduct']);
 
             if ($request->has('status')) {
@@ -69,7 +69,7 @@ class CustomerLoanController extends Controller
             $customerId = $this->myCustomerId();
 
             $loanApplication = LoanApplication::where('id', $id)
-                ->where('customer_id', $customerId)
+                ->forCustomer($customerId)
                 ->with(['application', 'loanProduct'])
                 ->first();
 
@@ -107,7 +107,7 @@ class CustomerLoanController extends Controller
             $customerId = $this->myCustomerId();
             $perPage = $request->get('per_page', 15);
 
-            $loans = LoanApplication::where('customer_id', $customerId)
+            $loans = LoanApplication::forCustomer($customerId)
                 ->whereIn('status', [
                     LoanApplicationStatus::Disbursed,
                     LoanApplicationStatus::Active,
@@ -158,7 +158,7 @@ class CustomerLoanController extends Controller
             $customerId = $this->myCustomerId();
 
             $loanApplication = LoanApplication::where('id', $id)
-                ->where('customer_id', $customerId)
+                ->forCustomer($customerId)
                 ->with(['application', 'branch', 'loanProduct.loanType', 'loanProduct.loanTerm'])
                 ->first();
 
@@ -206,7 +206,7 @@ class CustomerLoanController extends Controller
         try {
             $customerId = $this->myCustomerId();
 
-            $ownsLoan = LoanApplication::where('id', $id)->where('customer_id', $customerId)->exists();
+            $ownsLoan = LoanApplication::where('id', $id)->forCustomer($customerId)->exists();
 
             if (!$ownsLoan) {
                 return response()->json([
@@ -252,7 +252,7 @@ class CustomerLoanController extends Controller
         try {
             $customerId = $this->myCustomerId();
 
-            $ownsLoan = LoanApplication::where('id', $id)->where('customer_id', $customerId)->exists();
+            $ownsLoan = LoanApplication::where('id', $id)->forCustomer($customerId)->exists();
 
             if (!$ownsLoan) {
                 return response()->json([
@@ -311,7 +311,7 @@ class CustomerLoanController extends Controller
             $customer = $this->myCustomer();
 
             $loanApplication = LoanApplication::where('id', $id)
-                ->where('customer_id', $customer->id)
+                ->forCustomer($customer->id)
                 ->with(['application', 'loanProduct.loanType', 'loanProduct.loanTerm'])
                 ->first();
 

@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Application;
 use App\Models\Branch;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationCustomer;
 use App\Models\LoanProduct;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationRequest;
@@ -58,6 +59,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
             $query = LoanApplication::with([
                 'application',
                 'customer',
+                'loanApplicationCustomers.customer.customerDetail',
                 'loanProduct',
                 'branch',
                 'appliedByUser',
@@ -138,6 +140,17 @@ class LoanApplicationController extends Controller implements HasMiddleware
 
             $loanApplication = LoanApplication::create($data);
 
+            if (!empty($data['joint_customer_ids'])) {
+                $allCustomerIds = array_unique(array_merge([$loanApplication->customer_id], $data['joint_customer_ids']));
+
+                foreach ($allCustomerIds as $jointCustomerId) {
+                    LoanApplicationCustomer::create([
+                        'loan_application_id' => $loanApplication->id,
+                        'customer_id'         => $jointCustomerId,
+                    ]);
+                }
+            }
+
             $this->logActivity('CREATE', 'LoanApplication', "Created loan application ID: {$loanApplication->id}", $data);
 
             $staffRole = Role::where('name', config('notifications.staff_role'))->first();
@@ -161,6 +174,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'data'    => $loanApplication->load([
                     'application',
                     'customer',
+                    'loanApplicationCustomers.customer.customerDetail',
                     'loanProduct',
                     'branch',
                     'appliedByUser'
@@ -190,6 +204,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'customer.liabilities',
                 'customer.guarantors',
                 'customer.documents',
+                'customer.customerDetail',
+                'loanApplicationCustomers.customer.customerDetail',
                 'loanProduct',
                 'branch',
                 'appliedByUser',
@@ -572,13 +588,27 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loan_application_id' => $loanApplication->id,
             ]);
 
-            if ($loanApplication->customer && !empty($loanApplication->customer->phone_primary)) {
-                $this->notificationService->sendSms(
-                    'application_rejected',
-                    $loanApplication->customer->phone_primary,
-                    "Your loan application has been rejected.\nReason: {$loanApplication->rejection_reason}",
-                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
-                );
+            foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                $message = "Your loan application has been rejected.\nReason: {$loanApplication->rejection_reason}";
+
+                if (!empty($notifyCustomer->phone_primary)) {
+                    $this->notificationService->sendSms(
+                        'application_rejected',
+                        $notifyCustomer->phone_primary,
+                        $message,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+
+                if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                    $this->notificationService->sendEmail(
+                        'application_rejected',
+                        $notifyCustomer->email,
+                        'Loan Application Rejected',
+                        $message,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
             }
 
             return response()->json([
@@ -634,16 +664,30 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loan_application_id' => $loanApplication->id,
             ]);
 
-            if ($loanApplication->customer && !empty($loanApplication->customer->phone_primary)) {
-                $netAmountLine = $loanApplication->net_disbursement_amount !== null
-                    ? "\nNet amount disbursed: {$loanApplication->net_disbursement_amount} (after processing fee of {$loanApplication->processing_fee})."
-                    : '';
-                $this->notificationService->sendSms(
-                    'loan_disbursed',
-                    $loanApplication->customer->phone_primary,
-                    "Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.{$netAmountLine}",
-                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $loanApplication->customer_id]
-                );
+            $netAmountLine = $loanApplication->net_disbursement_amount !== null
+                ? "\nNet amount disbursed: {$loanApplication->net_disbursement_amount} (after processing fee of {$loanApplication->processing_fee})."
+                : '';
+            $disbursedMessage = "Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.{$netAmountLine}";
+
+            foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                if (!empty($notifyCustomer->phone_primary)) {
+                    $this->notificationService->sendSms(
+                        'loan_disbursed',
+                        $notifyCustomer->phone_primary,
+                        $disbursedMessage,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+
+                if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                    $this->notificationService->sendEmail(
+                        'loan_disbursed',
+                        $notifyCustomer->email,
+                        'Loan Disbursed',
+                        $disbursedMessage,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
             }
 
             return response()->json([

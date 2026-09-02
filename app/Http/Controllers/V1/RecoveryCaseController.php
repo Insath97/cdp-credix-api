@@ -95,13 +95,29 @@ class RecoveryCaseController extends Controller implements HasMiddleware
 
             $case->load(['loanApplication.customer', 'assignedAgent.employee', 'openedBy']);
 
-            if ($case->loanApplication && $case->loanApplication->customer && !empty($case->loanApplication->customer->phone_primary)) {
-                $this->notificationService->sendSms(
-                    'recovery_case_opened_customer',
-                    $case->loanApplication->customer->phone_primary,
-                    "CDP Credix: Your loan account (Loan Application ID: {$case->loan_application_id}) has become overdue. Please contact us immediately to avoid further recovery actions.",
-                    ['loan_application_id' => $case->loan_application_id, 'customer_id' => $case->loanApplication->customer_id]
-                );
+            if ($case->loanApplication) {
+                $recoveryMessage = "CDP Credix: Your loan account (Loan Application ID: {$case->loan_application_id}) has become overdue. Please contact us immediately to avoid further recovery actions.";
+
+                foreach ($case->loanApplication->notifiableCustomers() as $notifyCustomer) {
+                    if (!empty($notifyCustomer->phone_primary)) {
+                        $this->notificationService->sendSms(
+                            'recovery_case_opened_customer',
+                            $notifyCustomer->phone_primary,
+                            $recoveryMessage,
+                            ['loan_application_id' => $case->loan_application_id, 'customer_id' => $notifyCustomer->id]
+                        );
+                    }
+
+                    if ($case->loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                        $this->notificationService->sendEmail(
+                            'recovery_case_opened_customer',
+                            $notifyCustomer->email,
+                            'Recovery Case Opened',
+                            $recoveryMessage,
+                            ['loan_application_id' => $case->loan_application_id, 'customer_id' => $notifyCustomer->id]
+                        );
+                    }
+                }
             }
 
             if ($case->assignedAgent && !empty($case->assignedAgent->employee?->phone_primary)) {
