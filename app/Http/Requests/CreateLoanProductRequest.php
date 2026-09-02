@@ -24,7 +24,7 @@ class CreateLoanProductRequest extends FormRequest
         return [
             'name' => 'required|string|max:255',
             'code' => 'nullable|string|max:50|unique:loan_products,code',
-            'loan_type_id' => 'nullable|integer|exists:loan_types,id',
+            'loan_type_id' => 'required|integer|exists:loan_types,id',
             'loan_term_id' => 'nullable|integer|exists:loan_terms,id',
             'description' => 'nullable|string',
             'interest_rate' => 'required|numeric|min:0|max:999.999',

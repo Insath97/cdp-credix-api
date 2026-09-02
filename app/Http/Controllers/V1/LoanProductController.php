@@ -9,6 +9,7 @@ use App\Models\LoanProduct;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanProductRequest;
 use App\Http\Requests\UpdateLoanProductRequest;
+use App\Models\LoanType;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -26,6 +27,15 @@ class LoanProductController extends Controller implements HasMiddleware
             new Middleware('permission:Loan Product Toggle Status', only: ['toggleStatus', 'activate', 'deactivate']),
             new Middleware('permission:Loan Product Delete', only: ['destroy']),
         ];
+    }
+
+    /**
+     * Resolve the loan term id for a loan product from its loan type.
+     * The term is always derived from the type (loan_types.loan_term_id).
+     */
+    private function resolveTermForType(int $loanTypeId): ?int
+    {
+        return LoanType::find($loanTypeId)?->loan_term_id;
     }
 
     /**
@@ -83,6 +93,11 @@ class LoanProductController extends Controller implements HasMiddleware
     {
         try {
             $data = $request->validated();
+
+            // The loan term for a product is always derived from the selected
+            // loan type's term (loan_types.loan_term_id) — never taken from an
+            // independently-supplied value. This keeps term/type consistent.
+            $data['loan_term_id'] = $this->resolveTermForType($data['loan_type_id']);
 
             $loanProduct = LoanProduct::create($data);
 
@@ -149,6 +164,12 @@ class LoanProductController extends Controller implements HasMiddleware
             }
 
             $data = $request->validated();
+
+            // Keep the product's term in sync with the loan type's term.
+            if (!empty($data['loan_type_id'])) {
+                $data['loan_term_id'] = $this->resolveTermForType($data['loan_type_id']);
+            }
+
             $loanProduct->update($data);
 
             $this->logActivity('UPDATE', 'LoanProduct', "Updated loan product: {$loanProduct->name}", $data);
