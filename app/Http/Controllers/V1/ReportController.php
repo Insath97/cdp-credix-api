@@ -10,6 +10,7 @@ use App\Models\LoanApplication;
 use App\Models\LoanInstallment;
 use App\Models\Payment;
 use App\Models\RecoveryCase;
+use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -316,7 +317,7 @@ class ReportController extends Controller implements HasMiddleware
     {
         [$startDate, $endDate] = $this->resolveDateRange($request);
 
-        return LoanApplication::with(['application', 'customer', 'loanProduct', 'branch'])
+        return LoanApplication::with(['application', 'customer:' . Customer::SUMMARY_COLUMNS, 'loanProduct', 'branch'])
             ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('search'), function ($q) use ($request) {
@@ -386,12 +387,12 @@ class ReportController extends Controller implements HasMiddleware
     {
         try {
             $case = RecoveryCase::with([
-                'loanApplication.customer',
+                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
                 'loanApplication.application',
                 'loanApplication.branch',
-                'assignedAgent',
+                'assignedAgent:' . User::SUMMARY_COLUMNS,
                 'externalAgent',
-                'activities.performedBy',
+                'activities.performedBy:' . User::SUMMARY_COLUMNS,
             ])->find($id);
 
             if (!$case) {
@@ -431,7 +432,7 @@ class ReportController extends Controller implements HasMiddleware
 
     protected function recoveryBaseQuery(Request $request)
     {
-        return RecoveryCase::with(['loanApplication.customer', 'loanApplication.application', 'loanApplication.branch', 'assignedAgent', 'externalAgent'])
+        return RecoveryCase::with(['loanApplication.customer:' . Customer::SUMMARY_COLUMNS, 'loanApplication.application', 'loanApplication.branch', 'assignedAgent:' . User::SUMMARY_COLUMNS, 'externalAgent'])
             ->when($request->filled('branch_id'), fn ($q) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $request->branch_id)))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('stage'), fn ($q) => $q->where('stage', $request->stage))

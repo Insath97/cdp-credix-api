@@ -18,6 +18,12 @@ class LoanApplicationStatusHistory extends Model
         'metadata',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'loan_application_id' => 'integer',
         'changed_by'          => 'integer',

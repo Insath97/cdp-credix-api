@@ -25,6 +25,12 @@ class ActivityLog extends Model
         'method',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     /**
      * Get the attributes that should be cast.
      *

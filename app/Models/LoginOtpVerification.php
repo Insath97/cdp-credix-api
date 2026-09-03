@@ -20,6 +20,14 @@ class LoginOtpVerification extends Model
         'ip_address',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+        'otp',
+        'ip_address',
+    ];
+
     protected $casts = [
         'expires_at' => 'datetime',
         'verified_at' => 'datetime',

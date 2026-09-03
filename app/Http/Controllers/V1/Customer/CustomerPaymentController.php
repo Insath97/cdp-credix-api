@@ -4,6 +4,7 @@ namespace App\Http\Controllers\V1\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Payment;
+use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use App\Traits\ResolvesAuthenticatedCustomerTrait;
 use Illuminate\Http\Request;
@@ -72,7 +73,7 @@ class CustomerPaymentController extends Controller
                 ->whereHas('loanApplication', function ($q) use ($customerId) {
                     $q->where('customer_id', $customerId);
                 })
-                ->with(['loanApplication.application', 'loanInstallment', 'receivedBy'])
+                ->with(['loanApplication.application', 'loanInstallment', 'receivedBy:' . User::SUMMARY_COLUMNS])
                 ->first();
 
             if (!$payment) {

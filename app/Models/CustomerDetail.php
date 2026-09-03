@@ -15,6 +15,12 @@ class CustomerDetail extends Model
         'province',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'customer_id' => 'integer',
     ];

@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\LoanApplication;
 use App\Models\LoanRevision;
+use App\Models\Customer;
+use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use App\Traits\FileUploadTrait;
 use App\Http\Requests\CreateLoanRevisionRequest;
@@ -47,10 +49,10 @@ class LoanRevisionController extends Controller implements HasMiddleware
         try {
             $perPage = $request->get('per_page', 15);
             $query = LoanRevision::with([
-                'loanApplication.customer',
+                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
                 'loanApplication.application',
                 'requester',
-                'approver',
+                'approver:' . User::SUMMARY_COLUMNS,
             ]);
 
             if ($request->filled('loan_application_id')) {
@@ -136,10 +138,10 @@ class LoanRevisionController extends Controller implements HasMiddleware
     {
         try {
             $revision = LoanRevision::with([
-                'loanApplication.customer',
+                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
                 'loanApplication.application',
                 'requester',
-                'approver',
+                'approver:' . User::SUMMARY_COLUMNS,
                 'installments',
             ])->find($id);
 

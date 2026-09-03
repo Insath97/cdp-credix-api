@@ -16,6 +16,18 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
     use HasFactory, Notifiable, HasRoles;
 
     /**
+     * Columns to select when a user is loaded as a nested reference — the account
+     * behind an employee, a customer, or an audit-log entry.
+     *
+     * $hidden already strips the password and the verification tokens, but this
+     * keeps the login trail (last_login_at) and account plumbing out of the query
+     * entirely. UserController's own index/show select normally.
+     *
+     * @see \App\Models\Customer::SUMMARY_COLUMNS
+     */
+    public const SUMMARY_COLUMNS = 'id,name,username,email,user_type,employee_id,customer_id,is_active';
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var list<string>
@@ -46,6 +58,14 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
     protected $hidden = [
         'password',
         'remember_token',
+        'email_verification_token',
+        'email_verification_token_expires_at',
+        'password_changed_at',
+        'two_factor_verified_at',
+        'last_login_ip',
+        'created_at',
+        'updated_at',
+        'deleted_at',
     ];
 
     /**

@@ -26,6 +26,12 @@ class RecoveryCase extends Model
         'closed_at',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'loan_application_id' => 'integer',
         'overdue_amount'       => 'decimal:2',

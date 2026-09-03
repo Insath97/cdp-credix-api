@@ -11,6 +11,8 @@ use App\Models\Application;
 use App\Models\Branch;
 use App\Models\GroupLoan;
 use App\Models\Setting;
+use App\Models\Customer;
+use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateGroupLoanRequest;
 use App\Http\Requests\UpdateGroupLoanRequest;
@@ -60,9 +62,9 @@ class GroupLoanController extends Controller implements HasMiddleware
             $query = GroupLoan::with([
                 'loanProduct',
                 'branch',
-                'appliedByUser',
-                'reviewedByUser',
-                'approvedByUser',
+                'appliedByUser:' . User::SUMMARY_COLUMNS,
+                'reviewedByUser:' . User::SUMMARY_COLUMNS,
+                'approvedByUser:' . User::SUMMARY_COLUMNS,
             ]);
 
             if ($request->has('search')) {
@@ -285,7 +287,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'branch',
                     'items',
                     'memberLoanApplications.customer.customerDetail',
-                    'appliedByUser',
+                    'appliedByUser:' . User::SUMMARY_COLUMNS,
                 ]),
             ], 201);
 
@@ -310,10 +312,10 @@ class GroupLoanController extends Controller implements HasMiddleware
                 'items',
                 'memberLoanApplications.customer.customerDetail',
                 'memberLoanApplications.installments',
-                'memberLoanApplications.statusHistory.changedBy',
-                'appliedByUser',
-                'reviewedByUser',
-                'approvedByUser',
+                'memberLoanApplications.statusHistory.changedBy:' . User::SUMMARY_COLUMNS,
+                'appliedByUser:' . User::SUMMARY_COLUMNS,
+                'reviewedByUser:' . User::SUMMARY_COLUMNS,
+                'approvedByUser:' . User::SUMMARY_COLUMNS,
             ])->find($id);
 
             if (!$groupLoan) {
@@ -367,9 +369,9 @@ class GroupLoanController extends Controller implements HasMiddleware
                 'data'    => $groupLoan->fresh([
                     'loanProduct',
                     'branch',
-                    'appliedByUser',
-                    'reviewedByUser',
-                    'approvedByUser',
+                    'appliedByUser:' . User::SUMMARY_COLUMNS,
+                    'reviewedByUser:' . User::SUMMARY_COLUMNS,
+                    'approvedByUser:' . User::SUMMARY_COLUMNS,
                 ]),
             ], 200);
 
@@ -628,7 +630,7 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $groupLoan = $this->workflowService->reject($groupLoan, $request->input('rejection_reason'), Auth::id());
-            $groupLoan->load('memberLoanApplications.customer');
+            $groupLoan->load('memberLoanApplications.customer:' . Customer::SUMMARY_COLUMNS);
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} rejected", [
                 'group_loan_id' => $groupLoan->id,
@@ -688,7 +690,7 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $groupLoan = $this->workflowService->disburse($groupLoan, Auth::id());
-            $groupLoan->load('memberLoanApplications.customer');
+            $groupLoan->load('memberLoanApplications.customer:' . Customer::SUMMARY_COLUMNS);
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} disbursed", [
                 'group_loan_id' => $groupLoan->id,

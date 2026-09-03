@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\Notification;
+use App\Models\Customer;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -28,7 +29,7 @@ class NotificationController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Notification::with(['loanApplication', 'customer', 'user']);
+            $query = Notification::with(['loanApplication', 'customer:' . Customer::SUMMARY_COLUMNS, 'user']);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -75,7 +76,7 @@ class NotificationController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $notification = Notification::with(['loanApplication', 'customer', 'user'])->find($id);
+            $notification = Notification::with(['loanApplication', 'customer:' . Customer::SUMMARY_COLUMNS, 'user'])->find($id);
 
             if (!$notification) {
                 return response()->json([

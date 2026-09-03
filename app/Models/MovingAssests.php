@@ -28,6 +28,12 @@ class MovingAssests extends Model
         'is_active',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'no_of_shares' => 'integer',
         'par_value' => 'decimal:2',

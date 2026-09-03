@@ -48,7 +48,7 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = CustomerBankDetail::with(['customer']);
+            $query = CustomerBankDetail::with(['customer:' . Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('search') ) {
                 $query->search($request->search);
@@ -130,7 +130,7 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $customerbankdetail = CustomerBankDetail::with(['customer'])->find($id);
+            $customerbankdetail = CustomerBankDetail::with(['customer:' . Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$customerbankdetail) {
                 return response()->json([

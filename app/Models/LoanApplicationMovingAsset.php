@@ -17,6 +17,12 @@ class LoanApplicationMovingAsset extends Model
         'moving_assest_id',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'loan_application_id' => 'integer',
         'moving_assest_id'    => 'integer',

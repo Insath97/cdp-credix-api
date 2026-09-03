@@ -13,6 +13,18 @@ class Employee extends Model
 {
     use HasFactory;
 
+    /**
+     * Columns to select when an employee is loaded as a nested reference — the
+     * staff member who applied for, reviewed, approved or received something.
+     *
+     * Those screens only need the name and posting, so the NIC, date of birth,
+     * personal phone numbers, home address and employment dates are never
+     * queried. EmployeeController's own index/show select normally.
+     *
+     * @see Customer::SUMMARY_COLUMNS
+     */
+    public const SUMMARY_COLUMNS = 'id,employee_code,f_name,l_name,full_name,name_with_initials,employee_type,branch_id,department_id,designation_id,province_id,region_id,zonal_id,reporting_manager_id,is_active';
+
     protected $fillable = [
         'f_name',
         'l_name',
@@ -45,6 +57,12 @@ class Employee extends Model
         'end_date',
         'joined_at',
         'is_active',
+    ];
+
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
     ];
 
     protected $casts = [

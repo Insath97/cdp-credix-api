@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\Guarantor;
+use App\Models\Customer;
 use App\Enums\LoanApplicationStatus;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -23,7 +24,7 @@ class GuarantorController extends Controller
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Guarantor::with(['customer']);
+            $query = Guarantor::with(['customer:' . Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('search') ) {
                 $query->search($request->search);
@@ -87,7 +88,7 @@ class GuarantorController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Guarantor created successfully',
-                'data' => $guarantor->load('customer'),
+                'data' => $guarantor->load('customer:' . Customer::SUMMARY_COLUMNS),
             ], 201);
         } catch (\Throwable $th) {
             return response()->json([
@@ -101,7 +102,7 @@ class GuarantorController extends Controller
      public function show(string $id)
     {
         try {
-            $guarantor = Guarantor::with(['customer'])->find($id);
+            $guarantor = Guarantor::with(['customer:' . Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$guarantor) {
                 return response()->json([

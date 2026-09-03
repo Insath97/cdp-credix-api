@@ -35,6 +35,12 @@ class Branch extends Model
         'is_head_office',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'is_active' => 'boolean',
         'is_head_office' => 'boolean',

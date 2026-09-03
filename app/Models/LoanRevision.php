@@ -32,6 +32,12 @@ class LoanRevision extends Model
         'effective_date',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $appends = [
         'document_url',
     ];

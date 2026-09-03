@@ -5,6 +5,7 @@ namespace App\Http\Controllers\V1;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendSmsJob;
 use App\Models\PasswordChangeRequest;
+use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -68,7 +69,7 @@ class PasswordChangeController extends Controller
                 ], 403);
             }
 
-            $user->load($user->user_type === 'customer' ? 'customer' : 'employee');
+            $user->load($user->user_type === 'customer' ? 'customer:' . Customer::SUMMARY_COLUMNS : 'employee');
             $phone = $this->resolveRecipientPhone($user);
 
             if (empty($phone)) {
@@ -198,7 +199,7 @@ class PasswordChangeController extends Controller
                 ], 403);
             }
 
-            $user->load($user->user_type === 'customer' ? 'customer' : 'employee');
+            $user->load($user->user_type === 'customer' ? 'customer:' . Customer::SUMMARY_COLUMNS : 'employee');
             $phone = $this->resolveRecipientPhone($user);
 
             if (empty($phone)) {
