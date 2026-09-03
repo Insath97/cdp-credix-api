@@ -64,7 +64,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'branch',
                 'appliedByUser',
                 'reviewedByUser',
-                'approvedByUser'
+                'approvedByUser',
+                'groupLoan.loanProduct',
+                'groupLoan.branch',
+                'groupLoan.items',
             ]);
 
             if ($request->has('search')) {
@@ -206,6 +209,11 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'customer.documents',
                 'customer.customerDetail',
                 'loanApplicationCustomers.customer.customerDetail',
+                'loanApplicationCustomers.customer.bankDetails',
+                'loanApplicationCustomers.customer.fixedAssets',
+                'loanApplicationCustomers.customer.movingAssets',
+                'loanApplicationCustomers.customer.liabilities',
+                'loanApplicationCustomers.customer.documents',
                 'loanProduct',
                 'branch',
                 'appliedByUser',
@@ -218,6 +226,15 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loanApplicationBankDetails',
                 'installments',
                 'statusHistory.changedBy',
+                'groupLoan.loanProduct',
+                'groupLoan.branch',
+                'groupLoan.items',
+                'groupLoan.memberLoanApplications.customer.customerDetail',
+                'groupLoan.memberLoanApplications.customer.bankDetails',
+                'groupLoan.memberLoanApplications.customer.fixedAssets',
+                'groupLoan.memberLoanApplications.customer.movingAssets',
+                'groupLoan.memberLoanApplications.customer.liabilities',
+                'groupLoan.memberLoanApplications.customer.documents',
             ])->find($id);
 
             if (!$loanApplication) {
