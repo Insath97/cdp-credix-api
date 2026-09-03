@@ -14,6 +14,7 @@ use App\Enums\LoanRevisionStatus;
 use App\Services\GroupLoanWorkflowService;
 use App\Services\LoanApplicationWorkflowService;
 use App\Services\NotificationService;
+use App\Services\RecoveryCaseService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreatePaymentRequest;
 use App\Http\Requests\UpdatePaymentRequest;
@@ -28,6 +29,7 @@ class PaymentController extends Controller implements HasMiddleware
     public function __construct(
         protected LoanApplicationWorkflowService $workflowService,
         protected GroupLoanWorkflowService $groupLoanWorkflowService,
+        protected RecoveryCaseService $recoveryCaseService,
         protected NotificationService $notificationService,
     ) {
     }
@@ -153,6 +155,17 @@ class PaymentController extends Controller implements HasMiddleware
             $this->logActivity('CREATE', 'Payment', "Created payment ID: {$payment->id} ({$payment->receipt_no})", $data);
 
             if ($loanApplication) {
+                // Settle any live recovery case the moment the debt is gone.
+                // Done post-commit so a recovery-case write can never roll the
+                // payment itself back. loans:mark-overdue also does this for a
+                // borrower who merely catches up without closing the loan.
+                if ($loanClosed) {
+                    $this->recoveryCaseService->resolveOpenCases(
+                        $loanApplication,
+                        'Automatically resolved: the loan application was fully repaid and closed.'
+                    );
+                }
+
                 $isJoint = $loanApplication->isJointLoan();
 
                 foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {

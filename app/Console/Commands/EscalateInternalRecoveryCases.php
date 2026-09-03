@@ -4,12 +4,11 @@ namespace App\Console\Commands;
 
 use App\Enums\LoanApplicationStatus;
 use App\Models\LoanApplication;
-use App\Models\RecoveryCase;
 use App\Models\Setting;
 use App\Services\NotificationService;
+use App\Services\RecoveryCaseService;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Console\Command;
-use Illuminate\Support\Str;
 
 class EscalateInternalRecoveryCases extends Command
 {
@@ -25,18 +24,24 @@ class EscalateInternalRecoveryCases extends Command
      */
     protected $description = 'Automatically open an internal recovery case for overdue loan applications that have crossed the configured internal recovery threshold.';
 
-    public function handle(NotificationService $notificationService): int
+    public function handle(NotificationService $notificationService, RecoveryCaseService $recoveryCaseService): int
     {
         if (!Setting::get('recovery_escalation_enabled', true)) {
             $this->info('Recovery escalation is disabled in System Settings. Skipping.');
             return self::SUCCESS;
         }
 
-        $thresholdDays = Setting::get('internal_recovery_threshold_days', 30);
+        $thresholdDays = (int) Setting::get('internal_recovery_threshold_days', 30);
 
+        // Skip a loan that already has ANY live case, not just a live internal
+        // one. Checking only stage=internal meant that once a case had been
+        // escalated to external (which settles the internal one), this command
+        // saw "no live internal case" and opened a fresh internal case the
+        // very next night — which the external command then escalated again,
+        // producing a new case pair every single night the loan stayed overdue.
         $loanApplications = LoanApplication::where('status', LoanApplicationStatus::Overdue)
             ->whereDoesntHave('recoveryCases', function ($query) {
-                $query->where('stage', 'internal')->whereIn('status', ['open', 'in_progress']);
+                $query->whereIn('status', RecoveryCaseService::LIVE_STATUSES);
             })
             ->with(['customer', 'installments'])
             ->get();
@@ -53,28 +58,17 @@ class EscalateInternalRecoveryCases extends Command
                 continue;
             }
 
-            $daysOverdue = $earliestOverdueInstallment->due_date->diffInDays(now());
+            $daysOverdue = $earliestOverdueInstallment->daysOverdue();
 
             if ($daysOverdue < $thresholdDays) {
                 continue;
             }
 
-            $overdueAmount = $loanApplication->installments
-                ->where('status', 'overdue')
-                ->sum('balance');
-
-            $case = RecoveryCase::create([
-                'loan_application_id' => $loanApplication->id,
-                'case_no'             => (string) Str::uuid(),
-                'status'              => 'open',
-                'stage'               => 'internal',
-                'overdue_amount'      => $overdueAmount,
-                'opened_by'           => null,
-                'opened_at'           => now(),
-                'remarks'             => "Automatically escalated to internal recovery after {$daysOverdue} day(s) overdue.",
-            ]);
-            $case->case_no = 'RC-' . str_pad($case->id, 6, '0', STR_PAD_LEFT);
-            $case->save();
+            $recoveryCaseService->openInternalCase(
+                $loanApplication,
+                $recoveryCaseService->overdueAmountFor($loanApplication),
+                $daysOverdue
+            );
 
             $internalEscalationMessage = "CDP Credix: Your loan account (Loan Application ID: {$loanApplication->id}) has become overdue. Please contact us immediately to avoid further recovery actions.";
 

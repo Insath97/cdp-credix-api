@@ -293,6 +293,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     Route::apiResource('payments', PaymentController::class);
 
     // Recovery Cases
+    Route::patch('recovery-cases/{id}/assign-agent', [RecoveryCaseController::class, 'assignAgent']);
     Route::apiResource('recovery-cases', RecoveryCaseController::class);
 
     // Recovery Activities

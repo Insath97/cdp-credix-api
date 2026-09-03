@@ -22,7 +22,7 @@ class SendOverdueSmsReminders extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Send periodic SMS reminders to customers with overdue loan applications, on the frequency/duration configured in System Settings.';
+    protected $description = 'Send periodic SMS reminders to customers whose installment has passed its due date, on the frequency/duration configured in System Settings.';
 
     public function handle(NotificationService $notificationService): int
     {
@@ -31,10 +31,21 @@ class SendOverdueSmsReminders extends Command
             return self::SUCCESS;
         }
 
-        $frequencyDays = Setting::get('overdue_sms_frequency_days', 7);
-        $durationDays = Setting::get('overdue_sms_duration_weeks', 3) * 7;
+        $frequencyDays = max(1, (int) Setting::get('overdue_sms_frequency_days', 7));
+        $durationDays = (int) Setting::get('overdue_sms_duration_weeks', 3) * 7;
 
-        $loanApplications = LoanApplication::where('status', LoanApplicationStatus::Overdue)
+        // These are nudge reminders sent DURING the grace period — days 7, 14
+        // and 21 after the due date, with stock settings — so they key off
+        // "unpaid and past its due date", not off the formal 'overdue' status.
+        // That status is only stamped once the product's grace period (30 days
+        // by default) has fully elapsed, which is strictly later than this
+        // whole reminder window: keying off it meant no reminder ever sent.
+        $loanApplications = LoanApplication::whereIn('status', [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue])
+            ->whereHas('installments', function ($query) {
+                $query->whereNotIn('status', ['paid', 'waived', 'revised'])
+                    ->where('balance', '>', 0)
+                    ->whereDate('due_date', '<', now()->toDateString());
+            })
             ->with(['customer', 'installments', 'loanApplicationCustomers.customer'])
             ->get();
 
@@ -47,18 +58,18 @@ class SendOverdueSmsReminders extends Command
                 continue;
             }
 
-            $earliestOverdueInstallment = $loanApplication->installments
-                ->where('status', 'overdue')
+            $earliestPastDueInstallment = $loanApplication->installments
+                ->filter(fn ($installment) => $installment->isPastDue())
                 ->sortBy('due_date')
                 ->first();
 
-            if (!$earliestOverdueInstallment) {
+            if (!$earliestPastDueInstallment) {
                 continue;
             }
 
-            $daysOverdue = $earliestOverdueInstallment->due_date->diffInDays(now());
+            $daysOverdue = $earliestPastDueInstallment->daysOverdue();
 
-            if ($daysOverdue > $durationDays || $daysOverdue % $frequencyDays !== 0) {
+            if ($daysOverdue < 1 || $daysOverdue > $durationDays || $daysOverdue % $frequencyDays !== 0) {
                 continue;
             }
 

@@ -2,9 +2,12 @@
 
 namespace App\Http\Requests;
 
+use App\Models\User;
 use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\Exceptions\HttpResponseException;
 
 class UpdateUserRequest extends FormRequest
 {
@@ -26,7 +29,7 @@ class UpdateUserRequest extends FormRequest
     public function rules(): array
     {
         $id = $this->route('user');
-        $userObj = \App\Models\User::find($id);
+        $userObj = User::find($id);
         $employeeId = $userObj?->employee_id ?? 'NULL';
 
         return [
@@ -59,6 +62,26 @@ class UpdateUserRequest extends FormRequest
     public function bodyParameters()
     {
         return [];
+    }
+
+    protected function failedValidation(Validator $validator)
+    {
+        $errorMessages = $validator->errors();
+        $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
+            return [
+                'field' => $field,
+                'messages' => $messages,
+            ];
+        })->values();
+
+        $message = $fieldErrors->count() > 1
+            ? 'There are multiple validation errors. Please review the form and correct the issues.'
+            : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.';
+
+        throw new HttpResponseException(response()->json([
+            'message' => $message,
+            'errors' => $fieldErrors,
+        ], 422));
     }
 
 }
