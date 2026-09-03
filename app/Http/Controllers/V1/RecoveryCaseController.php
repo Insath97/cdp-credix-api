@@ -8,18 +8,21 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\RecoveryCase;
 use App\Services\NotificationService;
 use App\Traits\ActivityLogTrait;
+use App\Http\Requests\AssignRecoveryCaseAgentRequest;
 use App\Http\Requests\CreateRecoveryCaseRequest;
 use App\Http\Requests\UpdateRecoveryCaseRequest;
+use App\Services\RecoveryCaseService;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
-use Illuminate\Support\Str;
 
 class RecoveryCaseController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
 
-    public function __construct(protected NotificationService $notificationService)
-    {
+    public function __construct(
+        protected NotificationService $notificationService,
+        protected RecoveryCaseService $recoveryCaseService,
+    ) {
     }
 
     public static function middleware(): array
@@ -27,7 +30,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
         return [
             new Middleware('permission:Recovery Case Index',  only: ['index', 'show']),
             new Middleware('permission:Recovery Case Create', only: ['store']),
-            new Middleware('permission:Recovery Case Update', only: ['update']),
+            new Middleware('permission:Recovery Case Update', only: ['update', 'assignAgent']),
             new Middleware('permission:Recovery Case Delete', only: ['destroy']),
         ];
     }
@@ -85,11 +88,10 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             $data = $request->validated();
             $data['opened_by'] = Auth::id();
             $data['opened_at'] = $data['opened_at'] ?? now();
-            $data['case_no'] = (string) Str::uuid();
+            $data['case_no'] = $this->recoveryCaseService->placeholderCaseNo();
 
             $case = RecoveryCase::create($data);
-            $case->case_no = 'RC-' . str_pad($case->id, 6, '0', STR_PAD_LEFT);
-            $case->save();
+            $this->recoveryCaseService->applyCaseNo($case);
 
             $this->logActivity('CREATE', 'RecoveryCase', "Created recovery case ID: {$case->id} ({$case->case_no})", $data);
 
@@ -139,6 +141,79 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to create recovery case',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Put an agent on a recovery case and tell them about it.
+     *
+     * Auto-created cases (the 30-day internal one and the 45-day external one)
+     * are opened unassigned by design — an admin decides who works them. This
+     * is the endpoint that does it: it refuses an agent that does not match the
+     * case's stage, and it is the only path that notifies the agent, which the
+     * generic update endpoint never did.
+     */
+    public function assignAgent(AssignRecoveryCaseAgentRequest $request, string $id)
+    {
+        try {
+            $case = RecoveryCase::find($id);
+
+            if (!$case) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'That recovery case could not be found.',
+                ], 404);
+            }
+
+            if (!in_array($case->status, RecoveryCaseService::LIVE_STATUSES, true)) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "This case is already {$case->status} and no longer needs an agent.",
+                    'errors'  => ['status' => $case->status],
+                ], 422);
+            }
+
+            $data = $request->validated();
+
+            $case->fill([
+                'assigned_agent_id' => $data['assigned_agent_id'] ?? $case->assigned_agent_id,
+                'external_agent_id' => $data['external_agent_id'] ?? $case->external_agent_id,
+            ]);
+
+            // Picking up a case is what moves it out of the untouched 'open'
+            // state — nothing else in the app ever set in_progress.
+            if ($case->status === 'open') {
+                $case->status = 'in_progress';
+            }
+
+            if (!empty($data['remarks'])) {
+                $case->remarks = trim(($case->remarks ?? '') . ' ' . $data['remarks']);
+            }
+
+            $case->save();
+
+            $this->recoveryCaseService->notifyAssignedAgent($case);
+
+            $this->logActivity('UPDATE', 'RecoveryCase', "Assigned an agent to recovery case {$case->case_no}", [
+                'recovery_case_id'  => $case->id,
+                'stage'             => $case->stage,
+                'assigned_agent_id' => $case->assigned_agent_id,
+                'external_agent_id' => $case->external_agent_id,
+                'assigned_by'       => Auth::id(),
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Agent assigned to the recovery case successfully',
+                'data'    => $case->fresh(['loanApplication.customer', 'assignedAgent.employee', 'externalAgent', 'openedBy']),
+            ], 200);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to assign an agent to the recovery case',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }

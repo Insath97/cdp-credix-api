@@ -4,12 +4,11 @@ namespace App\Console\Commands;
 
 use App\Enums\LoanApplicationStatus;
 use App\Models\LoanApplication;
-use App\Models\RecoveryCase;
 use App\Models\Setting;
 use App\Services\NotificationService;
+use App\Services\RecoveryCaseService;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Console\Command;
-use Illuminate\Support\Str;
 
 class EscalateExternalRecoveryCases extends Command
 {
@@ -23,23 +22,33 @@ class EscalateExternalRecoveryCases extends Command
     /**
      * The console command description.
      */
-    protected $description = 'Close open internal recovery cases and open a new external recovery case once the configured external recovery threshold is crossed.';
+    protected $description = 'Supersede live internal recovery cases and open an external recovery case once the configured external recovery threshold is crossed.';
 
-    public function handle(NotificationService $notificationService): int
+    public function handle(NotificationService $notificationService, RecoveryCaseService $recoveryCaseService): int
     {
         if (!Setting::get('recovery_escalation_enabled', true)) {
             $this->info('Recovery escalation is disabled in System Settings. Skipping.');
             return self::SUCCESS;
         }
 
-        $thresholdDays = Setting::get('external_recovery_threshold_days', 45);
+        $thresholdDays = (int) Setting::get('external_recovery_threshold_days', 45);
 
+        // The whereDoesntHave guard is the other half of the duplicate-case
+        // fix: even if a stray live internal case exists, a loan that already
+        // has a live external case must never get a second one. It checks only
+        // for a LIVE external case, so a borrower who catches up (cases get
+        // resolved) and later falls behind again correctly starts a new cycle.
         $loanApplications = LoanApplication::where('status', LoanApplicationStatus::Overdue)
             ->whereHas('recoveryCases', function ($query) {
-                $query->where('stage', 'internal')->whereIn('status', ['open', 'in_progress']);
+                $query->where('stage', 'internal')->whereIn('status', RecoveryCaseService::LIVE_STATUSES);
+            })
+            ->whereDoesntHave('recoveryCases', function ($query) {
+                $query->where('stage', 'external')->whereIn('status', RecoveryCaseService::LIVE_STATUSES);
             })
             ->with(['customer', 'installments', 'recoveryCases' => function ($query) {
-                $query->where('stage', 'internal')->whereIn('status', ['open', 'in_progress']);
+                $query->where('stage', 'internal')
+                    ->whereIn('status', RecoveryCaseService::LIVE_STATUSES)
+                    ->orderBy('id');
             }])
             ->get();
 
@@ -55,7 +64,7 @@ class EscalateExternalRecoveryCases extends Command
                 continue;
             }
 
-            $daysOverdue = $earliestOverdueInstallment->due_date->diffInDays(now());
+            $daysOverdue = $earliestOverdueInstallment->daysOverdue();
 
             if ($daysOverdue < $thresholdDays) {
                 continue;
@@ -67,29 +76,12 @@ class EscalateExternalRecoveryCases extends Command
                 continue;
             }
 
-            $internalCase->update([
-                'status'    => 'closed',
-                'closed_at' => now(),
-                'remarks'   => trim(($internalCase->remarks ?? '') . " Escalated to external recovery after {$daysOverdue} day(s) overdue."),
-            ]);
-
-            $overdueAmount = $loanApplication->installments
-                ->where('status', 'overdue')
-                ->sum('balance');
-
-            $externalCase = RecoveryCase::create([
-                'loan_application_id' => $loanApplication->id,
-                'case_no'             => (string) Str::uuid(),
-                'status'              => 'open',
-                'stage'               => 'external',
-                'parent_case_id'      => $internalCase->id,
-                'overdue_amount'      => $overdueAmount,
-                'opened_by'           => null,
-                'opened_at'           => now(),
-                'remarks'             => "Automatically escalated to external recovery after {$daysOverdue} day(s) overdue.",
-            ]);
-            $externalCase->case_no = 'RC-' . str_pad($externalCase->id, 6, '0', STR_PAD_LEFT);
-            $externalCase->save();
+            $recoveryCaseService->escalateToExternal(
+                $internalCase,
+                $loanApplication,
+                $recoveryCaseService->overdueAmountFor($loanApplication),
+                $daysOverdue
+            );
 
             $externalEscalationMessage = "CDP Credix: Your overdue loan account (Loan Application ID: {$loanApplication->id}) has been referred to external recovery. Please settle your outstanding balance immediately.";
 

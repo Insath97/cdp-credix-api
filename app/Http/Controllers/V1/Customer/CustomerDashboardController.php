@@ -46,7 +46,7 @@ class CustomerDashboardController extends Controller
 
             $overdueAmount = $overdueInstallments->sum('balance');
             $earliestOverdue = $overdueInstallments->first();
-            $overdueDays = $earliestOverdue ? $earliestOverdue->due_date->diffInDays(now()) : null;
+            $overdueDays = $earliestOverdue?->daysOverdue();
 
             $statusCounts = LoanApplication::where('customer_id', $customerId)
                 ->select('status', DB::raw('count(*) as total'))

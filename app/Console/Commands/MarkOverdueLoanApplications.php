@@ -6,6 +6,7 @@ use App\Enums\LoanApplicationStatus;
 use App\Models\LoanApplication;
 use App\Models\Setting;
 use App\Services\LoanApplicationWorkflowService;
+use App\Services\RecoveryCaseService;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Console\Command;
 
@@ -23,15 +24,18 @@ class MarkOverdueLoanApplications extends Command
      */
     protected $description = 'Mark installments overdue once their grace period has elapsed, and sync the parent loan application status (Active <-> Overdue) accordingly.';
 
-    public function handle(LoanApplicationWorkflowService $workflowService): int
+    public function handle(LoanApplicationWorkflowService $workflowService, RecoveryCaseService $recoveryCaseService): int
     {
         $installmentsMarked = 0;
         $applicationsMarkedOverdue = 0;
         $applicationsReverted = 0;
         $penaltiesCharged = 0;
+        $casesResolved = 0;
 
         $activeApplications = LoanApplication::whereIn('status', [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue])
-            ->with(['loanProduct', 'installments'])
+            ->with(['loanProduct', 'installments', 'recoveryCases' => function ($query) {
+                $query->whereIn('status', RecoveryCaseService::LIVE_STATUSES);
+            }])
             ->get();
 
         foreach ($activeApplications as $loanApplication) {
@@ -92,9 +96,22 @@ class MarkOverdueLoanApplications extends Command
             } catch (\Throwable $th) {
                 $this->error("Failed to sync status for loan application ID {$loanApplication->id}: {$th->getMessage()}");
             }
+
+            // A loan that is no longer in arrears must not leave a live
+            // recovery case behind: the escalation commands skip any loan that
+            // already has one, so a stale case would permanently block a
+            // legitimate future case. Checked on !$hasOverdueInstallment
+            // rather than only inside the revert branch above, so loans that
+            // are already Active but carry a stale case get cleaned up too.
+            if (!$hasOverdueInstallment && $loanApplication->recoveryCases->isNotEmpty()) {
+                $casesResolved += $recoveryCaseService->resolveOpenCases(
+                    $loanApplication,
+                    'Automatically resolved: the loan application is no longer overdue.'
+                );
+            }
         }
 
-        $summary = "Installments marked overdue: {$installmentsMarked}. Penalties charged: {$penaltiesCharged}. Applications marked overdue: {$applicationsMarkedOverdue}. Applications reverted to active: {$applicationsReverted}.";
+        $summary = "Installments marked overdue: {$installmentsMarked}. Penalties charged: {$penaltiesCharged}. Applications marked overdue: {$applicationsMarkedOverdue}. Applications reverted to active: {$applicationsReverted}. Recovery cases resolved: {$casesResolved}.";
         $this->info($summary);
 
         $this->logActivity('UPDATE', 'LoanApplication', $summary, [
@@ -102,6 +119,7 @@ class MarkOverdueLoanApplications extends Command
             'penalties_charged'          => $penaltiesCharged,
             'applications_marked_overdue' => $applicationsMarkedOverdue,
             'applications_reverted'       => $applicationsReverted,
+            'recovery_cases_resolved'     => $casesResolved,
         ]);
 
         return self::SUCCESS;

@@ -79,4 +79,38 @@ class LoanInstallment extends Model
     {
         $this->balance = max(0, $this->amount_due + $this->penalty_amount - $this->amount_paid);
     }
+
+    /**
+     * Whole calendar days between this installment's due date and today, 0 for
+     * one that is not yet past due.
+     *
+     * Carbon 3's diffInDays() returns a float (a due date at midnight compared
+     * against a 01:00 scheduler run gives 7.0416...), which used to leak into
+     * customer SMS text ("is 7.0416666666667 day(s) overdue") and into
+     * recovery case remarks. Snapping both operands to midnight makes the
+     * difference whole before the cast, and this is the single place that
+     * does it — every threshold comparison and every message reads from here.
+     */
+    public function daysOverdue(): int
+    {
+        if (!$this->due_date) {
+            return 0;
+        }
+
+        return max(0, (int) $this->due_date->copy()->startOfDay()->diffInDays(now()->startOfDay()));
+    }
+
+    /**
+     * Whether this installment is unpaid and past its due date — the state the
+     * grace-period nudge reminders key off, which is deliberately earlier than
+     * the formal 'overdue' status (that is only stamped once the product's
+     * grace period has fully elapsed).
+     */
+    public function isPastDue(): bool
+    {
+        return !in_array($this->status, ['paid', 'waived', 'revised'], true)
+            && $this->balance > 0
+            && $this->due_date
+            && $this->due_date->lt(now()->startOfDay());
+    }
 }
