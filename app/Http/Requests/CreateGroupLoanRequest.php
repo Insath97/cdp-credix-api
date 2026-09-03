@@ -34,7 +34,7 @@ class CreateGroupLoanRequest extends FormRequest
             ],
             'branch_id'         => 'nullable|integer|exists:branches,id',
             'group_name'        => 'required|string|max:255',
-            'number_of_members' => 'required|integer|min:2',
+            'number_of_members' => 'required|integer|min:1',
             'competency'        => ['required', 'string', function ($attribute, $value, $fail) {
                 $allowed = Setting::get('group_loan_competency', []);
                 $normalized = array_map(fn ($c) => trim(mb_strtolower($c)), $allowed);
@@ -43,6 +43,7 @@ class CreateGroupLoanRequest extends FormRequest
                 }
             }],
             'term_months' => 'required|integer|min:1',
+            'service_charge_percentage' => 'nullable|numeric|min:0|max:100',
 
             'items'              => 'required|array|min:1',
             'items.*.item_name'  => 'required|string|max:255',
