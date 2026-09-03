@@ -29,6 +29,12 @@ class Liability extends Model
         'is_active',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'original_amount' => 'decimal:2',
         'outstanding_balance' => 'decimal:2',

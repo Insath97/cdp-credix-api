@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\MovingAssests;
+use App\Models\Customer;
 use App\Enums\LoanApplicationStatus;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateMovingAssetsRequest;
@@ -32,7 +33,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
      {
          try {
              $perPage = $request->get('per_page', 15);
-             $query = MovingAssests::with(['customer']);
+             $query = MovingAssests::with(['customer:' . Customer::SUMMARY_COLUMNS]);
 
              if ($request->has('search')) {
                  $query->search($request->search);
@@ -99,7 +100,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
              return response()->json([
                  'status' => 'success',
                  'message' => 'Moving assets created successfully',
-                 'data' => $moving_assests->load('customer'),
+                 'data' => $moving_assests->load('customer:' . Customer::SUMMARY_COLUMNS),
              ], 201);
          } catch (\Throwable $th) {
              return response()->json([
@@ -113,7 +114,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
      public function show(string $id)
      {
          try {
-             $moving_assests = MovingAssests::with(['customer'])->find($id);
+             $moving_assests = MovingAssests::with(['customer:' . Customer::SUMMARY_COLUMNS])->find($id);
 
              if (!$moving_assests) {
                  return response()->json([
@@ -162,7 +163,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
              return response()->json([
                  'status' => 'success',
                  'message' => 'Moving assets updated successfully',
-                 'data' => $moving_assests->load('customer'),
+                 'data' => $moving_assests->load('customer:' . Customer::SUMMARY_COLUMNS),
              ], 200);
          } catch (\Throwable $th) {
              return response()->json([

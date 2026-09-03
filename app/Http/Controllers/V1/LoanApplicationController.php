@@ -11,6 +11,8 @@ use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationCustomer;
 use App\Models\LoanProduct;
+use App\Models\Customer;
+use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationRequest;
 use App\Http\Requests\UpdateLoanApplicationRequest;
@@ -56,15 +58,21 @@ class LoanApplicationController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
+            // A loan list only names the borrower and any co-borrowers, so both are
+            // loaded on summary columns — NIC, date of birth, address, income and
+            // employer/business details are never queried. show() is the credit
+            // file and does select them.
             $query = LoanApplication::with([
                 'application',
-                'customer',
-                'loanApplicationCustomers.customer.customerDetail',
+                'customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplicationCustomers.customer' => fn ($q) => $q
+                    ->select(explode(',', Customer::SUMMARY_COLUMNS))
+                    ->with('customerDetail'),
                 'loanProduct',
                 'branch',
-                'appliedByUser',
-                'reviewedByUser',
-                'approvedByUser'
+                'appliedByUser:' . User::SUMMARY_COLUMNS,
+                'reviewedByUser:' . User::SUMMARY_COLUMNS,
+                'approvedByUser:' . User::SUMMARY_COLUMNS
             ]);
 
             if ($request->has('search')) {
@@ -173,11 +181,13 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'message' => 'Loan application created successfully',
                 'data'    => $loanApplication->load([
                     'application',
-                    'customer',
-                    'loanApplicationCustomers.customer.customerDetail',
+                    'customer:' . Customer::SUMMARY_COLUMNS,
+                    'loanApplicationCustomers.customer' => fn ($q) => $q
+                        ->select(explode(',', Customer::SUMMARY_COLUMNS))
+                        ->with('customerDetail'),
                     'loanProduct',
                     'branch',
-                    'appliedByUser'
+                    'appliedByUser:' . User::SUMMARY_COLUMNS
                 ]),
             ], 201);
 
@@ -208,16 +218,16 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loanApplicationCustomers.customer.customerDetail',
                 'loanProduct',
                 'branch',
-                'appliedByUser',
-                'reviewedByUser',
-                'approvedByUser',
+                'appliedByUser:' . User::SUMMARY_COLUMNS,
+                'reviewedByUser:' . User::SUMMARY_COLUMNS,
+                'approvedByUser:' . User::SUMMARY_COLUMNS,
                 'loanApplicationGuarantors.guarantor',
                 'loanApplicationFixedAssets',
                 'loanApplicationMovingAssets',
                 'loanApplicationLiabilities',
                 'loanApplicationBankDetails',
                 'installments',
-                'statusHistory.changedBy',
+                'statusHistory.changedBy:' . User::SUMMARY_COLUMNS,
             ])->find($id);
 
             if (!$loanApplication) {
@@ -268,12 +278,12 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'message' => 'Loan application updated successfully',
                 'data'    => $loanApplication->fresh([
                     'application',
-                    'customer',
+                    'customer:' . Customer::SUMMARY_COLUMNS,
                     'loanProduct',
                     'branch',
-                    'appliedByUser',
-                    'reviewedByUser',
-                    'approvedByUser'
+                    'appliedByUser:' . User::SUMMARY_COLUMNS,
+                    'reviewedByUser:' . User::SUMMARY_COLUMNS,
+                    'approvedByUser:' . User::SUMMARY_COLUMNS
                 ]),
             ], 200);
 

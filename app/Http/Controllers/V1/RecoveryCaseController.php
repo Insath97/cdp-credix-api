@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\RecoveryCase;
+use App\Models\Customer;
+use App\Models\User;
 use App\Services\NotificationService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\AssignRecoveryCaseAgentRequest;
@@ -42,7 +44,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = RecoveryCase::with(['loanApplication', 'assignedAgent', 'openedBy']);
+            $query = RecoveryCase::with(['loanApplication', 'assignedAgent:' . User::SUMMARY_COLUMNS, 'openedBy:' . User::SUMMARY_COLUMNS]);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -95,7 +97,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
 
             $this->logActivity('CREATE', 'RecoveryCase', "Created recovery case ID: {$case->id} ({$case->case_no})", $data);
 
-            $case->load(['loanApplication.customer', 'assignedAgent.employee', 'openedBy']);
+            $case->load(['loanApplication.customer:' . Customer::CONTACT_COLUMNS, 'assignedAgent.employee', 'openedBy:' . User::SUMMARY_COLUMNS]);
 
             if ($case->loanApplication) {
                 $recoveryMessage = "CDP Credix: Your loan account (Loan Application ID: {$case->loan_application_id}) has become overdue. Please contact us immediately to avoid further recovery actions.";
@@ -207,7 +209,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Agent assigned to the recovery case successfully',
-                'data'    => $case->fresh(['loanApplication.customer', 'assignedAgent.employee', 'externalAgent', 'openedBy']),
+                'data'    => $case->fresh(['loanApplication.customer:' . Customer::CONTACT_COLUMNS, 'assignedAgent.employee', 'externalAgent', 'openedBy:' . User::SUMMARY_COLUMNS]),
             ], 200);
 
         } catch (\Throwable $th) {
@@ -225,7 +227,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $case = RecoveryCase::with(['loanApplication.customer', 'assignedAgent', 'openedBy', 'activities.performedBy', 'externalAgent'])->find($id);
+            $case = RecoveryCase::with(['loanApplication.customer:' . Customer::CONTACT_COLUMNS, 'assignedAgent:' . User::SUMMARY_COLUMNS, 'openedBy:' . User::SUMMARY_COLUMNS, 'activities.performedBy:' . User::SUMMARY_COLUMNS, 'externalAgent'])->find($id);
 
             if (!$case) {
                 return response()->json([
@@ -277,7 +279,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Recovery case updated successfully',
-                'data'    => $case->fresh(['loanApplication', 'assignedAgent', 'openedBy']),
+                'data'    => $case->fresh(['loanApplication', 'assignedAgent:' . User::SUMMARY_COLUMNS, 'openedBy:' . User::SUMMARY_COLUMNS]),
             ], 200);
 
         } catch (\Throwable $th) {

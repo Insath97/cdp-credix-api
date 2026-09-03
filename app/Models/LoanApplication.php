@@ -46,6 +46,12 @@ class LoanApplication extends Model
         'assigned_reviewer_id',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'application_id'      => 'integer',
         'customer_id'         => 'integer',

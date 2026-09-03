@@ -5,6 +5,7 @@ namespace App\Http\Controllers\V1;
 use App\Http\Controllers\Controller;
 use App\Models\LoginOtpVerification;
 use App\Models\User;
+use App\Models\Customer;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -85,7 +86,7 @@ class AuthController extends Controller
             }
 
             if ($user->user_type === 'customer' && is_null($user->two_factor_verified_at)) {
-                $user->load('customer');
+                $user->load('customer:' . Customer::SUMMARY_COLUMNS);
                 $phone = $user->customer?->phone_primary;
 
                 if (empty($phone)) {

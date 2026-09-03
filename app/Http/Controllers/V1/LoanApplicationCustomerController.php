@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationCustomer;
+use App\Models\Customer;
 use App\Enums\LoanApplicationStatus;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationCustomerRequest;
@@ -33,7 +34,7 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = LoanApplicationCustomer::with(['loanApplication', 'customer']);
+            $query = LoanApplicationCustomer::with(['loanApplication', 'customer:' . Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -88,7 +89,7 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Customer added to loan application successfully',
-                'data'    => $record->load(['loanApplication', 'customer']),
+                'data'    => $record->load(['loanApplication', 'customer:' . Customer::SUMMARY_COLUMNS]),
             ], 201);
 
         } catch (\Throwable $th) {
@@ -106,7 +107,7 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     public function show(string $id)
     {
         try {
-            $record = LoanApplicationCustomer::with(['loanApplication', 'customer'])->find($id);
+            $record = LoanApplicationCustomer::with(['loanApplication', 'customer:' . Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$record) {
                 return response()->json([

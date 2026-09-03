@@ -17,6 +17,12 @@ class LoanApplicationLiability extends Model
         'liability_id',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'loan_application_id' => 'integer',
         'liability_id'        => 'integer',

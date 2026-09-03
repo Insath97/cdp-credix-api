@@ -14,6 +14,30 @@ class Customer extends Model
 {
     use HasFactory, SoftDeletes;
 
+    /**
+     * Columns to select when a customer is loaded as a nested reference — on a
+     * loan, a payment, a recovery case — rather than as the record being viewed.
+     *
+     * Those screens only need to name the customer, so the NIC, date of birth,
+     * home address, income figures and employer/business details are never
+     * queried and so can never reach the browser. Endpoints whose subject IS the
+     * customer (CustomerController, CustomerProfileController) select normally.
+     *
+     * Pass to a relation string: ->with('customer:' . Customer::SUMMARY_COLUMNS)
+     */
+    public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,is_active';
+
+    /**
+     * SUMMARY_COLUMNS plus the means to reach the customer — for recovery and
+     * collections screens, where an officer has to call or visit a defaulter.
+     *
+     * Still withholds the NIC, date of birth, income figures and the employer /
+     * business profile, none of which are needed to make contact.
+     */
+    public const CONTACT_COLUMNS = self::SUMMARY_COLUMNS
+        . ',phone_secondary,email,have_whatsapp,whatsapp_number'
+        . ',address_line_1,address_line_2,landmark,city,state,country,postal_code';
+
     protected static function boot()
     {
         parent::boot();
@@ -92,6 +116,12 @@ class Customer extends Model
         'other_expenses',
         'total_monthly_expenses',
         'is_active',
+    ];
+
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
     ];
 
     protected $casts = [

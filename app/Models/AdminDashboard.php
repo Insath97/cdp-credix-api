@@ -27,6 +27,12 @@ class AdminDashboard extends Model
         'created_by',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'target_value' => 'decimal:2',
         'period_start' => 'date',

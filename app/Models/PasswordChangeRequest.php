@@ -18,6 +18,13 @@ class PasswordChangeRequest extends Model
         'status',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+        'otp',
+    ];
+
     protected $casts = [
         'expires_at' => 'datetime',
     ];

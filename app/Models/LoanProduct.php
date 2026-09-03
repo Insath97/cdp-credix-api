@@ -34,6 +34,12 @@ class LoanProduct extends Model
         'is_group_loan',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'loan_type_id'         => 'integer',
         'loan_term_id'         => 'integer',

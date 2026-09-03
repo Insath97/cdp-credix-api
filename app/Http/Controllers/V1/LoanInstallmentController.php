@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use App\Models\LoanInstallment;
 use App\Models\LoanApplication;
+use App\Models\Customer;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanInstallmentRequest;
 use App\Http\Requests\UpdateLoanInstallmentRequest;
@@ -35,7 +36,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = LoanInstallment::with(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch', 'loanApplication.application']);
+            $query = LoanInstallment::with(['loanApplication.customer:' . Customer::SUMMARY_COLUMNS, 'loanApplication.loanProduct', 'loanApplication.branch', 'loanApplication.application']);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -74,7 +75,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     public function list(Request $request)
     {
         try {
-            $query = LoanInstallment::with(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch', 'loanApplication.application']);
+            $query = LoanInstallment::with(['loanApplication.customer:' . Customer::SUMMARY_COLUMNS, 'loanApplication.loanProduct', 'loanApplication.branch', 'loanApplication.application']);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -135,7 +136,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Loan installment created successfully',
-                'data'    => $installment->load(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch']),
+                'data'    => $installment->load(['loanApplication.customer:' . Customer::SUMMARY_COLUMNS, 'loanApplication.loanProduct', 'loanApplication.branch']),
             ], 201);
 
         } catch (\Throwable $th) {
@@ -153,7 +154,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $installment = LoanInstallment::with(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch'])->find($id);
+            $installment = LoanInstallment::with(['loanApplication.customer:' . Customer::SUMMARY_COLUMNS, 'loanApplication.loanProduct', 'loanApplication.branch'])->find($id);
 
             if (!$installment) {
                 return response()->json([
@@ -216,7 +217,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Loan installment updated successfully',
-                'data'    => $installment->fresh(['loanApplication.customer', 'loanApplication.loanProduct', 'loanApplication.branch']),
+                'data'    => $installment->fresh(['loanApplication.customer:' . Customer::SUMMARY_COLUMNS, 'loanApplication.loanProduct', 'loanApplication.branch']),
             ], 200);
 
         } catch (\Throwable $th) {

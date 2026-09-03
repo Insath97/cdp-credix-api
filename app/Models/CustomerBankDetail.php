@@ -23,6 +23,12 @@ class CustomerBankDetail extends Model
         'is_active',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'is_active' => 'boolean',
     ];

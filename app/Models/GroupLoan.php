@@ -42,6 +42,12 @@ class GroupLoan extends Model
         'is_active',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'loan_product_id'        => 'integer',
         'branch_id'               => 'integer',

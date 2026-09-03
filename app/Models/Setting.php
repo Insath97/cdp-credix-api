@@ -15,6 +15,12 @@ class Setting extends Model
         'description',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected static function cacheKey(string $key): string
     {
         return "setting:{$key}";

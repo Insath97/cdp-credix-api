@@ -20,6 +20,12 @@ class RecoveryActivity extends Model
         'performed_at',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'recovery_case_id' => 'integer',
         'promised_amount'   => 'decimal:2',

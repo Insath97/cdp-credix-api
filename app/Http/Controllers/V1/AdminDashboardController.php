@@ -8,6 +8,8 @@ use App\Models\AdminDashboard;
 use App\Models\LoanApplication;
 use App\Models\LoanProduct;
 use App\Models\Payment;
+use App\Models\Customer;
+use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -86,11 +88,11 @@ class AdminDashboardController extends Controller implements HasMiddleware
                 'targets' => $this->computeTargets($startDate, $endDate, $branchId, $totalDisbursed, $paidInPeriod, $totalApplications),
                 'balance_chart' => $this->buildBalanceChart($endDate, $branchId),
                 'top_loan_products' => $this->topLoanProducts($startDate, $endDate, $branchId),
-                'recent_transactions' => $this->shapeTransactions(Payment::with(['loanApplication.application', 'loanApplication.customer'])
+                'recent_transactions' => $this->shapeTransactions(Payment::with(['loanApplication.application', 'loanApplication.customer:' . Customer::SUMMARY_COLUMNS])
                     ->when($branchId, fn ($q) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $branchId)))
                     ->orderByDesc('paid_at')->limit(5)->get()),
                 'recent_loan_applications' => $this->shapeApplications((clone $baseLoanQuery())
-                    ->with(['application', 'loanProduct', 'customer'])
+                    ->with(['application', 'loanProduct', 'customer:' . Customer::SUMMARY_COLUMNS])
                     ->orderByDesc('applied_at')->limit(5)->get()),
             ];
 
@@ -119,7 +121,7 @@ class AdminDashboardController extends Controller implements HasMiddleware
         try {
             $perPage = $request->get('per_page', 15);
 
-            $payments = Payment::with(['loanApplication.application', 'loanApplication.customer'])
+            $payments = Payment::with(['loanApplication.application', 'loanApplication.customer:' . Customer::SUMMARY_COLUMNS])
                 ->when($request->filled('branch_id'), fn ($q) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $request->branch_id)))
                 ->orderByDesc('paid_at')
                 ->paginate($perPage);
@@ -149,7 +151,7 @@ class AdminDashboardController extends Controller implements HasMiddleware
         try {
             $perPage = $request->get('per_page', 15);
 
-            $applications = LoanApplication::with(['application', 'loanProduct', 'customer'])
+            $applications = LoanApplication::with(['application', 'loanProduct', 'customer:' . Customer::SUMMARY_COLUMNS])
                 ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
                 ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
                 ->orderByDesc('applied_at')
@@ -180,7 +182,7 @@ class AdminDashboardController extends Controller implements HasMiddleware
         try {
             $perPage = $request->get('per_page', 15);
 
-            $targets = AdminDashboard::with(['branch', 'createdBy'])
+            $targets = AdminDashboard::with(['branch', 'createdBy:' . User::SUMMARY_COLUMNS])
                 ->when($request->has('metric'), fn ($q) => $q->where('metric', $request->metric))
                 ->when($request->has('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
                 ->orderByDesc('period_start')

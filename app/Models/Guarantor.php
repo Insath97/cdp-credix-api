@@ -11,6 +11,17 @@ class Guarantor extends Model
 {
     use HasFactory;
 
+    /**
+     * Columns to select when a guarantor is loaded as a nested reference.
+     *
+     * Excludes the guarantor's NIC, ID image, date of birth, salary, allowances,
+     * other income, declared liabilities and bank account details — none of which
+     * a loan or application screen needs in order to list who is guaranteeing.
+     *
+     * @see Customer::SUMMARY_COLUMNS
+     */
+    public const SUMMARY_COLUMNS = 'id,customer_id,full_name,type,phone_primary,occupation';
+
     protected $appends = ['used_for_loan'];
 
     protected $fillable = [
@@ -32,6 +43,12 @@ class Guarantor extends Model
         'bank_name_of_guarantor',
         'bank_account_no_of_guarantor',
         'bank_branch_of_guarantor',
+    ];
+
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
     ];
 
     protected $casts = [

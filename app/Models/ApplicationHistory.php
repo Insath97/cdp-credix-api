@@ -35,6 +35,12 @@ class ApplicationHistory extends Model
         'recorded_at',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'basic_salary' => 'decimal:2',
         'fixed_allowances' => 'decimal:2',

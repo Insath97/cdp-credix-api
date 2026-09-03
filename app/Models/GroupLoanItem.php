@@ -18,6 +18,12 @@ class GroupLoanItem extends Model
         'line_total',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'group_loan_id' => 'integer',
         'quantity'      => 'decimal:2',
