@@ -41,6 +41,7 @@ class UpdateLoanProductRequest extends FormRequest
             'grace_period_days' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean',
             'is_islamic' => 'nullable|boolean',
+            'is_group_loan' => 'nullable|boolean',
         ];
     }
 

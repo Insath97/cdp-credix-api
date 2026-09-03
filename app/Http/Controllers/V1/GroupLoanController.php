@@ -115,10 +115,12 @@ class GroupLoanController extends Controller implements HasMiddleware
                 // requested items — never trusted from the client.
                 $requestedAmount = round($items->sum('line_total'), 2);
 
-                // Group Loan uses a service charge in place of interest,
-                // snapshotted from System Settings at submission time rather
-                // than taken as an officer-entered figure.
-                $serviceChargePercentage = (float) Setting::get('group_loan_service_charge_percentage', 0);
+                // Group Loan uses a service charge in place of interest.
+                // It defaults to the percentage configured in System Settings,
+                // but may be overridden by the officer at submission time.
+                $serviceChargePercentage = $data['service_charge_percentage'] !== null
+                    ? (float) $data['service_charge_percentage']
+                    : (float) Setting::get('group_loan_service_charge_percentage', 0);
 
                 $groupLoan = GroupLoan::create([
                     'loan_product_id'           => $data['loan_product_id'],
