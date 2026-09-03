@@ -34,7 +34,7 @@ class RecoveryActivityController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = RecoveryActivity::with(['recoveryCase', 'performedBy:' . User::SUMMARY_COLUMNS]);
+            $query = RecoveryActivity::with(['recoveryCase', 'performedBy:'.User::SUMMARY_COLUMNS]);
 
             if ($request->has('recovery_case_id')) {
                 $query->where('recovery_case_id', $request->recovery_case_id);
@@ -84,7 +84,7 @@ class RecoveryActivityController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Recovery activity recorded successfully',
-                'data'    => $activity->load(['recoveryCase', 'performedBy:' . User::SUMMARY_COLUMNS]),
+                'data'    => $activity->load(['recoveryCase', 'performedBy:'.User::SUMMARY_COLUMNS]),
             ], 201);
 
         } catch (\Throwable $th) {
@@ -102,7 +102,7 @@ class RecoveryActivityController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $activity = RecoveryActivity::with(['recoveryCase', 'performedBy:' . User::SUMMARY_COLUMNS])->find($id);
+            $activity = RecoveryActivity::with(['recoveryCase', 'performedBy:'.User::SUMMARY_COLUMNS])->find($id);
 
             if (!$activity) {
                 return response()->json([
@@ -149,7 +149,7 @@ class RecoveryActivityController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Recovery activity updated successfully',
-                'data'    => $activity->fresh(['recoveryCase', 'performedBy:' . User::SUMMARY_COLUMNS]),
+                'data'    => $activity->fresh(['recoveryCase', 'performedBy:'.User::SUMMARY_COLUMNS]),
             ], 200);
 
         } catch (\Throwable $th) {

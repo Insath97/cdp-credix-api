@@ -35,7 +35,7 @@ class FixedAssestsController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = FixedAssests::with(['customer:' . Customer::SUMMARY_COLUMNS]);
+            $query = FixedAssests::with(['customer:'.Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('search')) {
                 $query->search($request->search);
@@ -102,7 +102,7 @@ class FixedAssestsController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'success',
                 'message' => 'Fixed assets created successfully',
-                'data' => $fixed_assests->load('customer:' . Customer::SUMMARY_COLUMNS),
+                'data' => $fixed_assests->load('customer:'.Customer::SUMMARY_COLUMNS),
             ], 201);
         } catch (\Throwable $th) {
             return response()->json([
@@ -116,7 +116,7 @@ class FixedAssestsController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $fixed_assests = FixedAssests::with(['customer:' . Customer::SUMMARY_COLUMNS])->find($id);
+            $fixed_assests = FixedAssests::with(['customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$fixed_assests) {
                 return response()->json([

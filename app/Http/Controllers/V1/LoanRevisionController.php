@@ -49,10 +49,10 @@ class LoanRevisionController extends Controller implements HasMiddleware
         try {
             $perPage = $request->get('per_page', 15);
             $query = LoanRevision::with([
-                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplication.customer:'.Customer::SUMMARY_COLUMNS,
                 'loanApplication.application',
                 'requester',
-                'approver:' . User::SUMMARY_COLUMNS,
+                'approver:'.User::SUMMARY_COLUMNS,
             ]);
 
             if ($request->filled('loan_application_id')) {
@@ -138,10 +138,10 @@ class LoanRevisionController extends Controller implements HasMiddleware
     {
         try {
             $revision = LoanRevision::with([
-                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplication.customer:'.Customer::SUMMARY_COLUMNS,
                 'loanApplication.application',
                 'requester',
-                'approver:' . User::SUMMARY_COLUMNS,
+                'approver:'.User::SUMMARY_COLUMNS,
                 'installments',
             ])->find($id);
 

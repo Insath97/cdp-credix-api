@@ -268,7 +268,7 @@ class ReportController extends Controller implements HasMiddleware
     {
         [$startDate, $endDate] = $this->resolveDateRange($request);
 
-        return LoanApplication::with(['application', 'customer:' . Customer::SUMMARY_COLUMNS, 'loanProduct', 'branch'])
+        return LoanApplication::with(['application', 'customer:'.Customer::SUMMARY_COLUMNS, 'loanProduct', 'branch'])
             ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('search'), function ($q) use ($request) {
@@ -338,12 +338,12 @@ class ReportController extends Controller implements HasMiddleware
     {
         try {
             $case = RecoveryCase::with([
-                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplication.customer:'.Customer::SUMMARY_COLUMNS,
                 'loanApplication.application',
                 'loanApplication.branch',
-                'assignedAgent:' . User::SUMMARY_COLUMNS,
+                'assignedAgent:'.User::SUMMARY_COLUMNS,
                 'externalAgent',
-                'activities.performedBy:' . User::SUMMARY_COLUMNS,
+                'activities.performedBy:'.User::SUMMARY_COLUMNS,
             ])->find($id);
 
             if (!$case) {
@@ -383,7 +383,7 @@ class ReportController extends Controller implements HasMiddleware
 
     protected function recoveryBaseQuery(Request $request)
     {
-        return RecoveryCase::with(['loanApplication.customer:' . Customer::SUMMARY_COLUMNS, 'loanApplication.application', 'loanApplication.branch', 'assignedAgent:' . User::SUMMARY_COLUMNS, 'externalAgent'])
+        return RecoveryCase::with(['loanApplication.customer:'.Customer::SUMMARY_COLUMNS, 'loanApplication.application', 'loanApplication.branch', 'assignedAgent:'.User::SUMMARY_COLUMNS, 'externalAgent'])
             ->when($request->filled('branch_id'), fn ($q) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $request->branch_id)))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('stage'), fn ($q) => $q->where('stage', $request->stage))

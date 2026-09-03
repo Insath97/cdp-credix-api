@@ -48,7 +48,6 @@ class PasswordChangeController extends Controller
         SendSmsJob::dispatch($phone, $message);
         Log::info("{$purpose} OTP SMS queued", [
             'user_id' => $user->id,
-            'phone' => $phone,
         ]);
 
         return response()->json([
@@ -69,7 +68,7 @@ class PasswordChangeController extends Controller
                 ], 403);
             }
 
-            $user->load($user->user_type === 'customer' ? 'customer:' . Customer::SUMMARY_COLUMNS : 'employee');
+            $user->load($user->user_type === 'customer' ? 'customer:'.Customer::SUMMARY_COLUMNS : 'employee');
             $phone = $this->resolveRecipientPhone($user);
 
             if (empty($phone)) {
@@ -199,7 +198,7 @@ class PasswordChangeController extends Controller
                 ], 403);
             }
 
-            $user->load($user->user_type === 'customer' ? 'customer:' . Customer::SUMMARY_COLUMNS : 'employee');
+            $user->load($user->user_type === 'customer' ? 'customer:'.Customer::SUMMARY_COLUMNS : 'employee');
             $phone = $this->resolveRecipientPhone($user);
 
             if (empty($phone)) {
