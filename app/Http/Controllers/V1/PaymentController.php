@@ -11,6 +11,7 @@ use App\Models\LoanInstallment;
 use App\Models\LoanRevision;
 use App\Enums\LoanApplicationStatus;
 use App\Enums\LoanRevisionStatus;
+use App\Services\GroupLoanWorkflowService;
 use App\Services\LoanApplicationWorkflowService;
 use App\Services\NotificationService;
 use App\Traits\ActivityLogTrait;
@@ -26,6 +27,7 @@ class PaymentController extends Controller implements HasMiddleware
 
     public function __construct(
         protected LoanApplicationWorkflowService $workflowService,
+        protected GroupLoanWorkflowService $groupLoanWorkflowService,
         protected NotificationService $notificationService,
     ) {
     }
@@ -129,6 +131,17 @@ class PaymentController extends Controller implements HasMiddleware
                             Auth::id()
                         );
                         $loanClosed = true;
+
+                        // A group loan's header only reaches Closed once the
+                        // last member has repaid; no-ops while any sibling
+                        // member loan is still open.
+                        if ($loanApplication->group_loan_id) {
+                            $groupLoan = $loanApplication->groupLoan()->lockForUpdate()->first();
+
+                            if ($groupLoan) {
+                                $this->groupLoanWorkflowService->closeIfFullyRepaid($groupLoan, Auth::id());
+                            }
+                        }
                     }
                 }
 

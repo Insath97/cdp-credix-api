@@ -46,7 +46,11 @@ return new class extends Migration
             $table->timestamp('approved_at')->nullable();
             $table->timestamp('disbursed_at')->nullable();
 
-            $table->string('status', 30)->default('submitted')->index();
+            // available | locked | disbursed | closed (+ rejected | cancelled).
+            // Coarser than loan_applications.status on purpose: the granular
+            // submitted/verified/approved/active timeline lives on each
+            // member's own application row.
+            $table->string('status', 30)->default('available')->index();
             $table->boolean('is_active')->default(true);
 
             $table->softDeletes();

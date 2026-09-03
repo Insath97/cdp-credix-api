@@ -16,6 +16,7 @@ use App\Http\Requests\CreateGroupLoanRequest;
 use App\Http\Requests\UpdateGroupLoanRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
+use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Services\GroupLoanWorkflowService;
@@ -36,7 +37,7 @@ class GroupLoanController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Group Loan Index', only: ['index', 'show']),
+            new Middleware('permission:Group Loan Index', only: ['index', 'show', 'byStatus', 'statusCounts']),
             new Middleware('permission:Group Loan Create', only: ['store']),
             new Middleware('permission:Group Loan Update', only: ['update']),
             new Middleware('permission:Group Loan Toggle Status', only: ['toggleStatus', 'activate', 'deactivate']),
@@ -72,11 +73,21 @@ class GroupLoanController extends Controller implements HasMiddleware
                 $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
             }
 
+            if ($request->filled('status')) {
+                $status = GroupLoanStatus::tryFrom($request->input('status'));
+
+                if (!$status) {
+                    return $this->invalidStatusResponse($request->input('status'));
+                }
+
+                $query->status($status);
+            }
+
             $groupLoans = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
             $this->logActivity('Index', 'GroupLoan', 'Group loans index accessed', [
                 'user_id' => Auth::id(),
-                'filters' => $request->only(['search', 'is_active']),
+                'filters' => $request->only(['search', 'is_active', 'status']),
                 'count'   => $groupLoans->count(),
             ]);
 
@@ -93,6 +104,68 @@ class GroupLoanController extends Controller implements HasMiddleware
                 'error'   => $th->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Dedicated per-status listing backing the frontend's lifecycle tabs:
+     * GET /group-loans/status/{available|locked|disbursed|closed}. Same shape
+     * and same filters as index() — it just pins the status from the path
+     * instead of the query string.
+     */
+    public function byStatus(Request $request, string $status)
+    {
+        if (!GroupLoanStatus::tryFrom($status)) {
+            return $this->invalidStatusResponse($status);
+        }
+
+        return $this->index($request->merge(['status' => $status]));
+    }
+
+    /**
+     * Row counts per lifecycle status, for the tab badges. Returns every
+     * filterable status, zero included, so the frontend never has to
+     * back-fill missing keys.
+     */
+    public function statusCounts()
+    {
+        try {
+            $counts = GroupLoan::query()
+                ->selectRaw('status, COUNT(*) as total')
+                ->groupBy('status')
+                ->pluck('total', 'status');
+
+            $data = [];
+            foreach (GroupLoanStatus::filterable() as $status) {
+                $data[$status->value] = (int) ($counts[$status->value] ?? 0);
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Group loan status counts retrieved successfully',
+                'data'    => $data,
+            ], 200);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to retrieve group loan status counts',
+                'error'   => $th->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Shared 422 for an unrecognised status, listing what is accepted.
+     */
+    protected function invalidStatusResponse(string $status)
+    {
+        return response()->json([
+            'status'  => 'error',
+            'message' => "Invalid group loan status '{$status}'.",
+            'errors'  => [
+                'status' => array_column(GroupLoanStatus::cases(), 'value'),
+            ],
+        ], 422);
     }
 
     /**
@@ -133,7 +206,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'term_months'               => $data['term_months'],
                     'applied_by'                => Auth::id(),
                     'applied_at'                => now(),
-                    'status'                    => LoanApplicationStatus::Submitted,
+                    'status'                    => GroupLoanStatus::Available,
                 ]);
 
                 foreach ($items as $item) {
@@ -266,8 +339,9 @@ class GroupLoanController extends Controller implements HasMiddleware
     }
 
     /**
-     * Update the specified group loan's header fields. Items/members are
-     * immutable after creation — cancel and recreate to fix a mistake.
+     * Update the specified group loan's header fields. Items and members are
+     * edited through their own sub-resources (group-loan-items,
+     * group-loan-members), and only while the group loan is still Available.
      */
     public function update(UpdateGroupLoanRequest $request, string $id)
     {

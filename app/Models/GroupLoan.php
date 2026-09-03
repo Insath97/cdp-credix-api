@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Enums\LoanApplicationStatus;
+use App\Enums\GroupLoanStatus;
 
 class GroupLoan extends Model
 {
@@ -61,9 +61,21 @@ class GroupLoan extends Model
         'reviewed_at'             => 'datetime',
         'approved_at'             => 'datetime',
         'disbursed_at'            => 'datetime',
-        'status'                  => LoanApplicationStatus::class,
+        'status'                  => GroupLoanStatus::class,
         'is_active'               => 'boolean',
     ];
+
+    /**
+     * Surfaced on every response so the frontend can disable the add/remove/
+     * edit member controls without having to re-derive the rule from the
+     * status string. The backend enforces the same rule independently.
+     */
+    protected $appends = ['can_modify_members'];
+
+    public function getCanModifyMembersAttribute(): bool
+    {
+        return $this->status === GroupLoanStatus::Available;
+    }
 
     /**
      * Generate a human-readable group_loan_no (e.g. GRP-26090001), mirroring
@@ -146,6 +158,19 @@ class GroupLoan extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
+    }
+
+    /**
+     * Scope for filtering by lifecycle status, accepting either the enum or
+     * its string value (which is what arrives from the frontend filter).
+     */
+    public function scopeStatus(Builder $query, GroupLoanStatus|string|null $status): Builder
+    {
+        if (empty($status)) {
+            return $query;
+        }
+
+        return $query->where('status', $status instanceof GroupLoanStatus ? $status->value : $status);
     }
 
     /**
