@@ -16,7 +16,6 @@ return new class extends Migration
             $table->foreignId('loan_term_id')->constrained('loan_terms')->cascadeOnDelete();
             $table->foreignId('loan_type_id')->constrained('loan_types')->cascadeOnDelete();
             $table->timestamps();
-
             $table->unique(['loan_term_id', 'loan_type_id'], 'loan_term_loan_type_unique');
         });
     }

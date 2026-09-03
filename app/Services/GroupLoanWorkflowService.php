@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Models\GroupLoan;
@@ -14,8 +15,8 @@ class GroupLoanWorkflowService
     }
 
     /**
-     * Transition the group loan header to a new status, guarded by the same
-     * enum transition map used for individual loan applications. Unlike
+     * Transition the group loan header to a new lifecycle status, guarded by
+     * GroupLoanStatus' own transition map. Unlike
      * LoanApplicationWorkflowService::transition(), this does not open its
      * own DB transaction — callers (verify/approve/disburse/reject/cancel)
      * already wrap the full cascade in one — and there is no group-level
@@ -24,7 +25,7 @@ class GroupLoanWorkflowService
      */
     public function transition(
         GroupLoan $groupLoan,
-        LoanApplicationStatus $to,
+        GroupLoanStatus $to,
         ?int $actorId = null,
         ?string $remarks = null,
         array $extra = []
@@ -53,12 +54,27 @@ class GroupLoanWorkflowService
     }
 
     /**
-     * Verify the group loan and cascade the same transition to every member.
+     * Verify the group loan and cascade the Verified transition to every
+     * member. The header status is deliberately left at Available: a
+     * submitted and a verified group loan are both still "open" as far as
+     * the lifecycle tabs are concerned, so only the review audit fields move
+     * here. Reaching Verified is still enforced — the per-member cascade
+     * below runs through LoanApplicationStatus' own guard.
      */
     public function verify(GroupLoan $groupLoan, ?int $actorId, ?string $remarks, array $extra = []): GroupLoan
     {
         return DB::transaction(function () use ($groupLoan, $actorId, $remarks, $extra) {
-            $groupLoan = $this->transition($groupLoan, LoanApplicationStatus::Verified, $actorId, $remarks, $extra);
+            if ($groupLoan->status !== GroupLoanStatus::Available) {
+                throw new InvalidLoanApplicationTransitionException(
+                    "Cannot verify a group loan that is '{$groupLoan->status->value}'."
+                );
+            }
+
+            if (!empty($extra)) {
+                $groupLoan->update($extra);
+            }
+
+            $groupLoan->refresh()->load('memberLoanApplications');
 
             foreach ($groupLoan->memberLoanApplications as $member) {
                 $this->loanApplicationWorkflowService->transition(
@@ -96,7 +112,7 @@ class GroupLoanWorkflowService
             $totalRepayment = round($approvedAmount + $serviceCharge, 2);
             $amountPerMember = round($totalRepayment / $groupLoan->number_of_members, 2);
 
-            $groupLoan = $this->transition($groupLoan, LoanApplicationStatus::Approved, $actorId, $remarks, [
+            $groupLoan = $this->transition($groupLoan, GroupLoanStatus::Locked, $actorId, $remarks, [
                 'approved_by'            => $actorId,
                 'approved_at'            => now(),
                 'approved_amount'        => $approvedAmount,
@@ -147,7 +163,7 @@ class GroupLoanWorkflowService
     public function reject(GroupLoan $groupLoan, string $rejectionReason, int $actorId): GroupLoan
     {
         return DB::transaction(function () use ($groupLoan, $rejectionReason, $actorId) {
-            $groupLoan = $this->transition($groupLoan, LoanApplicationStatus::Rejected, $actorId, $rejectionReason, [
+            $groupLoan = $this->transition($groupLoan, GroupLoanStatus::Rejected, $actorId, $rejectionReason, [
                 'rejection_reason' => $rejectionReason,
             ]);
 
@@ -168,15 +184,17 @@ class GroupLoanWorkflowService
     }
 
     /**
-     * Disburse the group loan: cascade the same two-step Disbursed -> Active
+     * Disburse the group loan: cascade the two-step Disbursed -> Active
      * transition to every member, which is what fires
      * InstallmentScheduleService::generate() per member automatically, with
-     * zero changes to that service.
+     * zero changes to that service. The header itself stops at Disbursed —
+     * it has no Active state, since "money is out and members are repaying"
+     * is the same lifecycle tab either way.
      */
     public function disburse(GroupLoan $groupLoan, int $actorId): GroupLoan
     {
         return DB::transaction(function () use ($groupLoan, $actorId) {
-            $groupLoan = $this->transition($groupLoan, LoanApplicationStatus::Disbursed, $actorId, null, [
+            $groupLoan = $this->transition($groupLoan, GroupLoanStatus::Disbursed, $actorId, null, [
                 'disbursed_at' => now(),
             ]);
 
@@ -196,10 +214,31 @@ class GroupLoanWorkflowService
                 );
             }
 
-            $groupLoan = $this->transition($groupLoan, LoanApplicationStatus::Active, $actorId);
-
             return $groupLoan->fresh(['memberLoanApplications.customer', 'memberLoanApplications.installments']);
         });
+    }
+
+    /**
+     * Close the group loan once every member's own loan has been repaid in
+     * full. Called from PaymentController after the payment that closes the
+     * last outstanding member loan; a no-op while any member is still
+     * repaying, so it is safe to call after every group-member payment.
+     */
+    public function closeIfFullyRepaid(GroupLoan $groupLoan, ?int $actorId = null): GroupLoan
+    {
+        if ($groupLoan->status !== GroupLoanStatus::Disbursed) {
+            return $groupLoan;
+        }
+
+        $hasOpenMember = $groupLoan->memberLoanApplications()
+            ->where('status', '!=', LoanApplicationStatus::Closed->value)
+            ->exists();
+
+        if ($hasOpenMember) {
+            return $groupLoan;
+        }
+
+        return $this->transition($groupLoan, GroupLoanStatus::Closed, $actorId);
     }
 
     /**
@@ -208,7 +247,7 @@ class GroupLoanWorkflowService
     public function cancel(GroupLoan $groupLoan, ?int $actorId, ?string $remarks): GroupLoan
     {
         return DB::transaction(function () use ($groupLoan, $actorId, $remarks) {
-            $groupLoan = $this->transition($groupLoan, LoanApplicationStatus::Cancelled, $actorId, $remarks);
+            $groupLoan = $this->transition($groupLoan, GroupLoanStatus::Cancelled, $actorId, $remarks);
 
             foreach ($groupLoan->memberLoanApplications as $member) {
                 if ($member->status->canTransitionTo(LoanApplicationStatus::Cancelled)) {
