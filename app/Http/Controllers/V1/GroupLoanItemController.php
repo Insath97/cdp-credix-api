@@ -6,9 +6,10 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use App\Enums\LoanApplicationStatus;
+use App\Enums\GroupLoanStatus;
 use App\Models\GroupLoan;
 use App\Models\GroupLoanItem;
+use App\Services\GroupLoanMemberService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateGroupLoanItemRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -17,6 +18,10 @@ use Illuminate\Routing\Controllers\Middleware;
 class GroupLoanItemController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
+
+    public function __construct(protected GroupLoanMemberService $memberService)
+    {
+    }
 
     public static function middleware(): array
     {
@@ -146,17 +151,17 @@ class GroupLoanItemController extends Controller implements HasMiddleware
 
             $groupLoan = $item->groupLoan;
 
-            if ($groupLoan->status !== LoanApplicationStatus::Submitted) {
+            if ($groupLoan->status !== GroupLoanStatus::Available) {
                 return response()->json([
                     'status'  => 'error',
-                    'message' => 'Items can only be removed while the group loan is still in Submitted status.',
+                    'message' => "This group loan is {$groupLoan->status->value} and can no longer be changed. Items can only be removed while it is still Available (before approval).",
                 ], 422);
             }
 
             if ($groupLoan->items()->count() <= 1) {
                 return response()->json([
                     'status'  => 'error',
-                    'message' => 'A group loan must have at least one item — remove the group loan instead.',
+                    'message' => 'A group loan must keep at least one item. To drop this one, add its replacement first, or cancel the whole group loan.',
                 ], 422);
             }
 
@@ -187,12 +192,16 @@ class GroupLoanItemController extends Controller implements HasMiddleware
     /**
      * Recompute a group loan's requested_amount as the sum of its current
      * items' line totals, keeping it always in sync with what was actually
-     * selected.
+     * selected, then re-split that new total across the members — otherwise
+     * each member's own requested_amount would still hold the share of the
+     * pre-edit total.
      */
     private function recalculateRequestedAmount(int $groupLoanId): void
     {
         $groupLoan = GroupLoan::lockForUpdate()->find($groupLoanId);
         $total = round($groupLoan->items()->sum('line_total'), 2);
         $groupLoan->update(['requested_amount' => $total]);
+
+        $this->memberService->resync($groupLoan->refresh());
     }
 }
