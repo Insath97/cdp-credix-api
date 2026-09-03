@@ -86,7 +86,7 @@ class AuthController extends Controller
             }
 
             if ($user->user_type === 'customer' && is_null($user->two_factor_verified_at)) {
-                $user->load('customer:' . Customer::SUMMARY_COLUMNS);
+                $user->load('customer:'.Customer::SUMMARY_COLUMNS);
                 $phone = $user->customer?->phone_primary;
 
                 if (empty($phone)) {
@@ -119,16 +119,14 @@ class AuthController extends Controller
 
                 $message = config('app.name') . ": Your OTP for login is {$otp}. Valid for 30 minutes.";
 
-                Log::info('OTP Login Debug', [
-                    'user_id' => $user->id,
-                    'phone' => $phone,
-                    'otp' => $otp,
-                ]);
+                // Never log the OTP or the destination number: the log would be a
+                // standing credential for any account that requests a login code.
+                Log::info('Login OTP issued', ['user_id' => $user->id]);
 
                 try {
                     $smsService = app(SmsService::class);
                     $smsSent = $smsService->sendSms($phone, $message);
-                    Log::info('OTP SMS send result', ['sent' => $smsSent, 'phone' => $phone]);
+                    Log::info('OTP SMS send result', ['sent' => $smsSent, 'user_id' => $user->id]);
                 } catch (\Throwable $smsEx) {
                     Log::error('OTP SMS send failed', ['error' => $smsEx->getMessage()]);
                 }

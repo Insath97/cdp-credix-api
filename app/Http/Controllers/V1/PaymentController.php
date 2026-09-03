@@ -52,7 +52,7 @@ class PaymentController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Payment::with(['loanApplication', 'loanApplication.application', 'loanInstallment', 'receivedBy:' . User::SUMMARY_COLUMNS]);
+            $query = Payment::with(['loanApplication', 'loanApplication.application', 'loanInstallment', 'receivedBy:'.User::SUMMARY_COLUMNS]);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -219,7 +219,7 @@ class PaymentController extends Controller implements HasMiddleware
             return response()->json([
                 'status'          => 'success',
                 'message'         => 'Payment recorded successfully',
-                'data'            => $payment->load(['loanApplication', 'loanInstallment', 'receivedBy:' . User::SUMMARY_COLUMNS]),
+                'data'            => $payment->load(['loanApplication', 'loanInstallment', 'receivedBy:'.User::SUMMARY_COLUMNS]),
                 'unapplied_excess' => $unappliedExcess > 0 ? $unappliedExcess : null,
             ], 201);
 
@@ -238,7 +238,7 @@ class PaymentController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $payment = Payment::with(['loanApplication', 'loanApplication.application', 'loanInstallment', 'receivedBy:' . User::SUMMARY_COLUMNS])->find($id);
+            $payment = Payment::with(['loanApplication', 'loanApplication.application', 'loanInstallment', 'receivedBy:'.User::SUMMARY_COLUMNS])->find($id);
 
             if (!$payment) {
                 return response()->json([
@@ -285,7 +285,7 @@ class PaymentController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Payment updated successfully',
-                'data'    => $payment->fresh(['loanApplication', 'loanInstallment', 'receivedBy:' . User::SUMMARY_COLUMNS]),
+                'data'    => $payment->fresh(['loanApplication', 'loanInstallment', 'receivedBy:'.User::SUMMARY_COLUMNS]),
             ], 200);
 
         } catch (\Throwable $th) {

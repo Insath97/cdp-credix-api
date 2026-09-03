@@ -31,7 +31,7 @@ class ApplicationHistoryController extends Controller implements HasMiddleware
      {
          try {
              $perPage = $request->get('per_page', 15);
-             $query = ApplicationHistory::with(['application', 'customer:' . Customer::SUMMARY_COLUMNS]);
+             $query = ApplicationHistory::with(['application', 'customer:'.Customer::SUMMARY_COLUMNS]);
 
              if ($request->has('search')) {
                  $query->search($request->search);
@@ -84,7 +84,7 @@ class ApplicationHistoryController extends Controller implements HasMiddleware
              return response()->json([
                  'status' => 'success',
                  'message' => 'Application history created successfully',
-                 'data' => $history->load(['application', 'customer:' . Customer::SUMMARY_COLUMNS]),
+                 'data' => $history->load(['application', 'customer:'.Customer::SUMMARY_COLUMNS]),
              ], 201);
          } catch (\Throwable $th) {
              return response()->json([
@@ -98,7 +98,7 @@ class ApplicationHistoryController extends Controller implements HasMiddleware
      public function show(string $id)
      {
          try {
-             $history = ApplicationHistory::with(['application', 'customer:' . Customer::SUMMARY_COLUMNS])->find($id);
+             $history = ApplicationHistory::with(['application', 'customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
              if (!$history) {
                  return response()->json([
@@ -147,7 +147,7 @@ class ApplicationHistoryController extends Controller implements HasMiddleware
              return response()->json([
                  'status' => 'success',
                  'message' => 'Application history updated successfully',
-                 'data' => $history->load(['application', 'customer:' . Customer::SUMMARY_COLUMNS]),
+                 'data' => $history->load(['application', 'customer:'.Customer::SUMMARY_COLUMNS]),
              ], 200);
          } catch (\Throwable $th) {
              return response()->json([

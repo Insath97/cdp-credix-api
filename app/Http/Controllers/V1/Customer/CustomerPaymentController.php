@@ -73,7 +73,7 @@ class CustomerPaymentController extends Controller
                 ->whereHas('loanApplication', function ($q) use ($customerId) {
                     $q->where('customer_id', $customerId);
                 })
-                ->with(['loanApplication.application', 'loanInstallment', 'receivedBy:' . User::SUMMARY_COLUMNS])
+                ->with(['loanApplication.application', 'loanInstallment', 'receivedBy:'.User::SUMMARY_COLUMNS])
                 ->first();
 
             if (!$payment) {

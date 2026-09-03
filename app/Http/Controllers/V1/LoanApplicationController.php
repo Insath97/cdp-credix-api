@@ -64,15 +64,15 @@ class LoanApplicationController extends Controller implements HasMiddleware
             // file and does select them.
             $query = LoanApplication::with([
                 'application',
-                'customer:' . Customer::SUMMARY_COLUMNS,
+                'customer:'.Customer::SUMMARY_COLUMNS,
                 'loanApplicationCustomers.customer' => fn ($q) => $q
                     ->select(explode(',', Customer::SUMMARY_COLUMNS))
                     ->with('customerDetail'),
                 'loanProduct',
                 'branch',
-                'appliedByUser:' . User::SUMMARY_COLUMNS,
-                'reviewedByUser:' . User::SUMMARY_COLUMNS,
-                'approvedByUser:' . User::SUMMARY_COLUMNS,
+                'appliedByUser:'.User::SUMMARY_COLUMNS,
+                'reviewedByUser:'.User::SUMMARY_COLUMNS,
+                'approvedByUser:'.User::SUMMARY_COLUMNS,
                 'groupLoan.loanProduct',
                 'groupLoan.branch',
                 'groupLoan.items',
@@ -184,13 +184,13 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'message' => 'Loan application created successfully',
                 'data'    => $loanApplication->load([
                     'application',
-                    'customer:' . Customer::SUMMARY_COLUMNS,
+                    'customer:'.Customer::SUMMARY_COLUMNS,
                     'loanApplicationCustomers.customer' => fn ($q) => $q
                         ->select(explode(',', Customer::SUMMARY_COLUMNS))
                         ->with('customerDetail'),
                     'loanProduct',
                     'branch',
-                    'appliedByUser:' . User::SUMMARY_COLUMNS
+                    'appliedByUser:'.User::SUMMARY_COLUMNS,
                 ]),
             ], 201);
 
@@ -226,16 +226,16 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loanApplicationCustomers.customer.documents',
                 'loanProduct',
                 'branch',
-                'appliedByUser:' . User::SUMMARY_COLUMNS,
-                'reviewedByUser:' . User::SUMMARY_COLUMNS,
-                'approvedByUser:' . User::SUMMARY_COLUMNS,
+                'appliedByUser:'.User::SUMMARY_COLUMNS,
+                'reviewedByUser:'.User::SUMMARY_COLUMNS,
+                'approvedByUser:'.User::SUMMARY_COLUMNS,
                 'loanApplicationGuarantors.guarantor',
                 'loanApplicationFixedAssets',
                 'loanApplicationMovingAssets',
                 'loanApplicationLiabilities',
                 'loanApplicationBankDetails',
                 'installments',
-                'statusHistory.changedBy:' . User::SUMMARY_COLUMNS,
+                'statusHistory.changedBy:'.User::SUMMARY_COLUMNS,
                 'groupLoan.loanProduct',
                 'groupLoan.branch',
                 'groupLoan.items',
@@ -295,12 +295,12 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'message' => 'Loan application updated successfully',
                 'data'    => $loanApplication->fresh([
                     'application',
-                    'customer:' . Customer::SUMMARY_COLUMNS,
+                    'customer:'.Customer::SUMMARY_COLUMNS,
                     'loanProduct',
                     'branch',
-                    'appliedByUser:' . User::SUMMARY_COLUMNS,
-                    'reviewedByUser:' . User::SUMMARY_COLUMNS,
-                    'approvedByUser:' . User::SUMMARY_COLUMNS
+                    'appliedByUser:'.User::SUMMARY_COLUMNS,
+                    'reviewedByUser:'.User::SUMMARY_COLUMNS,
+                    'approvedByUser:'.User::SUMMARY_COLUMNS,
                 ]),
             ], 200);
 

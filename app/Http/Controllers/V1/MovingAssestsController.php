@@ -33,7 +33,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
      {
          try {
              $perPage = $request->get('per_page', 15);
-             $query = MovingAssests::with(['customer:' . Customer::SUMMARY_COLUMNS]);
+             $query = MovingAssests::with(['customer:'.Customer::SUMMARY_COLUMNS]);
 
              if ($request->has('search')) {
                  $query->search($request->search);
@@ -100,7 +100,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
              return response()->json([
                  'status' => 'success',
                  'message' => 'Moving assets created successfully',
-                 'data' => $moving_assests->load('customer:' . Customer::SUMMARY_COLUMNS),
+                 'data' => $moving_assests->load('customer:'.Customer::SUMMARY_COLUMNS),
              ], 201);
          } catch (\Throwable $th) {
              return response()->json([
@@ -114,7 +114,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
      public function show(string $id)
      {
          try {
-             $moving_assests = MovingAssests::with(['customer:' . Customer::SUMMARY_COLUMNS])->find($id);
+             $moving_assests = MovingAssests::with(['customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
              if (!$moving_assests) {
                  return response()->json([
@@ -163,7 +163,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
              return response()->json([
                  'status' => 'success',
                  'message' => 'Moving assets updated successfully',
-                 'data' => $moving_assests->load('customer:' . Customer::SUMMARY_COLUMNS),
+                 'data' => $moving_assests->load('customer:'.Customer::SUMMARY_COLUMNS),
              ], 200);
          } catch (\Throwable $th) {
              return response()->json([

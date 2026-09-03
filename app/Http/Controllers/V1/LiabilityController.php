@@ -32,7 +32,7 @@ class LiabilityController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Liability::with(['customer:' . Customer::SUMMARY_COLUMNS]);
+            $query = Liability::with(['customer:'.Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('search')) {
                 $query->search($request->search);
@@ -101,7 +101,7 @@ class LiabilityController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'success',
                 'message' => 'Liability created successfully',
-                'data' => $liability->load('customer:' . Customer::SUMMARY_COLUMNS),
+                'data' => $liability->load('customer:'.Customer::SUMMARY_COLUMNS),
             ], 201);
         } catch (\Throwable $th) {
             return response()->json([
@@ -115,7 +115,7 @@ class LiabilityController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $liability = Liability::with(['customer:' . Customer::SUMMARY_COLUMNS])->find($id);
+            $liability = Liability::with(['customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$liability) {
                 return response()->json([
@@ -166,7 +166,7 @@ class LiabilityController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'success',
                 'message' => 'Liability updated successfully',
-                'data' => $liability->load('customer:' . Customer::SUMMARY_COLUMNS),
+                'data' => $liability->load('customer:'.Customer::SUMMARY_COLUMNS),
             ], 200);
         } catch (\Throwable $th) {
             return response()->json([

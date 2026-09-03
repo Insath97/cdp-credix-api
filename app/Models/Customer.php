@@ -23,7 +23,7 @@ class Customer extends Model
      * queried and so can never reach the browser. Endpoints whose subject IS the
      * customer (CustomerController, CustomerProfileController) select normally.
      *
-     * Pass to a relation string: ->with('customer:' . Customer::SUMMARY_COLUMNS)
+     * Pass to a relation string: ->with('customer:'.Customer::SUMMARY_COLUMNS)
      */
     public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,is_active';
 
@@ -35,8 +35,8 @@ class Customer extends Model
      * business profile, none of which are needed to make contact.
      */
     public const CONTACT_COLUMNS = self::SUMMARY_COLUMNS
-        . ',phone_secondary,email,have_whatsapp,whatsapp_number'
-        . ',address_line_1,address_line_2,landmark,city,state,country,postal_code';
+        .',phone_secondary,email,have_whatsapp,whatsapp_number'
+        .',address_line_1,address_line_2,landmark,city,state,country,postal_code';
 
     protected static function boot()
     {

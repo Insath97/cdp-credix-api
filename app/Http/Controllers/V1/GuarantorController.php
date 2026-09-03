@@ -24,7 +24,7 @@ class GuarantorController extends Controller
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Guarantor::with(['customer:' . Customer::SUMMARY_COLUMNS]);
+            $query = Guarantor::with(['customer:'.Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('search') ) {
                 $query->search($request->search);
@@ -88,7 +88,7 @@ class GuarantorController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Guarantor created successfully',
-                'data' => $guarantor->load('customer:' . Customer::SUMMARY_COLUMNS),
+                'data' => $guarantor->load('customer:'.Customer::SUMMARY_COLUMNS),
             ], 201);
         } catch (\Throwable $th) {
             return response()->json([
@@ -102,7 +102,7 @@ class GuarantorController extends Controller
      public function show(string $id)
     {
         try {
-            $guarantor = Guarantor::with(['customer:' . Customer::SUMMARY_COLUMNS])->find($id);
+            $guarantor = Guarantor::with(['customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$guarantor) {
                 return response()->json([

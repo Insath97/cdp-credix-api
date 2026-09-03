@@ -34,7 +34,7 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = LoanApplicationCustomer::with(['loanApplication', 'customer:' . Customer::SUMMARY_COLUMNS]);
+            $query = LoanApplicationCustomer::with(['loanApplication', 'customer:'.Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -89,7 +89,7 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Customer added to loan application successfully',
-                'data'    => $record->load(['loanApplication', 'customer:' . Customer::SUMMARY_COLUMNS]),
+                'data'    => $record->load(['loanApplication', 'customer:'.Customer::SUMMARY_COLUMNS]),
             ], 201);
 
         } catch (\Throwable $th) {
@@ -107,7 +107,7 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     public function show(string $id)
     {
         try {
-            $record = LoanApplicationCustomer::with(['loanApplication', 'customer:' . Customer::SUMMARY_COLUMNS])->find($id);
+            $record = LoanApplicationCustomer::with(['loanApplication', 'customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$record) {
                 return response()->json([

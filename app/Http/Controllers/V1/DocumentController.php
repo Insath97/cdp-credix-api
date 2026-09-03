@@ -37,7 +37,7 @@ class DocumentController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Document::with(['uploader:' . User::SUMMARY_COLUMNS]);
+            $query = Document::with(['uploader:'.User::SUMMARY_COLUMNS]);
 
             if ($request->has('search')) {
                 $query->search($request->search);
@@ -111,7 +111,7 @@ class DocumentController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'success',
                 'message' => 'Document created successfully',
-                'data' => $document->load('uploader:' . User::SUMMARY_COLUMNS)
+                'data' => $document->load('uploader:'.User::SUMMARY_COLUMNS)
             ], 201);
         } catch (\Throwable $th) {
             return response()->json([
@@ -128,7 +128,7 @@ class DocumentController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $document = Document::with(['uploader:' . User::SUMMARY_COLUMNS])->find($id);
+            $document = Document::with(['uploader:'.User::SUMMARY_COLUMNS])->find($id);
 
             if (!$document) {
                 return response()->json([
@@ -189,7 +189,7 @@ class DocumentController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'success',
                 'message' => 'Document updated successfully',
-                'data' => $document->load('uploader:' . User::SUMMARY_COLUMNS)
+                'data' => $document->load('uploader:'.User::SUMMARY_COLUMNS)
             ], 200);
         } catch (\Throwable $th) {
             return response()->json([
