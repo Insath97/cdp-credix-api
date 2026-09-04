@@ -52,7 +52,16 @@ class PaymentController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Payment::with(['loanApplication', 'loanApplication.application', 'loanInstallment', 'receivedBy:'.User::SUMMARY_COLUMNS]);
+            $query = Payment::with([
+                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplication.loanProduct',
+                'loanApplication.branch',
+                'loanApplication.application',
+                'loanApplication.groupLoan',
+                'loanInstallment.customer:' . Customer::SUMMARY_COLUMNS,
+                'customer:' . Customer::SUMMARY_COLUMNS,
+                'receivedBy:' . User::SUMMARY_COLUMNS,
+            ]);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -247,7 +256,16 @@ class PaymentController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $payment = Payment::with(['loanApplication', 'loanApplication.application', 'loanInstallment', 'receivedBy:'.User::SUMMARY_COLUMNS])->find($id);
+            $payment = Payment::with([
+                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplication.loanProduct',
+                'loanApplication.branch',
+                'loanApplication.application',
+                'loanApplication.groupLoan',
+                'loanInstallment.customer:' . Customer::SUMMARY_COLUMNS,
+                'customer:' . Customer::SUMMARY_COLUMNS,
+                'receivedBy:' . User::SUMMARY_COLUMNS,
+            ])->find($id);
 
             if (!$payment) {
                 return response()->json([
