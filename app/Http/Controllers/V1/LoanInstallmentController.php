@@ -36,7 +36,15 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = LoanInstallment::with(['loanApplication.customer:'.Customer::SUMMARY_COLUMNS, 'loanApplication.loanProduct', 'loanApplication.branch', 'loanApplication.application']);
+            $query = LoanInstallment::with([
+                'customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplication.loanProduct',
+                'loanApplication.branch',
+                'loanApplication.application',
+                'loanApplication.groupLoan',
+                'loanApplication.loanApplicationCustomers.customer:' . Customer::SUMMARY_COLUMNS,
+            ]);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -75,7 +83,15 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     public function list(Request $request)
     {
         try {
-            $query = LoanInstallment::with(['loanApplication.customer:'.Customer::SUMMARY_COLUMNS, 'loanApplication.loanProduct', 'loanApplication.branch', 'loanApplication.application']);
+            $query = LoanInstallment::with([
+                'customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplication.customer:' . Customer::SUMMARY_COLUMNS,
+                'loanApplication.loanProduct',
+                'loanApplication.branch',
+                'loanApplication.application',
+                'loanApplication.groupLoan',
+                'loanApplication.loanApplicationCustomers.customer:' . Customer::SUMMARY_COLUMNS,
+            ]);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
