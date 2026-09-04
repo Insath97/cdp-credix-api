@@ -2,25 +2,24 @@
 
 namespace App\Http\Requests;
 
-use App\Models\LoanApplication;
+use App\Models\LoanApplicationCustomer;
 use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Illuminate\Contracts\Validation\Validator;
-use Illuminate\Http\Exceptions\HttpResponseException;
 
 /**
- * Field validation for editing a group loan member's personal details from
- * the group loan screen.
+ * Field validation for editing an attached customer's personal details from
+ * the loan screen — a Group Loan member, or a Joint Loan co-borrower.
  *
  * The two gates that decide whether the edit is allowed at all — the group
- * loan must still be Available, and this must be the customer's only loan,
- * since these fields live on the shared `customers` record — are enforced in
- * GroupLoanMemberController::updateCustomer(). They live there rather than in
- * a closure rule because a closure on a field the caller never submits is
- * skipped by the validator.
+ * loan must still be Available (a joint loan, still Submitted), and this must
+ * be the customer's only loan, since these fields live on the shared
+ * `customers` record — are enforced in
+ * LoanApplicationCustomerController::updateCustomerDetails(). They live there
+ * rather than in a closure rule because a closure on a field the caller never
+ * submits is skipped by the validator.
  */
-class UpdateGroupLoanMemberCustomerRequest extends FormRequest
+class UpdateLoanApplicationCustomerDetailsRequest extends FormRequest
 {
     use FriendlyValidationErrors;
 
@@ -31,8 +30,8 @@ class UpdateGroupLoanMemberCustomerRequest extends FormRequest
 
     public function rules(): array
     {
-        $member = LoanApplication::with('customer')->find($this->route('id'));
-        $customerId = $member?->customer_id;
+        $record = LoanApplicationCustomer::find($this->route('id'));
+        $customerId = $record?->customer_id;
 
         return [
             'full_name'          => 'sometimes|required|string|max:500',
@@ -73,25 +72,4 @@ class UpdateGroupLoanMemberCustomerRequest extends FormRequest
     {
         return ['id_number' => 'NIC/ID number'];
     }
-
-    protected function failedValidation(Validator $validator)
-    {
-        $errorMessages = $validator->errors();
-        $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
-            return [
-                'field' => $field,
-                'messages' => $messages,
-            ];
-        })->values();
-
-        $message = $fieldErrors->count() > 1
-            ? 'There are multiple validation errors. Please review the form and correct the issues.'
-            : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.';
-
-        throw new HttpResponseException(response()->json([
-            'message' => $message,
-            'errors' => $fieldErrors,
-        ], 422));
-    }
-
 }

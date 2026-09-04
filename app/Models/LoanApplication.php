@@ -21,7 +21,6 @@ class LoanApplication extends Model
         'loan_product_id',
         'branch_id',
         'group_loan_id',
-        'group_member_no',
         'requested_amount',
         'approved_amount',
         'interest_rate',
@@ -58,7 +57,6 @@ class LoanApplication extends Model
         'loan_product_id'     => 'integer',
         'branch_id'           => 'integer',
         'group_loan_id'       => 'integer',
-        'group_member_no'     => 'integer',
         'requested_amount'    => 'decimal:2',
         'approved_amount'     => 'decimal:2',
         'interest_rate'        => 'decimal:3',
@@ -112,11 +110,23 @@ class LoanApplication extends Model
     }
 
     /**
-     * Relationship with the Group Loan this application is a member of, if any.
+     * Relationship with the Group Loan this application belongs to, if any.
+     * A group loan has exactly one loan application, not one per member.
      */
     public function groupLoan(): BelongsTo
     {
         return $this->belongsTo(GroupLoan::class);
+    }
+
+    /**
+     * Whether this is a Group Loan's application. Group Loans carry no interest
+     * rate at all — their repayment comes from the group's service charge
+     * percentage — and must be driven through GroupLoanWorkflowService rather
+     * than the individual-loan workflow endpoints.
+     */
+    public function isGroupLoan(): bool
+    {
+        return $this->group_loan_id !== null;
     }
 
     /**
@@ -184,8 +194,9 @@ class LoanApplication extends Model
     }
 
     /**
-     * Relationship with the additional customers attached to this loan application
-     * (Joint Loan co-borrowers, via the pivot). Empty for a plain Individual Loan.
+     * Relationship with the customers attached to this loan application via the
+     * pivot — Joint Loan co-borrowers, or a Group Loan's members. Empty for a
+     * plain Individual Loan.
      */
     public function loanApplicationCustomers(): HasMany
     {
@@ -193,7 +204,10 @@ class LoanApplication extends Model
     }
 
     /**
-     * Whether this loan application has more than one customer attached.
+     * Whether this loan application has customers attached via the pivot, i.e.
+     * it is a Joint Loan or a Group Loan rather than a plain Individual Loan.
+     * Kept under this name because it gates the email notification channel,
+     * which both Joint and Group Loans are meant to receive.
      */
     public function isJointLoan(): bool
     {
@@ -202,7 +216,8 @@ class LoanApplication extends Model
 
     /**
      * All customers who should receive notifications for this loan application:
-     * every attached Joint Loan customer, or just the primary customer otherwise.
+     * every attached customer (Joint Loan co-borrowers or Group Loan members),
+     * or just the primary customer otherwise.
      */
     public function notifiableCustomers(): \Illuminate\Support\Collection
     {

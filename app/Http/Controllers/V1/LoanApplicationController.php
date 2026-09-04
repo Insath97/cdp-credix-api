@@ -52,6 +52,36 @@ class LoanApplicationController extends Controller implements HasMiddleware
     }
 
     /**
+     * Refuse an individual-loan action on a Group Loan's application.
+     *
+     * A group loan is one loan application like any other, so its id resolves
+     * here — but its money must be driven through GroupLoanWorkflowService.
+     * Approving it here would run the interest formula against a null
+     * interest_rate (group loans have none, only a service charge) and quietly
+     * produce a zero charge, bypassing the group's own math entirely.
+     *
+     * Returns a 422 response when the action must be refused, or null when the
+     * application is an ordinary Individual or Joint Loan.
+     */
+    private function groupLoanGuardResponse(LoanApplication $loanApplication)
+    {
+        if (!$loanApplication->isGroupLoan()) {
+            return null;
+        }
+
+        $groupLoan = $loanApplication->groupLoan;
+        $reference = $groupLoan?->group_loan_no ?? "ID {$loanApplication->group_loan_id}";
+
+        return response()->json([
+            'status'  => 'error',
+            'message' => "This loan application belongs to group loan {$reference}. Manage it through the group loan endpoints (/group-loans) so the group's service charge and member list stay consistent.",
+            'errors'  => [
+                'group_loan_id' => $loanApplication->group_loan_id,
+            ],
+        ], 422);
+    }
+
+    /**
      * Display a listing of loan applications.
      */
     public function index(Request $request)
@@ -239,12 +269,12 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'groupLoan.loanProduct',
                 'groupLoan.branch',
                 'groupLoan.items',
-                'groupLoan.memberLoanApplications.customer.customerDetail',
-                'groupLoan.memberLoanApplications.customer.bankDetails',
-                'groupLoan.memberLoanApplications.customer.fixedAssets',
-                'groupLoan.memberLoanApplications.customer.movingAssets',
-                'groupLoan.memberLoanApplications.customer.liabilities',
-                'groupLoan.memberLoanApplications.customer.documents',
+                'groupLoan.loanApplication.loanApplicationCustomers.customer.customerDetail',
+                'groupLoan.loanApplication.loanApplicationCustomers.customer.bankDetails',
+                'groupLoan.loanApplication.loanApplicationCustomers.customer.fixedAssets',
+                'groupLoan.loanApplication.loanApplicationCustomers.customer.movingAssets',
+                'groupLoan.loanApplication.loanApplicationCustomers.customer.liabilities',
+                'groupLoan.loanApplication.loanApplicationCustomers.customer.documents',
             ])->find($id);
 
             if (!$loanApplication) {
@@ -282,6 +312,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Loan application not found',
                 ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
             }
 
             $data = $request->validated();
@@ -328,6 +362,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
             $loanApplication->is_active = !$loanApplication->is_active;
             $loanApplication->save();
 
@@ -367,6 +405,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Loan application not found',
                 ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
             }
 
             if ($loanApplication->is_active) {
@@ -413,6 +455,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
             if (!$loanApplication->is_active) {
                 return response()->json([
                     'status'  => 'success',
@@ -455,6 +501,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Loan application not found',
                 ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
             }
 
             $extra = [
@@ -510,6 +560,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Loan application not found',
                 ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
             }
 
             // Approved amount defaults to what the customer requested unless the
@@ -603,6 +657,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
             $loanApplication = $this->workflowService->transition(
                 $loanApplication,
                 LoanApplicationStatus::Rejected,
@@ -671,6 +729,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Loan application not found',
                 ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
             }
 
             $loanApplication = $this->workflowService->transition(
@@ -752,6 +814,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
             $loanApplication = $this->workflowService->transition(
                 $loanApplication,
                 LoanApplicationStatus::Cancelled,
@@ -796,6 +862,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Loan application not found',
                 ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
             }
 
             $loanApplication->delete();

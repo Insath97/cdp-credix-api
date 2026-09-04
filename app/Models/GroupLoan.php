@@ -8,6 +8,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Collection;
 use App\Enums\GroupLoanStatus;
 
 class GroupLoan extends Model
@@ -131,11 +134,113 @@ class GroupLoan extends Model
     }
 
     /**
-     * Relationship with each member's own loan application row.
+     * The single loan application that carries this whole group's money.
+     *
+     * A group loan has exactly one — the members are attached to it through
+     * loan_application_customers, exactly as Joint Loan co-borrowers are. The
+     * installment schedule, outstanding balance, overdue status, penalties and
+     * recovery cases all therefore hang off this one row.
      */
-    public function memberLoanApplications(): HasMany
+    public function loanApplication(): HasOne
     {
-        return $this->hasMany(LoanApplication::class, 'group_loan_id')->orderBy('group_member_no');
+        return $this->hasOne(LoanApplication::class, 'group_loan_id');
+    }
+
+    /**
+     * The group's members, reached through that single loan application's
+     * joint-loan pivot.
+     */
+    public function members(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            LoanApplicationCustomer::class,
+            LoanApplication::class,
+            'group_loan_id',       // FK on loan_applications
+            'loan_application_id', // FK on loan_application_customers
+            'id',
+            'id',
+        );
+    }
+
+    /**
+     * Each member's own share of the group's money, derived for display.
+     *
+     * Nothing here is stored: the group borrows and repays as one loan, so the
+     * money lives on the single loan application. The split is even, with the
+     * last member absorbing the rounding remainder — the same convention
+     * GroupLoanWorkflowService::approve() uses for the header figures.
+     */
+    public function memberBreakdown(): Collection
+    {
+        $application = $this->relationLoaded('loanApplication')
+            ? $this->loanApplication
+            : $this->loanApplication()->first();
+
+        if (!$application) {
+            return collect();
+        }
+
+        $members = $application->loanApplicationCustomers()->with('customer')->get();
+        $memberCount = $members->count();
+
+        if ($memberCount === 0) {
+            return collect();
+        }
+
+        $principal      = (float) ($this->approved_amount ?? $this->requested_amount);
+        $serviceCharge  = (float) ($this->service_charge_amount ?? 0);
+        $totalRepayment = (float) ($this->total_repayment_amount ?? $principal + $serviceCharge);
+        $monthly        = (float) ($application->monthly_installment ?? 0);
+
+        $principalShares = self::splitEvenly($principal, $memberCount);
+        $chargeShares    = self::splitEvenly($serviceCharge, $memberCount);
+        $totalShares     = self::splitEvenly($totalRepayment, $memberCount);
+        $monthlyShares   = self::splitEvenly($monthly, $memberCount);
+
+        $paidByCustomer = $application->payments()
+            // The payments relation orders by paid_at, which MySQL rejects
+            // alongside this GROUP BY under only_full_group_by.
+            ->reorder()
+            ->whereNotNull('customer_id')
+            ->selectRaw('customer_id, SUM(amount) as total_paid')
+            ->groupBy('customer_id')
+            ->pluck('total_paid', 'customer_id');
+
+        return $members->values()->map(fn ($member, $index) => [
+            'customer_id'         => $member->customer_id,
+            'customer'            => $member->customer,
+            'member_no'           => $index + 1,
+            'principal_share'     => $principalShares[$index],
+            'service_charge_share' => $chargeShares[$index],
+            'total_repayment_share' => $totalShares[$index],
+            'monthly_installment' => $monthlyShares[$index],
+            'paid_to_date'        => round((float) ($paidByCustomer[$member->customer_id] ?? 0), 2),
+        ]);
+    }
+
+    /**
+     * Split an amount into $parts even shares, the last absorbing whatever the
+     * rounding left over so the shares always add back up to the total.
+     */
+    public static function splitEvenly(float $amount, int $parts): array
+    {
+        if ($parts < 1) {
+            return [];
+        }
+
+        $share = round($amount / $parts, 2);
+        $shares = [];
+        $running = 0.0;
+
+        for ($i = 0; $i < $parts; $i++) {
+            $value = $i === $parts - 1
+                ? round($amount - $running, 2)
+                : $share;
+            $running += $value;
+            $shares[] = $value;
+        }
+
+        return $shares;
     }
 
     public function appliedByUser(): BelongsTo

@@ -29,7 +29,6 @@ use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LoanApplicationController;
 use App\Http\Controllers\V1\GroupLoanController;
 use App\Http\Controllers\V1\GroupLoanItemController;
-use App\Http\Controllers\V1\GroupLoanMemberController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
 use App\Http\Controllers\V1\LoanApplicationCustomerController;
 use App\Http\Controllers\V1\LoanApplicationFixedAssetController;
@@ -250,17 +249,16 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     // Group Loan Items
     Route::apiResource('group-loan-items', GroupLoanItemController::class)->only(['index', 'store', 'show', 'destroy']);
 
-    // Group Loan Members — only editable while the group loan is Available.
-    Route::patch('group-loan-members/{id}/customer', [GroupLoanMemberController::class, 'updateCustomer']);
-    Route::apiResource('group-loan-members', GroupLoanMemberController::class)
-        ->only(['index', 'store', 'show', 'update', 'destroy'])
-        ->parameters(['group-loan-members' => 'id']);
-
     // Loan Application Guarantors
     Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);
 
-    // Loan Application Customers (Joint Loan co-borrowers)
-    Route::apiResource('loan-application-customers', LoanApplicationCustomerController::class)->only(['index', 'store', 'show', 'destroy']);
+    // Loan Application Customers — Joint Loan co-borrowers and Group Loan
+    // members alike. Group members are only editable while the group loan is
+    // Available; the controller enforces that.
+    Route::patch('loan-application-customers/{id}/customer-details', [LoanApplicationCustomerController::class, 'updateCustomerDetails']);
+    Route::apiResource('loan-application-customers', LoanApplicationCustomerController::class)
+        ->only(['index', 'store', 'show', 'destroy'])
+        ->parameters(['loan-application-customers' => 'id']);
 
     // Loan Application Fixed Assets (pledged assets)
     Route::apiResource('loan-application-fixed-assets', LoanApplicationFixedAssetController::class)->only(['index', 'store', 'show', 'destroy']);

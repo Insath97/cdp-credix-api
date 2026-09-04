@@ -37,7 +37,9 @@ class CreateGroupLoanRequest extends FormRequest
             ],
             'branch_id'         => 'nullable|integer|exists:branches,id',
             'group_name'        => 'required|string|max:255',
-            'number_of_members' => 'required|integer|min:1',
+            // Matches GroupLoanWorkflowService::MIN_MEMBERS, which member
+            // removal already enforces from the other direction.
+            'number_of_members' => 'required|integer|min:2',
             'competency'        => ['required', 'string', function ($attribute, $value, $fail) {
                 $allowed = Setting::get('group_loan_competency', []);
                 $normalized = array_map(fn ($c) => trim(mb_strtolower($c)), $allowed);
@@ -46,7 +48,10 @@ class CreateGroupLoanRequest extends FormRequest
                 }
             }],
             'term_months' => 'required|integer|min:1',
-            'service_charge_percentage' => 'nullable|numeric|min:0|max:100',
+
+            // No service_charge_percentage input: a Group Loan's charge always
+            // comes from the `group_loan_service_charge_percentage` System
+            // Setting, and there is no interest rate at all.
 
             'items'              => 'required|array|min:1',
             'items.*.item_name'  => 'required|string|max:255',
@@ -54,7 +59,7 @@ class CreateGroupLoanRequest extends FormRequest
             'items.*.unit_price' => 'required|numeric|min:0',
 
             'members'               => ['required', 'array', new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
-            'members.*.customer_id' => 'required|integer|exists:customers,id',
+            'members.*.customer_id' => 'required|integer|distinct|exists:customers,id',
         ];
     }
 

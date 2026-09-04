@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\LoanApplication;
 use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -33,6 +34,28 @@ class CreatePaymentRequest extends FormRequest
                 Rule::exists('loan_installments', 'id')->where(function ($query) {
                     return $query->where('loan_application_id', $this->loan_application_id);
                 }),
+            ],
+            // Which member of a Group Loan handed the money over. Optional and
+            // purely attribution — the installments and outstanding balance
+            // stay group-level either way.
+            'customer_id' => [
+                'nullable',
+                'integer',
+                'exists:customers,id',
+                function ($attribute, $value, $fail) {
+                    $loanApplication = LoanApplication::find($this->loan_application_id);
+
+                    if (!$loanApplication) {
+                        return;
+                    }
+
+                    $isOnThisLoan = (int) $value === (int) $loanApplication->customer_id
+                        || $loanApplication->loanApplicationCustomers()->where('customer_id', $value)->exists();
+
+                    if (!$isOnThisLoan) {
+                        $fail('That customer is not on this loan, so the payment cannot be attributed to them.');
+                    }
+                },
             ],
             'amount'               => 'required|numeric|min:0.01',
             'payment_method'       => 'nullable|string|in:cash,bank_transfer,cheque,online',
