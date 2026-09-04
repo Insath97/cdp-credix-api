@@ -118,6 +118,15 @@ class PaymentController extends Controller implements HasMiddleware
                 $unappliedExcess = 0.0;
                 if (!empty($data['loan_installment_id'])) {
                     $installment = LoanInstallment::lockForUpdate()->find($data['loan_installment_id']);
+
+                    // A Group Loan installment already knows which member owes
+                    // it, so a receipt booked against it is attributed to that
+                    // member without the caller having to say so.
+                    if (empty($data['customer_id']) && $installment?->customer_id) {
+                        $payment->customer_id = $installment->customer_id;
+                        $payment->save();
+                    }
+
                     $unappliedExcess = $this->applyPaymentToInstallment($installment, $payment);
                 }
 
@@ -423,6 +432,15 @@ class PaymentController extends Controller implements HasMiddleware
         $notes = [];
 
         $candidates = LoanInstallment::where('loan_application_id', $fromInstallment->loan_application_id)
+            // Stay inside this member's own installments. A Group Loan gives
+            // every member their own rows, so without this scope one member's
+            // overpayment would silently pay down another member's balance.
+            // Rows predating per-member installments carry a null customer_id
+            // and keep the original loan-wide behaviour.
+            ->when(
+                $fromInstallment->customer_id !== null,
+                fn ($query) => $query->where('customer_id', $fromInstallment->customer_id)
+            )
             ->where('installment_no', '>', $fromInstallment->installment_no)
             ->whereNotIn('status', ['paid', 'waived', 'revised'])
             ->orderBy('installment_no')

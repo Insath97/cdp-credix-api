@@ -13,6 +13,7 @@ class RecoveryCase extends Model
 
     protected $fillable = [
         'loan_application_id',
+        'customer_id',
         'case_no',
         'status',
         'stage',
@@ -34,6 +35,7 @@ class RecoveryCase extends Model
 
     protected $casts = [
         'loan_application_id' => 'integer',
+        'customer_id'          => 'integer',
         'overdue_amount'       => 'decimal:2',
         'assigned_agent_id'    => 'integer',
         'external_agent_id'    => 'integer',
@@ -49,6 +51,15 @@ class RecoveryCase extends Model
     public function loanApplication(): BelongsTo
     {
         return $this->belongsTo(LoanApplication::class);
+    }
+
+    /**
+     * For a Group Loan, the member this case is pursuing. Null on Individual
+     * and Joint loans, where the loan itself is the debtor.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     /**

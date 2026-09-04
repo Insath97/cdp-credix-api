@@ -33,67 +33,72 @@ class EscalateInternalRecoveryCases extends Command
 
         $thresholdDays = (int) Setting::get('internal_recovery_threshold_days', 30);
 
-        // Skip a loan that already has ANY live case, not just a live internal
-        // one. Checking only stage=internal meant that once a case had been
-        // escalated to external (which settles the internal one), this command
-        // saw "no live internal case" and opened a fresh internal case the
-        // very next night — which the external command then escalated again,
-        // producing a new case pair every single night the loan stayed overdue.
         $loanApplications = LoanApplication::where('status', LoanApplicationStatus::Overdue)
-            ->whereDoesntHave('recoveryCases', function ($query) {
-                $query->whereIn('status', RecoveryCaseService::LIVE_STATUSES);
-            })
-            ->with(['customer', 'installments'])
+            ->with(['customer', 'installments', 'loanApplicationCustomers.customer'])
             ->get();
 
         $escalated = 0;
 
         foreach ($loanApplications as $loanApplication) {
-            $earliestOverdueInstallment = $loanApplication->installments
-                ->where('status', 'overdue')
-                ->sortBy('due_date')
-                ->first();
-
-            if (!$earliestOverdueInstallment) {
-                continue;
-            }
-
-            $daysOverdue = $earliestOverdueInstallment->daysOverdue();
-
-            if ($daysOverdue < $thresholdDays) {
-                continue;
-            }
-
-            $recoveryCaseService->openInternalCase(
-                $loanApplication,
-                $recoveryCaseService->overdueAmountFor($loanApplication),
-                $daysOverdue
-            );
-
-            $internalEscalationMessage = "CDP Credix: Your loan account (Loan Application ID: {$loanApplication->id}) has become overdue. Please contact us immediately to avoid further recovery actions.";
-
-            foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
-                if (!empty($notifyCustomer->phone_primary)) {
-                    $notificationService->sendSms(
-                        'recovery_case_opened_customer',
-                        $notifyCustomer->phone_primary,
-                        $internalEscalationMessage,
-                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
-                    );
+            // One entry per party in arrears — per member on a Group Loan, so
+            // the case identifies who actually missed a payment and the members
+            // who paid on time are left alone.
+            foreach ($loanApplication->arrearsGroups(fn ($installment) => $installment->status === 'overdue') as $arrears) {
+                // Skip a party that already has ANY live case, not just a live
+                // internal one. Checking only stage=internal meant that once a
+                // case had been escalated to external (which settles the
+                // internal one), this command saw "no live internal case" and
+                // opened a fresh internal case the very next night — which the
+                // external command then escalated again, producing a new case
+                // pair every single night the loan stayed overdue.
+                //
+                // The check is per party rather than per loan: a Group Loan
+                // member's open case must not stop a different member who falls
+                // behind later from getting their own case. For Individual and
+                // Joint loans customer_id is null, so this is exactly the
+                // loan-wide guard it replaces.
+                if ($recoveryCaseService->hasLiveCaseFor($loanApplication, $arrears['customer_id'])) {
+                    continue;
                 }
 
-                if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
-                    $notificationService->sendEmail(
-                        'recovery_case_opened_customer',
-                        $notifyCustomer->email,
-                        'Recovery Case Opened',
-                        $internalEscalationMessage,
-                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
-                    );
-                }
-            }
+                $daysOverdue = $arrears['installment']->daysOverdue();
 
-            $escalated++;
+                if ($daysOverdue < $thresholdDays) {
+                    continue;
+                }
+
+                $recoveryCaseService->openInternalCase(
+                    $loanApplication,
+                    $recoveryCaseService->overdueAmountFor($loanApplication, $arrears['customer_id']),
+                    $daysOverdue,
+                    $arrears['customer_id']
+                );
+
+                $internalEscalationMessage = "CDP Credix: Your loan account (Loan Application ID: {$loanApplication->id}) has become overdue. Please contact us immediately to avoid further recovery actions.";
+
+                foreach ($arrears['customers'] as $notifyCustomer) {
+                    if (!empty($notifyCustomer->phone_primary)) {
+                        $notificationService->sendSms(
+                            'recovery_case_opened_customer',
+                            $notifyCustomer->phone_primary,
+                            $internalEscalationMessage,
+                            ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                        );
+                    }
+
+                    if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                        $notificationService->sendEmail(
+                            'recovery_case_opened_customer',
+                            $notifyCustomer->email,
+                            'Recovery Case Opened',
+                            $internalEscalationMessage,
+                            ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                        );
+                    }
+                }
+
+                $escalated++;
+            }
         }
 
         $summary = "Loan applications escalated to internal recovery: {$escalated}.";

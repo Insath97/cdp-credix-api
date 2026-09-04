@@ -15,8 +15,8 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('loan_application_id')->constrained('loan_applications')->cascadeOnDelete();
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
             $table->string('case_no')->unique();
-
             $table->enum('status', ['open', 'in_progress', 'resolved', 'escalated', 'closed'])->default('open')->index();
             $table->enum('stage', ['internal', 'external'])->default('internal');
             $table->decimal('overdue_amount', 15, 2)->nullable();

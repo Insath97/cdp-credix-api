@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('loan_type_id')->nullable()->constrained('loan_types')->nullOnDelete();
             $table->foreignId('loan_term_id')->nullable()->constrained('loan_terms')->nullOnDelete();
             $table->text('description')->nullable();
-            $table->decimal('interest_rate', 6, 3);
+            $table->decimal('interest_rate', 6, 3)->nullable();
             $table->string('interest_type')->nullable()->default('flat');
             $table->decimal('min_amount', 15, 2);
             $table->decimal('max_amount', 15, 2);

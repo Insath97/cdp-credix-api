@@ -97,17 +97,37 @@ class MarkOverdueLoanApplications extends Command
                 $this->error("Failed to sync status for loan application ID {$loanApplication->id}: {$th->getMessage()}");
             }
 
-            // A loan that is no longer in arrears must not leave a live
-            // recovery case behind: the escalation commands skip any loan that
+            // A party that is no longer in arrears must not leave a live
+            // recovery case behind: the escalation commands skip a party that
             // already has one, so a stale case would permanently block a
-            // legitimate future case. Checked on !$hasOverdueInstallment
-            // rather than only inside the revert branch above, so loans that
-            // are already Active but carry a stale case get cleaned up too.
-            if (!$hasOverdueInstallment && $loanApplication->recoveryCases->isNotEmpty()) {
-                $casesResolved += $recoveryCaseService->resolveOpenCases(
-                    $loanApplication,
-                    'Automatically resolved: the loan application is no longer overdue.'
-                );
+            // legitimate future case.
+            //
+            // Done per party rather than per loan, because a Group Loan's
+            // members are in arrears independently: one member catching up has
+            // to settle their own case even while a sibling is still overdue.
+            // On an Individual or Joint loan both sides of the comparison are
+            // null, so this reduces to the loan-wide check it replaces — and it
+            // still runs outside the revert branch above, so a loan that is
+            // already Active but carries a stale case gets cleaned up too.
+            if ($loanApplication->recoveryCases->isNotEmpty()) {
+                $stillInArrears = $loanApplication->installments
+                    ->where('status', 'overdue')
+                    ->pluck('customer_id')
+                    ->unique()
+                    ->all();
+
+                $partiesToSettle = $loanApplication->recoveryCases
+                    ->pluck('customer_id')
+                    ->unique()
+                    ->reject(fn ($customerId) => in_array($customerId, $stillInArrears, true));
+
+                foreach ($partiesToSettle as $customerId) {
+                    $casesResolved += $recoveryCaseService->resolveOpenCases(
+                        $loanApplication,
+                        'Automatically resolved: no longer overdue.',
+                        $customerId
+                    );
+                }
             }
         }
 

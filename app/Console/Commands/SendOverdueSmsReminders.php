@@ -52,64 +52,55 @@ class SendOverdueSmsReminders extends Command
         $sent = 0;
 
         foreach ($loanApplications as $loanApplication) {
-            $notifyCustomers = $loanApplication->notifiableCustomers();
-
-            if ($notifyCustomers->isEmpty()) {
-                continue;
-            }
-
-            $earliestPastDueInstallment = $loanApplication->installments
-                ->filter(fn ($installment) => $installment->isPastDue())
-                ->sortBy('due_date')
-                ->first();
-
-            if (!$earliestPastDueInstallment) {
-                continue;
-            }
-
-            $daysOverdue = $earliestPastDueInstallment->daysOverdue();
-
-            if ($daysOverdue < 1 || $daysOverdue > $durationDays || $daysOverdue % $frequencyDays !== 0) {
-                continue;
-            }
-
             $isJoint = $loanApplication->isJointLoan();
-            $overdueMessage = "CDP Credix: Your loan installment is {$daysOverdue} day(s) overdue. Please make your payment as soon as possible to avoid recovery action.";
 
-            foreach ($notifyCustomers as $customer) {
-                if (empty($customer->phone_primary)) {
+            // One entry per party actually in arrears. For a Group Loan that is
+            // one entry per member who has missed a payment — members who paid
+            // on time produce no entry and are never reminded.
+            foreach ($loanApplication->arrearsGroups(fn ($installment) => $installment->isPastDue()) as $arrears) {
+                $daysOverdue = $arrears['installment']->daysOverdue();
+
+                if ($daysOverdue < 1 || $daysOverdue > $durationDays || $daysOverdue % $frequencyDays !== 0) {
                     continue;
                 }
 
-                $alreadySentToday = Notification::where('loan_application_id', $loanApplication->id)
-                    ->where('customer_id', $customer->id)
-                    ->where('type', 'overdue_sms_reminder')
-                    ->where('channel', 'sms')
-                    ->whereDate('created_at', now()->toDateString())
-                    ->exists();
+                $overdueMessage = "CDP Credix: Your loan installment is {$daysOverdue} day(s) overdue. Please make your payment as soon as possible to avoid recovery action.";
 
-                if ($alreadySentToday) {
-                    continue;
-                }
+                foreach ($arrears['customers'] as $customer) {
+                    if (empty($customer->phone_primary)) {
+                        continue;
+                    }
 
-                $notificationService->sendSms(
-                    'overdue_sms_reminder',
-                    $customer->phone_primary,
-                    $overdueMessage,
-                    ['loan_application_id' => $loanApplication->id, 'customer_id' => $customer->id]
-                );
+                    $alreadySentToday = Notification::where('loan_application_id', $loanApplication->id)
+                        ->where('customer_id', $customer->id)
+                        ->where('type', 'overdue_sms_reminder')
+                        ->where('channel', 'sms')
+                        ->whereDate('created_at', now()->toDateString())
+                        ->exists();
 
-                if ($isJoint && !empty($customer->email)) {
-                    $notificationService->sendEmail(
+                    if ($alreadySentToday) {
+                        continue;
+                    }
+
+                    $notificationService->sendSms(
                         'overdue_sms_reminder',
-                        $customer->email,
-                        'Installment Overdue Reminder',
+                        $customer->phone_primary,
                         $overdueMessage,
                         ['loan_application_id' => $loanApplication->id, 'customer_id' => $customer->id]
                     );
-                }
 
-                $sent++;
+                    if ($isJoint && !empty($customer->email)) {
+                        $notificationService->sendEmail(
+                            'overdue_sms_reminder',
+                            $customer->email,
+                            'Installment Overdue Reminder',
+                            $overdueMessage,
+                            ['loan_application_id' => $loanApplication->id, 'customer_id' => $customer->id]
+                        );
+                    }
+
+                    $sent++;
+                }
             }
         }
 

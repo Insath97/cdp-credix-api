@@ -57,10 +57,17 @@ class RecoveryCaseService
      * Open the first-stage (internal) recovery case for an overdue loan.
      * assigned_agent_id is deliberately left null — the admin assigns it.
      */
-    public function openInternalCase(LoanApplication $loanApplication, float $overdueAmount, int $daysOverdue): RecoveryCase
-    {
+    public function openInternalCase(
+        LoanApplication $loanApplication,
+        float $overdueAmount,
+        int $daysOverdue,
+        ?int $customerId = null
+    ): RecoveryCase {
         $case = RecoveryCase::create([
             'loan_application_id' => $loanApplication->id,
+            // Which Group Loan member is being pursued. Null on Individual and
+            // Joint loans, where the loan itself is the debtor.
+            'customer_id'         => $customerId,
             'case_no'             => $this->placeholderCaseNo(),
             'status'              => 'open',
             'stage'               => 'internal',
@@ -99,6 +106,8 @@ class RecoveryCaseService
 
         $externalCase = RecoveryCase::create([
             'loan_application_id' => $loanApplication->id,
+            // The external case pursues whoever the internal case pursued.
+            'customer_id'         => $internalCase->customer_id,
             'case_no'             => $this->placeholderCaseNo(),
             'status'              => 'open',
             'stage'               => 'external',
@@ -123,10 +132,14 @@ class RecoveryCaseService
      * permanently block a legitimate future one. Idempotent, and sends no
      * notifications, so it is safe to call after every payment.
      */
-    public function resolveOpenCases(LoanApplication $loanApplication, string $reason): int
+    public function resolveOpenCases(LoanApplication $loanApplication, string $reason, ?int $customerId = null): int
     {
         $cases = RecoveryCase::where('loan_application_id', $loanApplication->id)
             ->whereIn('status', self::LIVE_STATUSES)
+            // Scoped to one Group Loan member when given, so a member catching
+            // up settles their own case without touching a sibling who is
+            // still behind.
+            ->when($customerId !== null, fn ($query) => $query->where('customer_id', $customerId))
             ->get();
 
         if ($cases->isEmpty()) {
@@ -239,11 +252,36 @@ class RecoveryCaseService
     /**
      * The overdue amount a case should carry: the sum of the balances of every
      * installment currently marked overdue.
+     *
+     * Pass a customer to scope it to one Group Loan member's own arrears, so a
+     * member's case carries what that member owes rather than what the whole
+     * group owes.
      */
-    public function overdueAmountFor(LoanApplication $loanApplication): float
+    public function overdueAmountFor(LoanApplication $loanApplication, ?int $customerId = null): float
     {
-        return (float) $loanApplication->installments
-            ->where('status', 'overdue')
-            ->sum('balance');
+        $installments = $loanApplication->installments->where('status', 'overdue');
+
+        if ($customerId !== null) {
+            $installments = $installments->where('customer_id', $customerId);
+        }
+
+        return (float) $installments->sum('balance');
+    }
+
+    /**
+     * Whether a loan already has a live case, optionally for one specific
+     * Group Loan member.
+     *
+     * This is what keeps per-member arrears working: both escalation commands
+     * skip a loan that already has a live case, so without the customer scope
+     * one member's open case would permanently prevent a case ever being
+     * opened for a different member who falls behind later.
+     */
+    public function hasLiveCaseFor(LoanApplication $loanApplication, ?int $customerId = null): bool
+    {
+        return RecoveryCase::where('loan_application_id', $loanApplication->id)
+            ->whereIn('status', self::LIVE_STATUSES)
+            ->when($customerId !== null, fn ($query) => $query->where('customer_id', $customerId))
+            ->exists();
     }
 }

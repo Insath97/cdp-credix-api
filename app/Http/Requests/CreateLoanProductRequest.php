@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
@@ -30,7 +31,17 @@ class CreateLoanProductRequest extends FormRequest
             'loan_type_id' => 'required|integer|exists:loan_types,id',
             'loan_term_id' => 'nullable|integer|exists:loan_terms,id',
             'description' => 'nullable|string',
-            'interest_rate' => 'required|numeric|min:0|max:999.999',
+            // A Group Loan product has no interest rate at all — repayment is
+            // derived from the service charge percentage in System Settings.
+            // Every other product still needs one, since approve() computes
+            // interest from it.
+            'interest_rate' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999.999',
+                Rule::requiredIf(fn () => !$this->boolean('is_group_loan')),
+            ],
             'interest_type' => 'nullable|string|in:flat,reducing',
             'min_amount' => 'required|numeric|min:0',
             'max_amount' => 'required|numeric|min:0|gte:min_amount',
