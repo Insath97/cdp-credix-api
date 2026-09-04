@@ -19,13 +19,15 @@ return new class extends Migration
             $table->foreignId('loan_product_id')->constrained('loan_products')->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained('branches')->nullOnDelete();
             $table->foreignId('group_loan_id')->nullable()->constrained('group_loans')->nullOnDelete();
-            $table->unsignedInteger('group_member_no')->nullable();
 
             $table->decimal('requested_amount', 15, 2);
             $table->decimal('approved_amount', 15, 2)->nullable();
-            
-            $table->decimal('interest_rate', 6, 3);
-            $table->string('interest_type')->default('flat');
+
+            // Nullable because a Group Loan has no interest rate at all — its
+            // repayment is derived purely from the group's service charge
+            // percentage (group_loans.service_charge_percentage).
+            $table->decimal('interest_rate', 6, 3)->nullable();
+            $table->string('interest_type')->nullable()->default('flat');
             
             $table->unsignedInteger('term_months');
             $table->decimal('monthly_installment', 15, 2)->nullable();

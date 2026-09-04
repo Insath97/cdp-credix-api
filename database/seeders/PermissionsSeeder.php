@@ -205,12 +205,6 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Group Loan Item Create', 'group_name' => 'Group Loan Item Management Permissions'],
             ['name' => 'Group Loan Item Delete', 'group_name' => 'Group Loan Item Management Permissions'],
 
-            /* Group Loan Member Management */
-            ['name' => 'Group Loan Member Index', 'group_name' => 'Group Loan Member Management Permissions'],
-            ['name' => 'Group Loan Member Create', 'group_name' => 'Group Loan Member Management Permissions'],
-            ['name' => 'Group Loan Member Update', 'group_name' => 'Group Loan Member Management Permissions'],
-            ['name' => 'Group Loan Member Delete', 'group_name' => 'Group Loan Member Management Permissions'],
-
             /* Loan Revision Management */
             ['name' => 'Loan Revision Index', 'group_name' => 'Loan Revision Management Permissions'],
             ['name' => 'Loan Revision Create', 'group_name' => 'Loan Revision Management Permissions'],
@@ -224,9 +218,10 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Guarantor Update', 'group_name' => 'Loan Application Guarantor Management Permissions'],
             ['name' => 'Loan Application Guarantor Delete', 'group_name' => 'Loan Application Guarantor Management Permissions'],
 
-            /* Loan Application Customer Management (Joint Loan co-borrowers) */
+            /* Loan Application Customer Management (Joint Loan co-borrowers and Group Loan members) */
             ['name' => 'Loan Application Customer Index', 'group_name' => 'Loan Application Customer Management Permissions'],
             ['name' => 'Loan Application Customer Create', 'group_name' => 'Loan Application Customer Management Permissions'],
+            ['name' => 'Loan Application Customer Update', 'group_name' => 'Loan Application Customer Management Permissions'],
             ['name' => 'Loan Application Customer Delete', 'group_name' => 'Loan Application Customer Management Permissions'],
 
             /* Loan Application Fixed Asset Management */

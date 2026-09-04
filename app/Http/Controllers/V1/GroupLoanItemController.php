@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use App\Enums\GroupLoanStatus;
 use App\Models\GroupLoan;
 use App\Models\GroupLoanItem;
-use App\Services\GroupLoanMemberService;
+use App\Services\GroupLoanWorkflowService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateGroupLoanItemRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -19,7 +19,7 @@ class GroupLoanItemController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
 
-    public function __construct(protected GroupLoanMemberService $memberService)
+    public function __construct(protected GroupLoanWorkflowService $workflowService)
     {
     }
 
@@ -192,9 +192,9 @@ class GroupLoanItemController extends Controller implements HasMiddleware
     /**
      * Recompute a group loan's requested_amount as the sum of its current
      * items' line totals, keeping it always in sync with what was actually
-     * selected, then re-split that new total across the members — otherwise
-     * each member's own requested_amount would still hold the share of the
-     * pre-edit total.
+     * selected, then mirror that new total onto the group's single loan
+     * application — otherwise the application would still hold the pre-edit
+     * total.
      */
     private function recalculateRequestedAmount(int $groupLoanId): void
     {
@@ -202,6 +202,6 @@ class GroupLoanItemController extends Controller implements HasMiddleware
         $total = round($groupLoan->items()->sum('line_total'), 2);
         $groupLoan->update(['requested_amount' => $total]);
 
-        $this->memberService->resync($groupLoan->refresh());
+        $this->workflowService->syncAmounts($groupLoan->refresh());
     }
 }

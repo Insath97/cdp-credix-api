@@ -135,9 +135,9 @@ class PaymentController extends Controller implements HasMiddleware
                         );
                         $loanClosed = true;
 
-                        // A group loan's header only reaches Closed once the
-                        // last member has repaid; no-ops while any sibling
-                        // member loan is still open.
+                        // A group loan borrows as one loan, so its header
+                        // reaches Closed as soon as that loan is repaid in
+                        // full. No-ops if the header is not Disbursed.
                         if ($loanApplication->group_loan_id) {
                             $groupLoan = $loanApplication->groupLoan()->lockForUpdate()->first();
 

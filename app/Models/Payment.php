@@ -13,6 +13,7 @@ class Payment extends Model
     protected $fillable = [
         'loan_application_id',
         'loan_installment_id',
+        'customer_id',
         'receipt_no',
         'amount',
         'payment_method',
@@ -31,6 +32,7 @@ class Payment extends Model
     protected $casts = [
         'loan_application_id'      => 'integer',
         'loan_installment_id'      => 'integer',
+        'customer_id'               => 'integer',
         'amount'                    => 'decimal:2',
         'received_by'               => 'integer',
         'carry_forward_breakdown'   => 'array',
@@ -51,6 +53,17 @@ class Payment extends Model
     public function loanInstallment(): BelongsTo
     {
         return $this->belongsTo(LoanInstallment::class);
+    }
+
+    /**
+     * The Group Loan member who actually handed the money over. Null for
+     * Individual/Joint Loans and for group payments recorded without
+     * attribution — the installments and outstanding balance stay group-level
+     * either way.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     /**

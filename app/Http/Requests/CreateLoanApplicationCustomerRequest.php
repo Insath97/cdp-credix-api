@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Traits\FriendlyValidationErrors;
+use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
 use App\Models\LoanApplication;
 use Illuminate\Foundation\Http\FormRequest;
@@ -37,7 +38,7 @@ class CreateLoanApplicationCustomerRequest extends FormRequest
                     return $query->where('loan_application_id', $this->loan_application_id);
                 }),
                 function ($attribute, $value, $fail) {
-                    $loanApplication = LoanApplication::find($this->loan_application_id);
+                    $loanApplication = LoanApplication::with('groupLoan')->find($this->loan_application_id);
 
                     if (!$loanApplication) {
                         return;
@@ -45,6 +46,19 @@ class CreateLoanApplicationCustomerRequest extends FormRequest
 
                     if ((int) $value === (int) $loanApplication->customer_id) {
                         $fail('This customer is already the primary applicant on this loan application.');
+                        return;
+                    }
+
+                    // A Group Loan's member list follows the group loan's own
+                    // lifecycle — open while Available, frozen once approved.
+                    // A Joint Loan's co-borrowers follow the application's.
+                    $groupLoan = $loanApplication->groupLoan;
+
+                    if ($groupLoan) {
+                        if ($groupLoan->status !== GroupLoanStatus::Available) {
+                            $fail("This group loan is {$groupLoan->status->value} and its members are locked. Members can only be added while the group loan is still Available (before approval).");
+                        }
+
                         return;
                     }
 

@@ -172,8 +172,14 @@ class GroupLoanController extends Controller implements HasMiddleware
 
     /**
      * Store a newly created group loan, along with its product/material line
-     * items and one loan application per member — all created together in a
-     * single request, since neither has a separate reusable catalog/picker.
+     * items and the single loan application that carries the whole group's
+     * money — all created together in a single request, since neither has a
+     * separate reusable catalog/picker.
+     *
+     * The group borrows as one loan: one `applications` row, one
+     * `loan_applications` row, and one `loan_application_customers` row per
+     * member — the same shape Joint Loan uses. Members are always existing
+     * Customer records; nothing here creates or duplicates a customer.
      */
     public function store(CreateGroupLoanRequest $request)
     {
@@ -190,18 +196,22 @@ class GroupLoanController extends Controller implements HasMiddleware
                 // requested items — never trusted from the client.
                 $requestedAmount = round($items->sum('line_total'), 2);
 
-                // Group Loan uses a service charge in place of interest.
-                // It defaults to the percentage configured in System Settings,
-                // but may be overridden by the officer at submission time.
-                $serviceChargePercentage = $data['service_charge_percentage'] !== null
-                    ? (float) $data['service_charge_percentage']
-                    : (float) Setting::get('group_loan_service_charge_percentage', 0);
+                // Group Loan uses a service charge in place of interest, always
+                // taken from System Settings — there is no per-application
+                // override, and no interest rate is involved at any point.
+                $serviceChargePercentage = (float) Setting::get('group_loan_service_charge_percentage', 0);
+
+                $memberCustomerIds = collect($data['members'])
+                    ->pluck('customer_id')
+                    ->filter()
+                    ->unique()
+                    ->values();
 
                 $groupLoan = GroupLoan::create([
                     'loan_product_id'           => $data['loan_product_id'],
                     'branch_id'                 => $data['branch_id'] ?? null,
                     'group_name'                => $data['group_name'],
-                    'number_of_members'         => $data['number_of_members'],
+                    'number_of_members'         => $memberCustomerIds->count(),
                     'competency'                => $data['competency'],
                     'requested_amount'          => $requestedAmount,
                     'service_charge_percentage' => $serviceChargePercentage,
@@ -219,43 +229,35 @@ class GroupLoanController extends Controller implements HasMiddleware
                     ? Branch::find($data['branch_id'])?->name
                     : null;
 
-                $memberCount = count($data['members']);
-                $memberShare = round($requestedAmount / $memberCount, 2);
-                $runningTotal = 0;
+                $application = Application::create([
+                    'application_type'        => 'group_loan',
+                    'branch'                  => $branchName,
+                    'requested_amount'        => $requestedAmount,
+                    'repayment_period_months' => $data['term_months'],
+                ]);
 
-                foreach ($data['members'] as $index => $member) {
-                    $isLast = $index === $memberCount - 1;
-                    $memberRequestedAmount = $isLast
-                        ? round($requestedAmount - $runningTotal, 2)
-                        : $memberShare;
-                    $runningTotal += $memberRequestedAmount;
+                $loanApplication = $groupLoan->loanApplication()->create([
+                    'application_id'   => $application->id,
+                    // The first member is the primary applicant on the row; the
+                    // pivot below holds the complete member set, primary included.
+                    'customer_id'      => $memberCustomerIds->first(),
+                    'loan_product_id'  => $data['loan_product_id'],
+                    'branch_id'        => $data['branch_id'] ?? null,
+                    'requested_amount' => $requestedAmount,
+                    // A Group Loan has no interest rate. Repayment is derived
+                    // solely from the group's service charge percentage, which
+                    // lives on the group_loans header.
+                    'interest_rate'    => null,
+                    'interest_type'    => null,
+                    'term_months'      => $data['term_months'],
+                    'applied_by'       => Auth::id(),
+                    'applied_at'       => now(),
+                    'status'           => LoanApplicationStatus::Submitted,
+                ]);
 
-                    $application = Application::create([
-                        'application_type'        => 'group_loan',
-                        'branch'                   => $branchName,
-                        'requested_amount'         => $memberRequestedAmount,
-                        'repayment_period_months'  => $data['term_months'],
-                    ]);
-
-                    // loan_applications.interest_rate is a shared, required
-                    // column also used by Individual Loan — for a group-loan
-                    // member row it holds the service charge percentage, so
-                    // the existing per-loan interest formula (reused
-                    // unmodified in GroupLoanWorkflowService::approve())
-                    // naturally computes the service charge amount.
-                    $groupLoan->memberLoanApplications()->create([
-                        'application_id'    => $application->id,
-                        'customer_id'       => $member['customer_id'],
-                        'loan_product_id'   => $data['loan_product_id'],
-                        'branch_id'         => $data['branch_id'] ?? null,
-                        'group_member_no'   => $index + 1,
-                        'requested_amount'  => $memberRequestedAmount,
-                        'interest_rate'     => $serviceChargePercentage,
-                        'interest_type'     => 'flat',
-                        'term_months'       => $data['term_months'],
-                        'applied_by'        => Auth::id(),
-                        'applied_at'        => now(),
-                        'status'            => LoanApplicationStatus::Submitted,
+                foreach ($memberCustomerIds as $customerId) {
+                    $loanApplication->loanApplicationCustomers()->create([
+                        'customer_id' => $customerId,
                     ]);
                 }
 
@@ -286,7 +288,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'loanProduct',
                     'branch',
                     'items',
-                    'memberLoanApplications.customer.customerDetail',
+                    'loanApplication.loanApplicationCustomers.customer.customerDetail',
                     'appliedByUser:'.User::SUMMARY_COLUMNS,
                 ]),
             ], 201);
@@ -310,9 +312,10 @@ class GroupLoanController extends Controller implements HasMiddleware
                 'loanProduct',
                 'branch',
                 'items',
-                'memberLoanApplications.customer.customerDetail',
-                'memberLoanApplications.installments',
-                'memberLoanApplications.statusHistory.changedBy:'.User::SUMMARY_COLUMNS,
+                'loanApplication.loanApplicationCustomers.customer.customerDetail',
+                'loanApplication.installments',
+                'loanApplication.payments.customer:'.Customer::SUMMARY_COLUMNS,
+                'loanApplication.statusHistory.changedBy:'.User::SUMMARY_COLUMNS,
                 'appliedByUser:'.User::SUMMARY_COLUMNS,
                 'reviewedByUser:'.User::SUMMARY_COLUMNS,
                 'approvedByUser:'.User::SUMMARY_COLUMNS,
@@ -328,7 +331,12 @@ class GroupLoanController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Group loan retrieved successfully',
-                'data'    => $groupLoan,
+                // `members` carries each member's own share of the group's
+                // money — including their individual monthly installment —
+                // derived from the single loan application, never stored.
+                'data'    => array_merge($groupLoan->toArray(), [
+                    'members' => $groupLoan->memberBreakdown(),
+                ]),
             ], 200);
 
         } catch (\Throwable $th) {
@@ -630,20 +638,17 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $groupLoan = $this->workflowService->reject($groupLoan, $request->input('rejection_reason'), Auth::id());
-            $groupLoan->load('memberLoanApplications.customer:'.Customer::SUMMARY_COLUMNS);
+            $groupLoan->load('loanApplication.loanApplicationCustomers.customer');
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} rejected", [
                 'group_loan_id' => $groupLoan->id,
             ]);
 
-            foreach ($groupLoan->memberLoanApplications as $member) {
-                $customer = $member->customer;
-                if (!$customer) {
-                    continue;
-                }
+            $application = $groupLoan->loanApplication;
 
+            foreach ($application?->notifiableCustomers() ?? collect() as $customer) {
                 $message = "Your group loan application has been rejected.\nReason: {$groupLoan->rejection_reason}";
-                $context = ['loan_application_id' => $member->id, 'customer_id' => $customer->id];
+                $context = ['loan_application_id' => $application->id, 'customer_id' => $customer->id];
 
                 if (!empty($customer->phone_primary)) {
                     $this->notificationService->sendSms('group_loan_rejected', $customer->phone_primary, $message, $context);
@@ -690,20 +695,17 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $groupLoan = $this->workflowService->disburse($groupLoan, Auth::id());
-            $groupLoan->load('memberLoanApplications.customer:'.Customer::SUMMARY_COLUMNS);
+            $groupLoan->load('loanApplication.loanApplicationCustomers.customer');
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} disbursed", [
                 'group_loan_id' => $groupLoan->id,
             ]);
 
-            foreach ($groupLoan->memberLoanApplications as $member) {
-                $customer = $member->customer;
-                if (!$customer) {
-                    continue;
-                }
+            $application = $groupLoan->loanApplication;
 
+            foreach ($application?->notifiableCustomers() ?? collect() as $customer) {
                 $message = 'Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.';
-                $context = ['loan_application_id' => $member->id, 'customer_id' => $customer->id];
+                $context = ['loan_application_id' => $application->id, 'customer_id' => $customer->id];
 
                 if (!empty($customer->phone_primary)) {
                     $this->notificationService->sendSms('group_loan_disbursed', $customer->phone_primary, $message, $context);
