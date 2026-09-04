@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Models\LoanApplication;
 use App\Models\LoanInstallment;
 use App\Services\NotificationService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 
 class SendInstallmentDueReminders extends Command
 {
@@ -24,7 +26,7 @@ class SendInstallmentDueReminders extends Command
 
         $installments = LoanInstallment::whereDate('due_date', $targetDate)
             ->whereIn('status', ['upcoming', 'partially_paid'])
-            ->with('loanApplication.customer', 'loanApplication.loanApplicationCustomers.customer')
+            ->with('customer', 'loanApplication.customer', 'loanApplication.loanApplicationCustomers.customer')
             ->get();
 
         $sent = 0;
@@ -39,7 +41,7 @@ class SendInstallmentDueReminders extends Command
             $isJoint = $loanApplication->isJointLoan();
             $dueMessage = "Reminder: Your loan installment is due on {$installment->due_date->format('Y-m-d')}. Please make your payment on time.";
 
-            foreach ($loanApplication->notifiableCustomers() as $customer) {
+            foreach ($this->recipientsFor($installment, $loanApplication) as $customer) {
                 if (empty($customer->phone_primary)) {
                     continue;
                 }
@@ -74,5 +76,27 @@ class SendInstallmentDueReminders extends Command
         $this->info("Installment due reminders sent: {$sent}");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Who should hear about this particular installment.
+     *
+     * A Group Loan gives every member their own row per period, so a reminder
+     * goes only to the member who actually owes it — otherwise a 5-member
+     * group would send 5 reminders to all 5 members for the same due date.
+     *
+     * Individual and Joint Loans keep notifying every attached customer. Note
+     * the branch keys off isGroupLoan() rather than the installment's
+     * customer_id: those loans now stamp their primary customer on the row
+     * too, so reading the column would silently stop notifying Joint Loan
+     * co-borrowers.
+     */
+    private function recipientsFor(LoanInstallment $installment, LoanApplication $loanApplication): Collection
+    {
+        if ($loanApplication->isGroupLoan() && $installment->customer_id) {
+            return collect([$installment->customer])->filter()->values();
+        }
+
+        return $loanApplication->notifiableCustomers();
     }
 }

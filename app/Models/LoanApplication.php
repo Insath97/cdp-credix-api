@@ -229,6 +229,69 @@ class LoanApplication extends Model
     }
 
     /**
+     * The parties in arrears on this loan, each paired with the earliest of
+     * their own installments matching $filter.
+     *
+     * A Group Loan gives every member their own installment rows, so arrears
+     * are per member: a group where 4 of 5 members paid on time yields exactly
+     * one entry, for the member who did not. Each entry's own installment is
+     * what drives that member's days-overdue, reminder cadence, penalty and
+     * recovery case, so members never inherit each other's arrears.
+     *
+     * Individual and Joint Loans yield a single entry covering the whole loan
+     * and every customer attached to it — unchanged behaviour. Note this keys
+     * off isGroupLoan() rather than the installments' customer_id, because
+     * those loans now stamp their primary customer on the row too and reading
+     * the column would silently stop notifying Joint Loan co-borrowers.
+     *
+     * Expects `installments` (and, for a group loan,
+     * `loanApplicationCustomers.customer`) to be loaded.
+     *
+     * @return array<int, array{customer_id: int|null, customers: \Illuminate\Support\Collection, installment: LoanInstallment}>
+     */
+    public function arrearsGroups(\Closure $filter): array
+    {
+        $matching = $this->installments->filter($filter);
+
+        if ($matching->isEmpty()) {
+            return [];
+        }
+
+        if ($this->isGroupLoan()) {
+            $groups = [];
+
+            foreach ($matching->whereNotNull('customer_id')->groupBy('customer_id') as $customerId => $installments) {
+                $customer = $this->loanApplicationCustomers
+                    ->firstWhere('customer_id', (int) $customerId)?->customer;
+
+                if (!$customer) {
+                    continue;
+                }
+
+                $groups[] = [
+                    'customer_id' => (int) $customerId,
+                    'customers'   => collect([$customer]),
+                    'installment' => $installments->sortBy('due_date')->first(),
+                ];
+            }
+
+            return $groups;
+        }
+
+        $notifyCustomers = $this->notifiableCustomers();
+
+        if ($notifyCustomers->isEmpty()) {
+            return [];
+        }
+
+        return [[
+            'customer_id' => null,
+            'customers'   => $notifyCustomers,
+            'installment' => $matching->sortBy('due_date')->first(),
+        ]];
+    }
+
+    /**
      * Relationship with the assigned reviewer.
      */
     public function assignedReviewer(): BelongsTo

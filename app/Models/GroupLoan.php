@@ -197,25 +197,83 @@ class GroupLoan extends Model
         $totalShares     = self::splitEvenly($totalRepayment, $memberCount);
         $monthlyShares   = self::splitEvenly($monthly, $memberCount);
 
-        $paidByCustomer = $application->payments()
-            // The payments relation orders by paid_at, which MySQL rejects
-            // alongside this GROUP BY under only_full_group_by.
-            ->reorder()
-            ->whereNotNull('customer_id')
-            ->selectRaw('customer_id, SUM(amount) as total_paid')
-            ->groupBy('customer_id')
-            ->pluck('total_paid', 'customer_id');
+        $installments = $application->installments()->get();
 
-        return $members->values()->map(fn ($member, $index) => [
-            'customer_id'         => $member->customer_id,
-            'customer'            => $member->customer,
-            'member_no'           => $index + 1,
-            'principal_share'     => $principalShares[$index],
-            'service_charge_share' => $chargeShares[$index],
-            'total_repayment_share' => $totalShares[$index],
-            'monthly_installment' => $monthlyShares[$index],
-            'paid_to_date'        => round((float) ($paidByCustomer[$member->customer_id] ?? 0), 2),
-        ]);
+        return $members->values()->map(function ($member, $index) use (
+            $installments,
+            $principalShares,
+            $chargeShares,
+            $totalShares,
+            $monthlyShares
+        ) {
+            $base = [
+                'customer_id'           => $member->customer_id,
+                'customer'              => $member->customer,
+                'member_no'             => $index + 1,
+                'principal_share'       => $principalShares[$index],
+                'service_charge_share'  => $chargeShares[$index],
+                'total_repayment_share' => $totalShares[$index],
+            ];
+
+            $own = $installments->where('customer_id', $member->customer_id);
+
+            // Before disbursement there is no schedule yet, so the member's
+            // expected share is all that can be shown.
+            if ($own->isEmpty()) {
+                return $base + [
+                    'monthly_installment' => $monthlyShares[$index],
+                    'total_due'           => $totalShares[$index],
+                    'paid_amount'         => 0.0,
+                    'outstanding_balance' => $totalShares[$index],
+                    'penalty_amount'      => 0.0,
+                    'installment_status'  => 'not_generated',
+                    'is_overdue'          => false,
+                    'overdue_amount'      => 0.0,
+                    'installments_total'  => 0,
+                    'installments_paid'   => 0,
+                    'installments_overdue' => 0,
+                ];
+            }
+
+            $overdue = $own->where('status', 'overdue');
+            $paidCount = $own->where('status', 'paid')->count();
+
+            return $base + [
+                'monthly_installment'  => round((float) $own->first()->amount_due, 2),
+                'total_due'            => round((float) $own->sum('amount_due'), 2),
+                'paid_amount'          => round((float) $own->sum('amount_paid'), 2),
+                'outstanding_balance'  => round((float) $own->sum('balance'), 2),
+                'penalty_amount'       => round((float) $own->sum('penalty_amount'), 2),
+                'installment_status'   => $this->memberStatusFor($own, $paidCount),
+                'is_overdue'           => $overdue->isNotEmpty(),
+                'overdue_amount'       => round((float) $overdue->sum('balance'), 2),
+                'installments_total'   => $own->count(),
+                'installments_paid'    => $paidCount,
+                'installments_overdue' => $overdue->count(),
+            ];
+        });
+    }
+
+    /**
+     * A single roll-up status for one member's own run of installments. Overdue
+     * wins outright — it is the state the group needs to act on — then fully
+     * repaid, then any payment at all.
+     */
+    private function memberStatusFor(Collection $installments, int $paidCount): string
+    {
+        if ($installments->where('status', 'overdue')->isNotEmpty()) {
+            return 'overdue';
+        }
+
+        if ($paidCount === $installments->count()) {
+            return 'paid';
+        }
+
+        if ($installments->sum('amount_paid') > 0) {
+            return 'partially_paid';
+        }
+
+        return 'upcoming';
     }
 
     /**

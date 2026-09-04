@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('loan_application_id')->constrained('loan_applications')->cascadeOnDelete();
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
             $table->foreignId('loan_revision_id')->nullable()->constrained('loan_revisions')->nullOnDelete();
             $table->unsignedInteger('installment_no');
             $table->date('due_date');
@@ -27,7 +28,7 @@ return new class extends Migration
             $table->string('status', 20)->default('upcoming')->index();
             $table->timestamp('paid_at')->nullable();
             $table->timestamps();
-            $table->unique(['loan_application_id', 'installment_no'], 'loan_app_installment_unique');
+            $table->unique(['loan_application_id', 'customer_id', 'installment_no'], 'loan_app_customer_installment_unique');
         });
     }
 

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\LoanApplication;
+use App\Models\LoanInstallment;
 use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -54,6 +55,17 @@ class CreatePaymentRequest extends FormRequest
 
                     if (!$isOnThisLoan) {
                         $fail('That customer is not on this loan, so the payment cannot be attributed to them.');
+                        return;
+                    }
+
+                    // A Group Loan member owns their own installments, so a
+                    // receipt cannot be booked against someone else's row.
+                    if ($this->filled('loan_installment_id')) {
+                        $installment = LoanInstallment::find($this->input('loan_installment_id'));
+
+                        if ($installment && $installment->customer_id && (int) $installment->customer_id !== (int) $value) {
+                            $fail('That installment belongs to a different group member, so the payment cannot be attributed to this customer.');
+                        }
                     }
                 },
             ],

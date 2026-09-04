@@ -13,6 +13,7 @@ class LoanInstallment extends Model
 
     protected $fillable = [
         'loan_application_id',
+        'customer_id',
         'loan_revision_id',
         'installment_no',
         'due_date',
@@ -34,6 +35,7 @@ class LoanInstallment extends Model
 
     protected $casts = [
         'loan_application_id' => 'integer',
+        'customer_id'          => 'integer',
         'loan_revision_id'    => 'integer',
         'installment_no'      => 'integer',
         'due_date'             => 'date',
@@ -51,6 +53,16 @@ class LoanInstallment extends Model
     public function loanApplication(): BelongsTo
     {
         return $this->belongsTo(LoanApplication::class);
+    }
+
+    /**
+     * The customer who owes this installment. For a Group Loan this is the
+     * member whose own due/paid/balance/penalty/status this row tracks; for an
+     * Individual or Joint Loan it is the loan's (primary) customer.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     /**
