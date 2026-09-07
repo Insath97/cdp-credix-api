@@ -39,7 +39,12 @@ class UpdateLoanApplicationRequest extends FormRequest
             'applied_by'             => 'nullable|integer|exists:users,id',
             'applied_at'             => 'nullable|date',
             'outstanding_balance'    => 'nullable|numeric|min:0',
-            'is_active'              => 'nullable|boolean',
+
+            // is_active is deliberately not accepted here: it has its own
+            // activate/deactivate/toggle-status endpoints, which refuse to
+            // reactivate a cancelled, rejected or closed loan. Allowing it
+            // through a generic update would bypass that guard and let a
+            // finished loan display as "Active" again.
         ];
     }
 

@@ -79,6 +79,11 @@ class LoanInstallmentController extends Controller implements HasMiddleware
 
     /**
      * Get a list of loan installments.
+     *
+     * This is the picker endpoint the payment screen reads, so it returns only
+     * installments that can still take a payment — a month already settled in
+     * full must not be offered again. Pass `include_settled=true` for the
+     * complete schedule; index() is unfiltered and remains the full ledger.
      */
     public function list(Request $request)
     {
@@ -101,6 +106,13 @@ class LoanInstallmentController extends Controller implements HasMiddleware
                 $query->where('status', $request->status);
             }
 
+            // Fully paid (or waived/revised) months are excluded unless the
+            // caller explicitly asks for them, so the payment screen can never
+            // offer a month that is already settled.
+            if (!$request->boolean('include_settled')) {
+                $query->payable();
+            }
+
             if ($request->has('per_page')) {
                 $installments = $query->orderBy('due_date')->paginate($request->get('per_page'));
             } else {
@@ -109,7 +121,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
 
             $this->logActivity('Index', 'LoanInstallment', 'Loan installments list accessed', [
                 'user_id' => Auth::id(),
-                'filters' => $request->only(['loan_application_id', 'status']),
+                'filters' => $request->only(['loan_application_id', 'status', 'include_settled']),
                 'count'   => is_a($installments, \Illuminate\Pagination\AbstractPaginator::class) ? $installments->total() : $installments->count(),
             ]);
 
@@ -140,6 +152,14 @@ class LoanInstallmentController extends Controller implements HasMiddleware
             // parent loan application's backend-calculated monthly_installment.
             $loanApplication = LoanApplication::find($data['loan_application_id']);
             $data['amount_due'] = $loanApplication->monthly_installment;
+
+            // Match InstallmentScheduleService: every installment carries a
+            // customer. A Group Loan must name the member explicitly (the
+            // request validates they are on the loan); anything else defaults
+            // to the loan's own customer, so the row is never left unassigned.
+            if (empty($data['customer_id'])) {
+                $data['customer_id'] = $loanApplication->customer_id;
+            }
 
             if (empty($data['balance'])) {
                 $data['balance'] = $data['amount_due'] - ($data['amount_paid'] ?? 0);

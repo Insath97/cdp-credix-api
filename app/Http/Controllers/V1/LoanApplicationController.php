@@ -82,6 +82,34 @@ class LoanApplicationController extends Controller implements HasMiddleware
     }
 
     /**
+     * Refuse to flag a finished loan application active again.
+     *
+     * status and is_active are separate columns, and is_active is what the
+     * listings filter on and what the frontend badge reads. Without this a
+     * cancelled, rejected or closed loan could be flipped back to active and
+     * would then display as "Active" despite its workflow being over — and
+     * LoanApplicationStatus has no transition out of those states, so it could
+     * never legitimately become active again.
+     *
+     * Returns a 422 response when the action must be refused, or null when the
+     * application is still live.
+     */
+    private function terminalStatusResponse(LoanApplication $loanApplication)
+    {
+        if (!$loanApplication->status->isTerminal()) {
+            return null;
+        }
+
+        return response()->json([
+            'status'  => 'error',
+            'message' => "This loan application is {$loanApplication->status->value} and cannot be reactivated.",
+            'errors'  => [
+                'status' => $loanApplication->status->value,
+            ],
+        ], 422);
+    }
+
+    /**
      * Display a listing of loan applications.
      */
     public function index(Request $request)
@@ -366,6 +394,12 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 return $guard;
             }
 
+            // Toggling a finished loan back on would show it as "Active".
+            // Only block turning it ON — turning it off is always fine.
+            if (!$loanApplication->is_active && ($terminal = $this->terminalStatusResponse($loanApplication))) {
+                return $terminal;
+            }
+
             $loanApplication->is_active = !$loanApplication->is_active;
             $loanApplication->save();
 
@@ -417,6 +451,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'message' => 'Loan application is already active',
                     'data'    => $loanApplication
                 ]);
+            }
+
+            if ($terminal = $this->terminalStatusResponse($loanApplication)) {
+                return $terminal;
             }
 
             $loanApplication->update(['is_active' => true]);
@@ -564,6 +602,36 @@ class LoanApplicationController extends Controller implements HasMiddleware
 
             if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
                 return $guard;
+            }
+
+            // You can approve less than was requested, never more: the
+            // requested amount is the ceiling. Validated here rather than in a
+            // FormRequest because the ceiling comes from the loan itself, and
+            // the method previously validated nothing at all — which is how a
+            // loan ended up approved for double what was requested.
+            $validator = Validator::make($request->all(), [
+                'approved_amount' => [
+                    'nullable',
+                    'numeric',
+                    'min:0.01',
+                    'max:' . (float) $loanApplication->requested_amount,
+                ],
+                // A negative fee would make net_disbursement_amount larger
+                // than the approved amount — cash out the door exceeding what
+                // was actually approved.
+                'processing_fee'  => 'nullable|numeric|min:0',
+            ], [
+                'approved_amount.max' => 'The approved amount cannot be more than the requested amount of '
+                    . number_format((float) $loanApplication->requested_amount, 2)
+                    . '. Approve the same amount or less.',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => $validator->errors()->first(),
+                    'errors'  => $validator->errors(),
+                ], 422);
             }
 
             // Approved amount defaults to what the customer requested unless the

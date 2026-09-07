@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\LoanInstallment;
 use App\Models\LoanRevision;
@@ -146,7 +147,27 @@ class PaymentController extends Controller implements HasMiddleware
                     $loanApplication->outstanding_balance = max(0, $loanApplication->outstanding_balance - $payment->amount);
                     $loanApplication->save();
 
-                    if ($loanApplication->outstanding_balance <= 0 && $loanApplication->status === LoanApplicationStatus::Active) {
+                    // Fully repaid means no installment still owes anything.
+                    // That is the truthful test — outstanding_balance is a
+                    // mutable running counter that can drift (LoanRevisionService
+                    // already logs warnings about exactly that). The exists()
+                    // guard means a loan carrying no schedule at all can never
+                    // close by accident.
+                    $isFullyRepaid = $loanApplication->installments()->exists()
+                        && !$loanApplication->installments()->where('balance', '>', 0)->exists();
+
+                    // Closeable from Overdue as well as Active: a borrower who
+                    // fell behind and then cleared everything must still close.
+                    // LoanApplicationStatus allows Overdue -> Closed; only this
+                    // condition was blocking it, which left a repaid loan stuck
+                    // at Overdue and then reverted to Active with a zero balance
+                    // by loans:mark-overdue — never reaching Closed at all.
+                    $isRepaying = in_array($loanApplication->status, [
+                        LoanApplicationStatus::Active,
+                        LoanApplicationStatus::Overdue,
+                    ], true);
+
+                    if ($isFullyRepaid && $isRepaying) {
                         $loanApplication = $this->workflowService->transition(
                             $loanApplication,
                             LoanApplicationStatus::Closed,
@@ -461,7 +482,7 @@ class PaymentController extends Controller implements HasMiddleware
                 fn ($query) => $query->where('customer_id', $fromInstallment->customer_id)
             )
             ->where('installment_no', '>', $fromInstallment->installment_no)
-            ->whereNotIn('status', ['paid', 'waived', 'revised'])
+            ->whereNotIn('status', LoanInstallment::SETTLED_STATUSES)
             ->orderBy('installment_no')
             ->lockForUpdate()
             ->get();
