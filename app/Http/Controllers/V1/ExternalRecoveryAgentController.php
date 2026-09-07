@@ -19,11 +19,45 @@ class ExternalRecoveryAgentController extends Controller implements HasMiddlewar
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:External Recovery Agent Index',  only: ['index', 'show']),
+            new Middleware('permission:External Recovery Agent Index',  only: ['index', 'show', 'getExternalRecoveryAgentList']),
             new Middleware('permission:External Recovery Agent Create', only: ['store']),
             new Middleware('permission:External Recovery Agent Update', only: ['update']),
             new Middleware('permission:External Recovery Agent Delete', only: ['destroy']),
         ];
+    }
+
+    /**
+     * Lightweight list of active external recovery agencies, for a picker.
+     *
+     * Unpaginated and trimmed to what a dropdown needs — the contact phone is
+     * included because the assign screen shows who will be called.
+     */
+    public function getExternalRecoveryAgentList(Request $request)
+    {
+        try {
+            $query = ExternalRecoveryAgent::active();
+
+            if ($request->filled('search')) {
+                $query->search($request->search);
+            }
+
+            $agents = $query
+                ->select('id', 'name', 'phone', 'email')
+                ->orderBy('name')
+                ->get();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'External recovery agents retrieved successfully',
+                'data'    => $agents,
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to retrieve external recovery agents',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
     }
 
     /**
