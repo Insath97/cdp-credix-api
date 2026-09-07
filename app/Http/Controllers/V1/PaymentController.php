@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Models\Payment;
+use App\Models\LoanApplication;
 use App\Models\LoanInstallment;
 use App\Models\LoanRevision;
 use App\Models\User;
@@ -23,6 +25,7 @@ use App\Http\Requests\UpdatePaymentRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 
 class PaymentController extends Controller implements HasMiddleware
 {
@@ -98,6 +101,64 @@ class PaymentController extends Controller implements HasMiddleware
     /**
      * Store a newly created payment and apply it to the installment/loan balance.
      */
+    /**
+     * SMS the staff role that a payment landed: who paid, how much, when, and
+     * whether it closed a live recovery case. Reaches staff through their
+     * employee record, the same way every other staff notification does, so a
+     * staff user with no employee phone is simply skipped.
+     */
+    protected function notifyStaffOfPayment(Payment $payment, LoanApplication $loanApplication, int $casesResolved, string $paidOn): void
+    {
+        $staffRole = Role::where('name', config('notifications.staff_role'))->first();
+
+        if (!$staffRole) {
+            return;
+        }
+
+        $payer = $payment->customer?->full_name
+            ?? $loanApplication->customer?->full_name
+            ?? 'the customer';
+
+        $caseLine = $casesResolved > 0
+            ? " Recovery case(s) resolved: {$casesResolved}."
+            : '';
+
+        $message = sprintf(
+            'CDP Credix: Payment %s received. %s paid %s on %s against loan %s.%s',
+            $payment->receipt_no,
+            $payer,
+            number_format((float) $payment->amount, 2),
+            $paidOn,
+            $loanApplication->reference(),
+            $caseLine
+        );
+
+        foreach ($staffRole->users as $staffUser) {
+            $staffPhone = $staffUser->employee?->phone_primary;
+
+            if (empty($staffPhone)) {
+                continue;
+            }
+
+            try {
+                $this->notificationService->sendSms(
+                    'payment_received_staff',
+                    $staffPhone,
+                    $message,
+                    ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
+                );
+            } catch (\Throwable $th) {
+                // The payment is already recorded; a failed staff SMS must not
+                // turn a successful receipt into an error response.
+                Log::warning('Failed to notify staff of a payment', [
+                    'payment_id' => $payment->id,
+                    'user_id'    => $staffUser->id,
+                    'error'      => $th->getMessage(),
+                ]);
+            }
+        }
+    }
+
     public function store(CreatePaymentRequest $request)
     {
         try {
@@ -126,6 +187,9 @@ class PaymentController extends Controller implements HasMiddleware
                 $payment->save();
 
                 $unappliedExcess = 0.0;
+                // Null when the receipt is not booked against a specific month;
+                // false once we know the month is only part paid.
+                $installmentSettled = null;
                 if (!empty($data['loan_installment_id'])) {
                     $installment = LoanInstallment::lockForUpdate()->find($data['loan_installment_id']);
 
@@ -138,6 +202,7 @@ class PaymentController extends Controller implements HasMiddleware
                     }
 
                     $unappliedExcess = $this->applyPaymentToInstallment($installment, $payment);
+                    $installmentSettled = $installment && $installment->balance <= 0;
                 }
 
                 $loanApplication = $payment->loanApplication()->lockForUpdate()->first();
@@ -184,31 +249,92 @@ class PaymentController extends Controller implements HasMiddleware
                                 $this->groupLoanWorkflowService->closeIfFullyRepaid($groupLoan, Auth::id());
                             }
                         }
+                    } elseif (
+                        $loanApplication->status === LoanApplicationStatus::Overdue
+                        && !$loanApplication->load('installments')->hasArrears()
+                    ) {
+                        // A borrower who clears their arrears without repaying
+                        // the whole loan is no longer overdue, so say so here
+                        // rather than leaving the loan sitting at Overdue with
+                        // nothing in arrears until the nightly scheduler runs.
+                        //
+                        // hasArrears() tests balance against the grace period
+                        // rather than the 'overdue' status stamp: a part payment
+                        // rewrites that stamp to 'partially_paid' straight away,
+                        // so a status test reverted the loan to Active while
+                        // most of the arrears were still owed.
+                        $loanApplication = $this->workflowService->transition(
+                            $loanApplication,
+                            LoanApplicationStatus::Active,
+                            Auth::id(),
+                            'Automatically reverted to active: all installments caught up'
+                        );
                     }
                 }
 
-                return [$payment, $loanApplication, $loanClosed, $unappliedExcess];
+                return [$payment, $loanApplication, $loanClosed, $unappliedExcess, $installmentSettled];
             });
 
-            [$payment, $loanApplication, $loanClosed, $unappliedExcess] = $payment;
+            [$payment, $loanApplication, $loanClosed, $unappliedExcess, $installmentSettled] = $payment;
 
             $this->logActivity('CREATE', 'Payment', "Created payment ID: {$payment->id} ({$payment->receipt_no})", $data);
 
             if ($loanApplication) {
                 // Settle any live recovery case the moment the debt is gone.
                 // Done post-commit so a recovery-case write can never roll the
-                // payment itself back. loans:mark-overdue also does this for a
-                // borrower who merely catches up without closing the loan.
-                if ($loanClosed) {
-                    $this->recoveryCaseService->resolveOpenCases(
+                // payment itself back.
+                //
+                // This runs on every payment, not only on the one that closes
+                // the loan: a borrower who clears their arrears on day 35 has
+                // stopped being a recovery case right then, and waiting for the
+                // nightly loans:mark-overdue left the officer chasing a settled
+                // debt for up to a day. settleClearedArrears() is the same
+                // party-scoped check the scheduler runs, so a Group Loan member
+                // who is still behind keeps their own case.
+                $paidOn = $payment->paid_at->format('Y-m-d');
+
+                // Messages quote the application_no, which lives on the parent
+                // Application row; the locked loan was fetched bare.
+                $loanApplication->loadMissing(['application', 'customer']);
+
+                // Two different endings, and the business draws the line
+                // between them: 'closed' when every installment on the loan is
+                // paid and the case can never reopen, 'resolved' when only the
+                // month in arrears was cleared and the borrower is back on
+                // schedule.
+                $casesResolved = $loanClosed
+                    ? $this->recoveryCaseService->closeOpenCases(
                         $loanApplication,
-                        'Automatically resolved: the loan application was fully repaid and closed.'
+                        "Automatically closed: the loan was repaid in full by payment {$payment->receipt_no} on {$paidOn}."
+                    )
+                    : $this->recoveryCaseService->settleClearedArrears(
+                        $loanApplication,
+                        "Automatically resolved: the arrears were settled by payment {$payment->receipt_no} on {$paidOn}."
                     );
+
+                // A part payment notifies nobody. The month is still owed and
+                // the borrower is still in arrears, so texting "payment
+                // received" reads as though the debt had been dealt with. The
+                // receipt is the record; the SMS waits for the payment that
+                // actually settles the month.
+                //
+                // $installmentSettled is null when the receipt was not booked
+                // against a specific month -- there is no month for it to fall
+                // short of, so that case still notifies.
+                $notify = $installmentSettled !== false;
+
+                // Tell the back office the money came in, and say so on the
+                // same run that closed the case -- otherwise the only record an
+                // admin has of a recovery case going quiet is the case list
+                // changing colour. Mirrors the staff SMS fan-out in
+                // RecoveryCaseService::notifyStaffOfUnassignedCase().
+                if ($notify) {
+                    $this->notifyStaffOfPayment($payment, $loanApplication, $casesResolved, $paidOn);
                 }
 
                 $isJoint = $loanApplication->isJointLoan();
 
-                foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                foreach ($notify ? $loanApplication->notifiableCustomers() : collect() as $notifyCustomer) {
                     $receivedMessage = "Payment received successfully.\nAmount: {$payment->amount}\nThank you for your payment.";
 
                     if (!empty($notifyCustomer->phone_primary)) {
@@ -228,6 +354,33 @@ class PaymentController extends Controller implements HasMiddleware
                             $receivedMessage,
                             ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
                         );
+                    }
+
+                    // A borrower who was told their account had gone to
+                    // recovery -- and to an outside agency at the external
+                    // stage -- has to be told it is over too. Without this the
+                    // last word they ever hear on it is the escalation SMS.
+                    if ($casesResolved > 0) {
+                        $recoveryClosedMessage = "CDP Credix: Thank you. Your overdue amount has been settled and the recovery action on your loan account ({$loanApplication->reference()}) is now closed.";
+
+                        if (!empty($notifyCustomer->phone_primary)) {
+                            $this->notificationService->sendSms(
+                                'recovery_case_resolved_customer',
+                                $notifyCustomer->phone_primary,
+                                $recoveryClosedMessage,
+                                ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                            );
+                        }
+
+                        if ($isJoint && !empty($notifyCustomer->email)) {
+                            $this->notificationService->sendEmail(
+                                'recovery_case_resolved_customer',
+                                $notifyCustomer->email,
+                                'Recovery Action Closed',
+                                $recoveryClosedMessage,
+                                ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                            );
+                        }
                     }
 
                     if ($loanClosed) {

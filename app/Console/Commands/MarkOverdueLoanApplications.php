@@ -102,46 +102,15 @@ class MarkOverdueLoanApplications extends Command
             // already has one, so a stale case would permanently block a
             // legitimate future case.
             //
-            // Done per party rather than per loan, because a Group Loan's
-            // members are in arrears independently: one member catching up has
-            // to settle their own case even while a sibling is still overdue.
-            // On an Individual or Joint loan both sides of the comparison are
-            // null, so this reduces to the loan-wide check it replaces — and it
-            // still runs outside the revert branch above, so a loan that is
-            // already Active but carries a stale case gets cleaned up too.
-            if ($loanApplication->recoveryCases->isNotEmpty()) {
-                // Parties come from arrearsGroups(), not from the installments'
-                // raw customer_id, because that is the identity a case is
-                // opened against: null for an Individual or Joint loan, the
-                // member for a Group Loan. Comparing raw installment
-                // customer_ids instead would never match an individual loan's
-                // null-cased row, and every such case would be settled on the
-                // next run while the loan was still in arrears.
-                $stillInArrears = array_column(
-                    $loanApplication->arrearsGroups(fn ($installment) => $installment->status === 'overdue'),
-                    'customer_id'
-                );
-
-                // If rows are overdue but no party could be resolved (a loan
-                // with no customer attached), leave the cases alone rather than
-                // settling a debt that is still outstanding.
-                $partyUnresolvable = $hasOverdueInstallment && empty($stillInArrears);
-
-                if (!$partyUnresolvable) {
-                    $partiesToSettle = $loanApplication->recoveryCases
-                        ->pluck('customer_id')
-                        ->unique()
-                        ->reject(fn ($customerId) => in_array($customerId, $stillInArrears, true));
-
-                    foreach ($partiesToSettle as $customerId) {
-                        $casesResolved += $recoveryCaseService->resolveOpenCases(
-                            $loanApplication,
-                            'Automatically resolved: no longer overdue.',
-                            $customerId
-                        );
-                    }
-                }
-            }
+            // The payment path settles these the moment the money lands, so by
+            // the time this runs there is usually nothing left to do. It stays
+            // here as the safety net for a balance that reaches zero some other
+            // way -- a loan revision, a correction -- and for cases opened
+            // before that path existed.
+            $casesResolved += $recoveryCaseService->settleClearedArrears(
+                $loanApplication,
+                'Automatically resolved: no longer overdue.'
+            );
         }
 
         $summary = "Installments marked overdue: {$installmentsMarked}. Penalties charged: {$penaltiesCharged}. Applications marked overdue: {$applicationsMarkedOverdue}. Applications reverted to active: {$applicationsReverted}. Recovery cases resolved: {$casesResolved}.";

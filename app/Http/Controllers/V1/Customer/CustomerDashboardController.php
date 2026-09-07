@@ -51,12 +51,21 @@ class CustomerDashboardController extends Controller
             $statusCounts = LoanApplication::where('customer_id', $customerId)
                 ->select('status', DB::raw('count(*) as total'))
                 ->groupBy('status')
-                ->get()
-                ->mapWithKeys(fn ($row) => [$row->status->value => $row->total]);
+                ->get();
 
+            // Keyed by the customer-facing status, so the three internal
+            // pre-approval stages land in one 'processing' bucket instead of
+            // counting the lender's review steps out on the borrower's own
+            // dashboard. Every bucket is seeded to zero first so the shape of
+            // the response does not change with the data.
             $loanSummary = collect(LoanApplicationStatus::cases())
-                ->mapWithKeys(fn ($status) => [$status->value => $statusCounts->get($status->value, 0)])
+                ->mapWithKeys(fn ($status) => [$status->customerFacingStatus() => 0])
                 ->toArray();
+
+            foreach ($statusCounts as $row) {
+                $loanSummary[$row->status->customerFacingStatus()] += $row->total;
+            }
+
             $loanSummary = ['total_loans' => array_sum($loanSummary)] + $loanSummary;
 
             $data = [
