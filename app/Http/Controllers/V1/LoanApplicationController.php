@@ -550,6 +550,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'verified_by' => Auth::id(),
                 'verified_at' => now(),
             ];
+            if ($request->filled('remarks')) {
+                $extra['verified_remarks'] = $request->input('remarks');
+            }
             if ($request->filled('assigned_reviewer_id')) {
                 $extra['assigned_reviewer_id'] = $request->input('assigned_reviewer_id');
             }
@@ -611,6 +614,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'reviewed_by' => Auth::id(),
                 'reviewed_at' => now(),
             ];
+            if ($request->filled('remarks')) {
+                $extra['reviewed_remarks'] = $request->input('remarks');
+            }
             if ($request->filled('assigned_reviewer_id')) {
                 $extra['assigned_reviewer_id'] = $request->input('assigned_reviewer_id');
             }

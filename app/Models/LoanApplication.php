@@ -34,6 +34,8 @@ class LoanApplication extends Model
         'reviewed_by',
         'verified_by',
         'approved_by',
+        'reviewed_remarks',
+        'verified_remarks',
         'approval_remarks',
         'rejection_reason',
         'applied_at',
