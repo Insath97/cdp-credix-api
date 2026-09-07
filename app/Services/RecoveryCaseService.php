@@ -129,11 +129,41 @@ class RecoveryCaseService
      *
      * This is what keeps the "skip loans that already have a live case" guard
      * in both escalation commands safe: without it a stale open case would
-     * permanently block a legitimate future one. Idempotent, and sends no
-     * notifications, so it is safe to call after every payment.
+     * permanently block a legitimate future one.
+     *
+     * Whoever was working the case is told it is closed, so an officer or
+     * agency stops chasing a debt that has already been settled. Only cases
+     * that were still live are touched, so calling this repeatedly cannot
+     * re-notify anyone.
      */
     public function resolveOpenCases(LoanApplication $loanApplication, string $reason, ?int $customerId = null): int
     {
+        return $this->settleLiveCases($loanApplication, $reason, $customerId, 'resolved');
+    }
+
+    /**
+     * Close every live case on a loan that has been repaid in full.
+     *
+     * 'closed' rather than 'resolved' is the distinction the business draws:
+     * resolved means the month in arrears was paid and the borrower is back on
+     * schedule, closed means there is no schedule left -- every installment on
+     * the loan is paid, so the case can never reopen.
+     */
+    public function closeOpenCases(LoanApplication $loanApplication, string $reason, ?int $customerId = null): int
+    {
+        return $this->settleLiveCases($loanApplication, $reason, $customerId, 'closed');
+    }
+
+    /**
+     * Shared body of resolveOpenCases() and closeOpenCases(): stamp every live
+     * case with the settled status, note why, and tell whoever was working it.
+     */
+    protected function settleLiveCases(
+        LoanApplication $loanApplication,
+        string $reason,
+        ?int $customerId,
+        string $status
+    ): int {
         $cases = RecoveryCase::where('loan_application_id', $loanApplication->id)
             ->whereIn('status', self::LIVE_STATUSES)
             // Scoped to one Group Loan member when given, so a member catching
@@ -148,19 +178,150 @@ class RecoveryCaseService
 
         foreach ($cases as $case) {
             $case->update([
-                'status'    => 'resolved',
+                'status'    => $status,
                 'closed_at' => now(),
                 'remarks'   => trim(($case->remarks ?? '') . ' ' . $reason),
             ]);
+
+            $this->notifyAgentOfSettledCase($case, $reason, $status);
         }
 
-        $this->logActivity('UPDATE', 'RecoveryCase', "Resolved {$cases->count()} recovery case(s) for loan application ID {$loanApplication->id}", [
+        $this->logActivity('UPDATE', 'RecoveryCase', ucfirst($status) . " {$cases->count()} recovery case(s) for loan application ID {$loanApplication->id}", [
             'loan_application_id' => $loanApplication->id,
             'case_ids'            => $cases->pluck('id')->all(),
+            'status'              => $status,
             'reason'              => $reason,
         ]);
 
         return $cases->count();
+    }
+
+    /**
+     * Settle the cases of every party on this loan whose arrears are now clear,
+     * and leave alone anyone still behind.
+     *
+     * Shared by the payment path (so a borrower who settles at the counter sees
+     * their case close there and then, rather than waiting for the nightly
+     * scheduler) and by loans:mark-overdue (which is the safety net for a
+     * balance that goes to zero some other way, such as a loan revision).
+     *
+     * Party-scoped rather than loan-wide, because a Group Loan's members are in
+     * arrears independently: one member catching up must settle their own case
+     * while a sibling who is still behind keeps theirs. On Individual and Joint
+     * loans customer_id is null on both sides, so this reduces to the loan-wide
+     * behaviour.
+     */
+    public function settleClearedArrears(LoanApplication $loanApplication, string $reason): int
+    {
+        $loanApplication->loadMissing(['installments', 'loanProduct', 'loanApplicationCustomers.customer', 'customer']);
+
+        $liveCases = RecoveryCase::where('loan_application_id', $loanApplication->id)
+            ->whereIn('status', self::LIVE_STATUSES)
+            ->get();
+
+        if ($liveCases->isEmpty()) {
+            return 0;
+        }
+
+        // Arrears are measured by balance and grace period, NOT by the
+        // installment's status. A part payment rewrites 'overdue' to
+        // 'partially_paid' immediately, so testing the status closed the case
+        // as soon as any money arrived -- a borrower who owed 50,166.67 and
+        // paid 50,000.00 had their recovery case resolved with 166.67 still
+        // outstanding, and got a fresh case the next night.
+        $graceDays = $loanApplication->gracePeriodDays();
+        $inArrears = fn ($installment) => $installment->balance > 0
+            && $installment->due_date
+            && $installment->due_date->copy()->addDays($graceDays)->lt(now());
+
+        $hasArrears = $loanApplication->installments->contains($inArrears);
+
+        // Parties come from arrearsGroups(), not from the installments' raw
+        // customer_id, because that is the identity a case is opened against:
+        // null for an Individual or Joint loan, the member for a Group Loan.
+        $stillInArrears = array_column(
+            $loanApplication->arrearsGroups($inArrears),
+            'customer_id'
+        );
+
+        // Something is in arrears but no party could be resolved (a loan with
+        // no customer attached): leave the cases alone rather than settling a
+        // debt that is still outstanding.
+        if ($hasArrears && empty($stillInArrears)) {
+            return 0;
+        }
+
+        $resolved = 0;
+
+        foreach ($liveCases->pluck('customer_id')->unique() as $customerId) {
+            if (in_array($customerId, $stillInArrears, true)) {
+                continue;
+            }
+
+            $resolved += $this->resolveOpenCases($loanApplication, $reason, $customerId);
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * Tell whoever was working a case that it is settled, so they stop chasing
+     * a debt that has been paid. Reaches an internal officer through their
+     * employee record and an external agency on its own number, mirroring
+     * notifyAssignedAgent(). An unassigned case has nobody to tell.
+     *
+     * The wording follows the status: 'resolved' means the month in arrears was
+     * paid, 'closed' means the whole loan is repaid and the case can never come
+     * back -- and an agent should be able to tell those apart from the SMS.
+     */
+    public function notifyAgentOfSettledCase(RecoveryCase $case, string $reason, string $status = 'resolved'): void
+    {
+        $case->loadMissing(['loanApplication.application', 'loanApplication.customer', 'assignedAgent.employee', 'externalAgent']);
+
+        $loanApplication = $case->loanApplication;
+        $customer = $case->customer ?? $loanApplication?->customer;
+
+        $summary = sprintf(
+            'CDP Credix: Recovery case %s is now %s and no longer needs follow-up. Loan %s%s. %s',
+            $case->case_no,
+            $status === 'closed' ? 'closed -- the loan is fully repaid' : 'resolved',
+            $loanApplication?->reference() ?? '-',
+            $customer ? ", {$customer->full_name}" : '',
+            $reason
+        );
+
+        try {
+            $type = $status === 'closed' ? 'recovery_case_closed' : 'recovery_case_resolved';
+
+            if ($case->stage === 'external' && $case->externalAgent && !empty($case->externalAgent->phone)) {
+                $this->notificationService->sendSms(
+                    "{$type}_external_agent",
+                    $case->externalAgent->phone,
+                    $summary,
+                    ['loan_application_id' => $loanApplication?->id]
+                );
+
+                return;
+            }
+
+            $agentPhone = $case->assignedAgent?->employee?->phone_primary;
+
+            if (!empty($agentPhone)) {
+                $this->notificationService->sendSms(
+                    "{$type}_agent",
+                    $agentPhone,
+                    $summary,
+                    ['loan_application_id' => $loanApplication?->id, 'user_id' => $case->assigned_agent_id]
+                );
+            }
+        } catch (\Throwable $th) {
+            // The case is already resolved; a failed SMS must not undo that or
+            // break the payment that triggered it.
+            Log::warning('Failed to notify the agent that a recovery case was settled', [
+                'recovery_case_id' => $case->id,
+                'error'            => $th->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -178,7 +339,7 @@ class RecoveryCaseService
         }
 
         $customerName = $loanApplication->customer?->full_name ?? 'a customer';
-        $message = "CDP Credix: {$case->case_no} opened for {$stageLabel} (loan #{$loanApplication->id}, {$customerName}). Please assign an agent.";
+        $message = "CDP Credix: {$case->case_no} opened for {$stageLabel} ({$loanApplication->reference()}, {$customerName}). Please assign an agent.";
 
         foreach ($staffRole->users as $staffUser) {
             $staffPhone = $staffUser->employee?->phone_primary;
@@ -204,15 +365,15 @@ class RecoveryCaseService
      */
     public function notifyAssignedAgent(RecoveryCase $case): void
     {
-        $case->loadMissing(['loanApplication.customer', 'assignedAgent.employee', 'externalAgent']);
+        $case->loadMissing(['loanApplication.application', 'loanApplication.customer', 'assignedAgent.employee', 'externalAgent']);
 
         $loanApplication = $case->loanApplication;
         $customer = $loanApplication?->customer;
 
         $summary = sprintf(
-            'CDP Credix: Recovery case %s has been assigned to you. Loan #%s, overdue %s.%s',
+            'CDP Credix: Recovery case %s has been assigned to you. Loan %s, overdue %s.%s',
             $case->case_no,
-            $loanApplication?->id ?? '-',
+            $loanApplication?->reference() ?? '-',
             number_format((float) $case->overdue_amount, 2),
             $customer ? " Customer: {$customer->full_name} {$customer->phone_primary}." : ''
         );

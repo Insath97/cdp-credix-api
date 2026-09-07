@@ -45,24 +45,15 @@ class RecoveryCaseController extends Controller implements HasMiddleware
         try {
             $perPage = $request->get('per_page', 15);
             $query = RecoveryCase::with([
-                // Who to actually chase. `customer` is the Group Loan member
-                // this case is pursuing (null on Individual/Joint loans, where
-                // the loan's own customer is the debtor), so the list needs
-                // both to name a person in every case.
+                
                 'customer:'.Customer::SUMMARY_COLUMNS,
                 'loanApplication.customer:'.Customer::SUMMARY_COLUMNS,
-                // The human-readable application_no lives on the parent
-                // Application row, and it is what the case list labels a case
-                // with. Without it the UI falls back to the raw application_id,
-                // which reads like a loan application id and points at the
-                // wrong file.
+
                 'loanApplication.application',
                 'loanApplication.loanProduct',
                 'loanApplication.groupLoan',
                 'assignedAgent:'.User::SUMMARY_COLUMNS,
-                // An external-stage case is worked by an agency rather than one
-                // of our own officers, so the list cannot name who is on the
-                // case without this.
+
                 'externalAgent',
                 'openedBy:'.User::SUMMARY_COLUMNS,
                 'externalAgent:id,name,phone,email',
@@ -119,10 +110,10 @@ class RecoveryCaseController extends Controller implements HasMiddleware
 
             $this->logActivity('CREATE', 'RecoveryCase', "Created recovery case ID: {$case->id} ({$case->case_no})", $data);
 
-            $case->load(['loanApplication.customer:'.Customer::CONTACT_COLUMNS, 'assignedAgent.employee', 'openedBy:'.User::SUMMARY_COLUMNS]);
+            $case->load(['loanApplication.application', 'loanApplication.customer:'.Customer::CONTACT_COLUMNS, 'assignedAgent.employee', 'openedBy:'.User::SUMMARY_COLUMNS]);
 
             if ($case->loanApplication) {
-                $recoveryMessage = "CDP Credix: Your loan account (Loan Application ID: {$case->loan_application_id}) has become overdue. Please contact us immediately to avoid further recovery actions.";
+                $recoveryMessage = "CDP Credix: Your loan account ({$case->loanApplication->reference()}) has become overdue. Please contact us immediately to avoid further recovery actions.";
 
                 foreach ($case->loanApplication->notifiableCustomers() as $notifyCustomer) {
                     if (!empty($notifyCustomer->phone_primary)) {

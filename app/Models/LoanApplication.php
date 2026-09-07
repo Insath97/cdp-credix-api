@@ -92,6 +92,24 @@ class LoanApplication extends Model
     }
 
     /**
+     * The reference a person should be shown for this loan: the application_no
+     * off the parent Application row.
+     *
+     * Notifications and any other customer- or staff-facing text must use this
+     * rather than the primary key. The two are close enough to be mistaken for
+     * each other -- loan 353 carries application_id 354, and loan 354 exists as
+     * well -- so quoting the id sends people to the wrong file. Falls back to
+     * "#id" only for a loan with no application attached, which nothing in the
+     * normal flow creates.
+     */
+    public function reference(): string
+    {
+        $this->loadMissing('application');
+
+        return $this->application?->application_no ?? "#{$this->id}";
+    }
+
+    /**
      * Relationship with Customer.
      */
     public function customer(): BelongsTo
@@ -241,6 +259,49 @@ class LoanApplication extends Model
         }
 
         return $this->customer ? collect([$this->customer]) : collect();
+    }
+
+    /**
+     * The grace period that applies to this loan's installments: the product's
+     * own, falling back to the system-wide default.
+     */
+    public function gracePeriodDays(): int
+    {
+        $this->loadMissing('loanProduct');
+
+        return (int) ($this->loanProduct?->grace_period_days
+            ?: Setting::get('installment_due_period_days', 30));
+    }
+
+    /**
+     * The installments still in arrears: money owed on a month whose grace
+     * period has already elapsed.
+     *
+     * Deliberately independent of the installment's status stamp. A part
+     * payment rewrites the row from 'overdue' to 'partially_paid' the instant
+     * it lands, so anything keyed on the status treated a barely-reduced debt
+     * as settled -- closing the recovery case and reverting the loan to Active
+     * with most of the arrears still outstanding. The condition here is the
+     * same one loans:mark-overdue uses to stamp 'overdue' in the first place.
+     */
+    public function arrearsInstallments()
+    {
+        $this->loadMissing('installments');
+        $graceDays = $this->gracePeriodDays();
+
+        return $this->installments->filter(
+            fn ($installment) => $installment->balance > 0
+                && $installment->due_date
+                && $installment->due_date->copy()->addDays($graceDays)->lt(now())
+        );
+    }
+
+    /**
+     * Whether anything at all is still in arrears on this loan.
+     */
+    public function hasArrears(): bool
+    {
+        return $this->arrearsInstallments()->isNotEmpty();
     }
 
     /**
