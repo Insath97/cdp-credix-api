@@ -10,6 +10,7 @@ use App\Models\Payment;
 use App\Models\LoanInstallment;
 use App\Models\LoanRevision;
 use App\Models\User;
+use App\Models\Customer;
 use App\Enums\LoanApplicationStatus;
 use App\Enums\LoanRevisionStatus;
 use App\Services\GroupLoanWorkflowService;
