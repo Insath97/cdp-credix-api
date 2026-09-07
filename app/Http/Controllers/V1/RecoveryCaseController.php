@@ -51,9 +51,19 @@ class RecoveryCaseController extends Controller implements HasMiddleware
                 // both to name a person in every case.
                 'customer:'.Customer::SUMMARY_COLUMNS,
                 'loanApplication.customer:'.Customer::SUMMARY_COLUMNS,
+                // The human-readable application_no lives on the parent
+                // Application row, and it is what the case list labels a case
+                // with. Without it the UI falls back to the raw application_id,
+                // which reads like a loan application id and points at the
+                // wrong file.
+                'loanApplication.application',
                 'loanApplication.loanProduct',
                 'loanApplication.groupLoan',
                 'assignedAgent:'.User::SUMMARY_COLUMNS,
+                // An external-stage case is worked by an agency rather than one
+                // of our own officers, so the list cannot name who is on the
+                // case without this.
+                'externalAgent',
                 'openedBy:'.User::SUMMARY_COLUMNS,
             ]);
 
@@ -238,7 +248,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $case = RecoveryCase::with(['loanApplication.customer:'.Customer::CONTACT_COLUMNS, 'assignedAgent:'.User::SUMMARY_COLUMNS, 'openedBy:'.User::SUMMARY_COLUMNS, 'activities.performedBy:'.User::SUMMARY_COLUMNS, 'externalAgent'])->find($id);
+            $case = RecoveryCase::with(['loanApplication.customer:'.Customer::CONTACT_COLUMNS, 'loanApplication.application', 'assignedAgent:'.User::SUMMARY_COLUMNS, 'openedBy:'.User::SUMMARY_COLUMNS, 'activities.performedBy:'.User::SUMMARY_COLUMNS, 'externalAgent'])->find($id);
 
             if (!$case) {
                 return response()->json([
