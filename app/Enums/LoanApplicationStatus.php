@@ -39,6 +39,19 @@ enum LoanApplicationStatus: string
     }
 
     /**
+     * Whether this is an end state: the loan application is finished and can
+     * never move again (allowedTransitions() is empty for all three).
+     *
+     * A row in one of these must never be flagged is_active — that flag is
+     * what the listings and the frontend badge read, so a cancelled loan left
+     * active shows up as "Active" even though its workflow is over.
+     */
+    public function isTerminal(): bool
+    {
+        return in_array($this, [self::Cancelled, self::Rejected, self::Closed], true);
+    }
+
+    /**
      * Coarse equivalent written through to the generic applications.status
      * column, which is shared with the future lease module and only needs
      * to track broad progress, not the full granular workflow.

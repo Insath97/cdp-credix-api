@@ -48,6 +48,13 @@ class LoanApplicationWorkflowService
         return DB::transaction(function () use ($loanApplication, $from, $to, $actorId, $remarks, $extra) {
             $loanApplication->update(array_merge($extra, [
                 'status' => $to,
+                // A finished loan application must never stay flagged active:
+                // is_active is what the listings filter on and what the status
+                // badge reads, so a cancelled loan left active still shows as
+                // "Active". Applied here rather than in each controller so
+                // cancel/reject/close all get it, including the Group Loan
+                // cascade, which transitions through this same method.
+                'is_active' => $to->isTerminal() ? false : $loanApplication->is_active,
             ]));
 
             $loanApplication->application()->update([

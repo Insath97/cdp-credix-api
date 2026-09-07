@@ -157,6 +157,33 @@ class GroupLoanController extends Controller implements HasMiddleware
     }
 
     /**
+     * Refuse to flag a finished group loan active again.
+     *
+     * status and is_active are separate columns, and is_active is what the
+     * listings filter on and what the frontend badge reads. Without this a
+     * cancelled, rejected or closed group loan could be flipped back to active
+     * and would then display as "Active" despite its workflow being over —
+     * and GroupLoanStatus has no transition out of those states.
+     *
+     * Returns a 422 response when the action must be refused, or null when the
+     * group loan is still live.
+     */
+    protected function terminalStatusResponse(GroupLoan $groupLoan)
+    {
+        if (!$groupLoan->status->isTerminal()) {
+            return null;
+        }
+
+        return response()->json([
+            'status'  => 'error',
+            'message' => "This group loan is {$groupLoan->status->value} and cannot be reactivated.",
+            'errors'  => [
+                'status' => $groupLoan->status->value,
+            ],
+        ], 422);
+    }
+
+    /**
      * Shared 422 for an unrecognised status, listing what is accepted.
      */
     protected function invalidStatusResponse(string $status)
@@ -407,6 +434,12 @@ class GroupLoanController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            // Toggling a finished group loan back on would show it as "Active".
+            // Only block turning it ON — turning it off is always fine.
+            if (!$groupLoan->is_active && ($terminal = $this->terminalStatusResponse($groupLoan))) {
+                return $terminal;
+            }
+
             $groupLoan->is_active = !$groupLoan->is_active;
             $groupLoan->save();
 
@@ -454,6 +487,10 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'message' => 'Group loan is already active',
                     'data'    => $groupLoan,
                 ]);
+            }
+
+            if ($terminal = $this->terminalStatusResponse($groupLoan)) {
+                return $terminal;
             }
 
             $groupLoan->update(['is_active' => true]);
@@ -573,6 +610,31 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Group loan not found',
                 ], 404);
+            }
+
+            // Same ceiling as Individual Loan: a group can be approved for
+            // less than it requested, never more. The requested amount is
+            // itself computed from the group's items, so approving above it
+            // would lend money against nothing.
+            $validator = Validator::make($request->all(), [
+                'approved_amount' => [
+                    'nullable',
+                    'numeric',
+                    'min:0.01',
+                    'max:' . (float) $groupLoan->requested_amount,
+                ],
+            ], [
+                'approved_amount.max' => 'The approved amount cannot be more than the requested amount of '
+                    . number_format((float) $groupLoan->requested_amount, 2)
+                    . '. Approve the same amount or less.',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => $validator->errors()->first(),
+                    'errors'  => $validator->errors(),
+                ], 422);
             }
 
             $approvedAmountOverride = $request->filled('approved_amount')

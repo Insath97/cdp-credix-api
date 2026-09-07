@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,6 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class LoanInstallment extends Model
 {
     use HasFactory;
+
+    /**
+     * Statuses that mean this installment is settled and will never take
+     * another payment. Previously hardcoded separately in
+     * PaymentController::carryForwardExcess(), SendOverdueSmsReminders and
+     * isPastDue() below — kept in one place so they cannot drift apart.
+     */
+    public const SETTLED_STATUSES = ['paid', 'waived', 'revised'];
 
     protected $fillable = [
         'loan_application_id',
@@ -89,6 +98,22 @@ class LoanInstallment extends Model
         return $this->hasMany(Payment::class);
     }
 
+
+    public function scopePayable(Builder $query): Builder
+    {
+        return $query->where('balance', '>', 0)
+                     ->whereNotIn('status', self::SETTLED_STATUSES);
+    }
+
+    /**
+     * Whether this installment is settled and can take no further payment.
+     */
+    public function isSettled(): bool
+    {
+        return in_array($this->status, self::SETTLED_STATUSES, true)
+            || $this->balance <= 0;
+    }
+
     /**
      * Recompute balance from amount_due + penalty_amount - amount_paid, floored
      * at 0. Does not save() -- callers persist alongside their other changes.
@@ -126,7 +151,7 @@ class LoanInstallment extends Model
      */
     public function isPastDue(): bool
     {
-        return !in_array($this->status, ['paid', 'waived', 'revised'], true)
+        return !in_array($this->status, self::SETTLED_STATUSES, true)
             && $this->balance > 0
             && $this->due_date
             && $this->due_date->lt(now()->startOfDay());
