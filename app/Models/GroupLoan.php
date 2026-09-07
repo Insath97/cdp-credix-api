@@ -36,6 +36,8 @@ class GroupLoan extends Model
         'verified_by',
         'approved_by',
         'assigned_reviewer_id',
+        'reviewed_remarks',
+        'verified_remarks',
         'approval_remarks',
         'rejection_reason',
         'applied_at',

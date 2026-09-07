@@ -39,6 +39,8 @@ return new class extends Migration
             $table->foreignId('approved_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('assigned_reviewer_id')->nullable()->constrained('users')->nullOnDelete();
 
+            $table->text('reviewed_remarks')->nullable();
+            $table->text('verified_remarks')->nullable();
             $table->text('approval_remarks')->nullable();
             $table->text('rejection_reason')->nullable();
 
