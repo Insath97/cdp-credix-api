@@ -33,7 +33,7 @@ class MarkOverdueLoanApplications extends Command
         $casesResolved = 0;
 
         $activeApplications = LoanApplication::whereIn('status', [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue])
-            ->with(['loanProduct', 'installments', 'recoveryCases' => function ($query) {
+            ->with(['loanProduct', 'installments', 'customer', 'loanApplicationCustomers.customer', 'recoveryCases' => function ($query) {
                 $query->whereIn('status', RecoveryCaseService::LIVE_STATUSES);
             }])
             ->get();
@@ -110,23 +110,36 @@ class MarkOverdueLoanApplications extends Command
             // still runs outside the revert branch above, so a loan that is
             // already Active but carries a stale case gets cleaned up too.
             if ($loanApplication->recoveryCases->isNotEmpty()) {
-                $stillInArrears = $loanApplication->installments
-                    ->where('status', 'overdue')
-                    ->pluck('customer_id')
-                    ->unique()
-                    ->all();
+                // Parties come from arrearsGroups(), not from the installments'
+                // raw customer_id, because that is the identity a case is
+                // opened against: null for an Individual or Joint loan, the
+                // member for a Group Loan. Comparing raw installment
+                // customer_ids instead would never match an individual loan's
+                // null-cased row, and every such case would be settled on the
+                // next run while the loan was still in arrears.
+                $stillInArrears = array_column(
+                    $loanApplication->arrearsGroups(fn ($installment) => $installment->status === 'overdue'),
+                    'customer_id'
+                );
 
-                $partiesToSettle = $loanApplication->recoveryCases
-                    ->pluck('customer_id')
-                    ->unique()
-                    ->reject(fn ($customerId) => in_array($customerId, $stillInArrears, true));
+                // If rows are overdue but no party could be resolved (a loan
+                // with no customer attached), leave the cases alone rather than
+                // settling a debt that is still outstanding.
+                $partyUnresolvable = $hasOverdueInstallment && empty($stillInArrears);
 
-                foreach ($partiesToSettle as $customerId) {
-                    $casesResolved += $recoveryCaseService->resolveOpenCases(
-                        $loanApplication,
-                        'Automatically resolved: no longer overdue.',
-                        $customerId
-                    );
+                if (!$partyUnresolvable) {
+                    $partiesToSettle = $loanApplication->recoveryCases
+                        ->pluck('customer_id')
+                        ->unique()
+                        ->reject(fn ($customerId) => in_array($customerId, $stillInArrears, true));
+
+                    foreach ($partiesToSettle as $customerId) {
+                        $casesResolved += $recoveryCaseService->resolveOpenCases(
+                            $loanApplication,
+                            'Automatically resolved: no longer overdue.',
+                            $customerId
+                        );
+                    }
                 }
             }
         }

@@ -41,6 +41,7 @@ class GroupLoanWorkflowService
         'loanApplication.installments',
         'appliedByUser',
         'reviewedByUser',
+        'verifiedByUser',
         'approvedByUser',
     ];
 
@@ -167,10 +168,37 @@ class GroupLoanWorkflowService
      */
     public function verify(GroupLoan $groupLoan, ?int $actorId, ?string $remarks, array $extra = []): GroupLoan
     {
-        return DB::transaction(function () use ($groupLoan, $actorId, $remarks, $extra) {
+        return $this->advanceStage($groupLoan, LoanApplicationStatus::Verified, 'verify', $actorId, $remarks, $extra);
+    }
+
+    /**
+     * Review the group loan — the first of the three hands before approval.
+     * Like verify(), it leaves the header at Available; only the audit fields
+     * and the cascaded member stage move.
+     */
+    public function review(GroupLoan $groupLoan, ?int $actorId, ?string $remarks, array $extra = []): GroupLoan
+    {
+        return $this->advanceStage($groupLoan, LoanApplicationStatus::Reviewed, 'review', $actorId, $remarks, $extra);
+    }
+
+    /**
+     * Move the group's application one stage along while the header stays
+     * Available. The real stage guard — and the segregation-of-duties check —
+     * live in LoanApplicationWorkflowService::transition(), so review and
+     * verify inherit both from the same place an individual loan does.
+     */
+    protected function advanceStage(
+        GroupLoan $groupLoan,
+        LoanApplicationStatus $to,
+        string $verb,
+        ?int $actorId,
+        ?string $remarks,
+        array $extra
+    ): GroupLoan {
+        return DB::transaction(function () use ($groupLoan, $to, $verb, $actorId, $remarks, $extra) {
             if ($groupLoan->status !== GroupLoanStatus::Available) {
                 throw new InvalidLoanApplicationTransitionException(
-                    "Cannot verify a group loan that is '{$groupLoan->status->value}'."
+                    "Cannot {$verb} a group loan that is '{$groupLoan->status->value}'."
                 );
             }
 
@@ -182,7 +210,7 @@ class GroupLoanWorkflowService
 
             $this->loanApplicationWorkflowService->transition(
                 $this->applicationFor($groupLoan),
-                LoanApplicationStatus::Verified,
+                $to,
                 $actorId,
                 $remarks,
                 $extra

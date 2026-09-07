@@ -32,11 +32,13 @@ class LoanApplication extends Model
         'monthly_repayment_date',
         'applied_by',
         'reviewed_by',
+        'verified_by',
         'approved_by',
         'approval_remarks',
         'rejection_reason',
         'applied_at',
         'reviewed_at',
+        'verified_at',
         'approved_at',
         'disbursed_at',
         'outstanding_balance',
@@ -66,9 +68,11 @@ class LoanApplication extends Model
         'net_disbursement_amount' => 'decimal:2',
         'applied_by'          => 'integer',
         'reviewed_by'         => 'integer',
+        'verified_by'         => 'integer',
         'approved_by'         => 'integer',
         'applied_at'          => 'datetime',
         'reviewed_at'         => 'datetime',
+        'verified_at'         => 'datetime',
         'approved_at'         => 'datetime',
         'disbursed_at'        => 'datetime',
         'outstanding_balance' => 'decimal:2',
@@ -143,6 +147,15 @@ class LoanApplication extends Model
     public function reviewedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /**
+     * Relationship with the User who verified — the second of the three
+     * hands the file passes through before approval.
+     */
+    public function verifiedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
     }
 
     /**

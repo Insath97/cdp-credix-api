@@ -33,12 +33,14 @@ class GroupLoan extends Model
         'amount_per_member',
         'applied_by',
         'reviewed_by',
+        'verified_by',
         'approved_by',
         'assigned_reviewer_id',
         'approval_remarks',
         'rejection_reason',
         'applied_at',
         'reviewed_at',
+        'verified_at',
         'approved_at',
         'disbursed_at',
         'status',
@@ -64,10 +66,12 @@ class GroupLoan extends Model
         'amount_per_member'       => 'decimal:2',
         'applied_by'              => 'integer',
         'reviewed_by'             => 'integer',
+        'verified_by'             => 'integer',
         'approved_by'             => 'integer',
         'assigned_reviewer_id'    => 'integer',
         'applied_at'              => 'datetime',
         'reviewed_at'             => 'datetime',
+        'verified_at'             => 'datetime',
         'approved_at'             => 'datetime',
         'disbursed_at'            => 'datetime',
         'status'                  => GroupLoanStatus::class,
@@ -309,6 +313,11 @@ class GroupLoan extends Model
     public function reviewedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function verifiedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
     }
 
     public function approvedByUser(): BelongsTo

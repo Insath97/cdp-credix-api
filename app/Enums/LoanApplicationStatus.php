@@ -6,6 +6,7 @@ enum LoanApplicationStatus: string
 {
 
     case Submitted = 'submitted';
+    case Reviewed = 'reviewed';
     case Verified = 'verified';
     case Approved = 'approved';
     case Rejected = 'rejected';
@@ -23,7 +24,11 @@ enum LoanApplicationStatus: string
     public function allowedTransitions(): array
     {
         return match ($this) {
-            self::Submitted => [self::Verified, self::Cancelled],
+            // Three separate hands before money moves: review, then verify,
+            // then approve. Each stage records its own actor, and the workflow
+            // service refuses to let one person cover two of them.
+            self::Submitted => [self::Reviewed, self::Cancelled],
+            self::Reviewed => [self::Verified, self::Rejected, self::Cancelled],
             self::Verified => [self::Approved, self::Rejected, self::Cancelled],
             self::Approved => [self::Disbursed],
             self::Disbursed => [self::Active],
@@ -59,7 +64,7 @@ enum LoanApplicationStatus: string
     public function toApplicationStatus(): string
     {
         return match ($this) {
-            self::Submitted, self::Verified => 'in_progress',
+            self::Submitted, self::Reviewed, self::Verified => 'in_progress',
             self::Approved => 'approved',
             self::Rejected => 'rejected',
             self::Disbursed, self::Active, self::Overdue => 'disbursed',

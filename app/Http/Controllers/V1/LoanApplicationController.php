@@ -43,6 +43,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
             new Middleware('permission:Loan Application Update', only: ['update']),
             new Middleware('permission:Loan Application Toggle Status', only: ['toggleStatus', 'activate', 'deactivate']),
             new Middleware('permission:Loan Application Delete', only: ['destroy']),
+            new Middleware('permission:Loan Application Review', only: ['review']),
             new Middleware('permission:Loan Application Verify', only: ['verify']),
             new Middleware('permission:Loan Application Approve', only: ['approve']),
             new Middleware('permission:Loan Application Reject', only: ['reject']),
@@ -546,8 +547,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
             }
 
             $extra = [
-                'reviewed_by' => Auth::id(),
-                'reviewed_at' => now(),
+                'verified_by' => Auth::id(),
+                'verified_at' => now(),
             ];
             if ($request->filled('assigned_reviewer_id')) {
                 $extra['assigned_reviewer_id'] = $request->input('assigned_reviewer_id');
@@ -579,7 +580,68 @@ class LoanApplicationController extends Controller implements HasMiddleware
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Failed to move loan application to review',
+                'message' => 'Failed to verify loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Review a submitted loan application — the first of the three hands the
+     * file passes through. Records who reviewed it, then hands it on for
+     * verification by someone else.
+     */
+    public function review(Request $request, string $id)
+    {
+        try {
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
+            $extra = [
+                'reviewed_by' => Auth::id(),
+                'reviewed_at' => now(),
+            ];
+            if ($request->filled('assigned_reviewer_id')) {
+                $extra['assigned_reviewer_id'] = $request->input('assigned_reviewer_id');
+            }
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Reviewed,
+                Auth::id(),
+                $request->input('remarks'),
+                $extra
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} reviewed", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application reviewed successfully',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to review loan application',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }

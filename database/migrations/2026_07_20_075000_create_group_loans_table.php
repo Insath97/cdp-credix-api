@@ -35,6 +35,7 @@ return new class extends Migration
 
             $table->foreignId('applied_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('reviewed_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('verified_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('approved_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('assigned_reviewer_id')->nullable()->constrained('users')->nullOnDelete();
 
@@ -43,6 +44,7 @@ return new class extends Migration
 
             $table->timestamp('applied_at')->useCurrent();
             $table->timestamp('reviewed_at')->nullable();
+            $table->timestamp('verified_at')->nullable();
             $table->timestamp('approved_at')->nullable();
             $table->timestamp('disbursed_at')->nullable();
 
