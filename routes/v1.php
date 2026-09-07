@@ -299,13 +299,16 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     // Recovery Activities
     Route::apiResource('recovery-activities', RecoveryActivityController::class);
 
-    // Recovery Agents combined Externl Agents
+    // Recovery Agents
     Route::prefix('recovery-agents')->group(function () {
-        Route::get('combined', [RecoveryAgentController::class, 'combinedList']);
+        Route::get('list', [RecoveryAgentController::class, 'getRecoveryAgentList']);
     });
     Route::apiResource('recovery-agents', RecoveryAgentController::class);
 
     // External Recovery Agents
+    Route::prefix('external-recovery-agents')->group(function () {
+        Route::get('list', [ExternalRecoveryAgentController::class, 'getExternalRecoveryAgentList']);
+    });
     Route::apiResource('external-recovery-agents', ExternalRecoveryAgentController::class);
 
     // Notifications (read-only audit log)

@@ -20,11 +20,63 @@ class RecoveryAgentController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Recovery Agent Index',  only: ['index', 'show', 'combinedList']),
+            new Middleware('permission:Recovery Agent Index',  only: ['index', 'show', 'combinedList', 'getRecoveryAgentList']),
             new Middleware('permission:Recovery Agent Create', only: ['store']),
             new Middleware('permission:Recovery Agent Update', only: ['update']),
             new Middleware('permission:Recovery Agent Delete', only: ['destroy']),
         ];
+    }
+
+    /**
+     * Lightweight list of active internal recovery officers, for a picker.
+     *
+     * Unpaginated and trimmed to what a dropdown needs — index() eager-loads
+     * the whole user and branch record, which is far more than a select box
+     * requires. Ordered by the officer's own name, which lives on the joined
+     * users row rather than on recovery_agents.
+     */
+    public function getRecoveryAgentList(Request $request)
+    {
+        try {
+            // Columns are table-qualified throughout: the join below brings in
+            // `users`, which has its own `is_active`, so the unqualified
+            // scopeActive() would make the where clause ambiguous.
+            $query = RecoveryAgent::query()->where('recovery_agents.is_active', true);
+
+            if ($request->has('branch_id')) {
+                $query->where('recovery_agents.branch_id', $request->branch_id);
+            }
+
+            // Flat rows straight from the join rather than an eager-loaded
+            // `user` relation: User exposes branch/zone/region/province/parent/
+            // children accessors that each resolve through employee(), so
+            // loading the relation would fire several extra queries per row and
+            // pad the payload with keys a picker never reads.
+            $agents = $query
+                ->leftJoin('users', 'users.id', '=', 'recovery_agents.user_id')
+                ->leftJoin('branches', 'branches.id', '=', 'recovery_agents.branch_id')
+                ->orderBy('users.name')
+                ->get([
+                    'recovery_agents.id',
+                    'recovery_agents.user_id',
+                    'users.name',
+                    'users.username',
+                    'recovery_agents.branch_id',
+                    'branches.name as branch_name',
+                ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Recovery agents retrieved successfully',
+                'data'    => $agents,
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to retrieve recovery agents',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
     }
 
     /**
