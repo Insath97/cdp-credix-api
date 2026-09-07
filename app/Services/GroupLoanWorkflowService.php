@@ -74,6 +74,9 @@ class GroupLoanWorkflowService
 
         $groupLoan->update(array_merge($extra, [
             'status' => $to,
+            // A finished group loan must never stay flagged active — see the
+            // same rule in LoanApplicationWorkflowService::transition().
+            'is_active' => $to->isTerminal() ? false : $groupLoan->is_active,
         ]));
 
         return $groupLoan->fresh(self::RESPONSE_RELATIONS);

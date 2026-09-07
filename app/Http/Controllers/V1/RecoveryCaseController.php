@@ -10,7 +10,7 @@ use App\Models\Customer;
 use App\Models\User;
 use App\Services\NotificationService;
 use App\Traits\ActivityLogTrait;
-use App\Http\Requests\AssignRecoveryCaseAgentRequest;
+use App\Http\Requests\CreateRecoveryCaseAgentRequest;
 use App\Http\Requests\CreateRecoveryCaseRequest;
 use App\Http\Requests\UpdateRecoveryCaseRequest;
 use App\Services\RecoveryCaseService;
@@ -44,7 +44,18 @@ class RecoveryCaseController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = RecoveryCase::with(['loanApplication', 'assignedAgent:'.User::SUMMARY_COLUMNS, 'openedBy:'.User::SUMMARY_COLUMNS]);
+            $query = RecoveryCase::with([
+                // Who to actually chase. `customer` is the Group Loan member
+                // this case is pursuing (null on Individual/Joint loans, where
+                // the loan's own customer is the debtor), so the list needs
+                // both to name a person in every case.
+                'customer:'.Customer::SUMMARY_COLUMNS,
+                'loanApplication.customer:'.Customer::SUMMARY_COLUMNS,
+                'loanApplication.loanProduct',
+                'loanApplication.groupLoan',
+                'assignedAgent:'.User::SUMMARY_COLUMNS,
+                'openedBy:'.User::SUMMARY_COLUMNS,
+            ]);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
@@ -157,7 +168,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
      * case's stage, and it is the only path that notifies the agent, which the
      * generic update endpoint never did.
      */
-    public function assignAgent(AssignRecoveryCaseAgentRequest $request, string $id)
+    public function assignAgent(CreateRecoveryCaseAgentRequest $request, string $id)
     {
         try {
             $case = RecoveryCase::find($id);

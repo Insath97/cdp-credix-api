@@ -28,7 +28,11 @@ class UpdateGroupLoanRequest extends FormRequest
             'branch_id'      => 'nullable|integer|exists:branches,id',
             'group_name'     => 'nullable|string|max:255',
             'term_months'    => 'nullable|integer|min:1',
-            'is_active'      => 'nullable|boolean',
+
+            // is_active is deliberately not accepted here: it has its own
+            // activate/deactivate/toggle-status endpoints, which refuse to
+            // reactivate a cancelled, rejected or closed group loan. Allowing
+            // it through a generic update would bypass that guard.
         ];
     }
 

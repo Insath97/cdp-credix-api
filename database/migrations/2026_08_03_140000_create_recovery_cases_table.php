@@ -25,9 +25,7 @@ return new class extends Migration
             $table->foreignId('external_agent_id')->nullable()->constrained('external_recovery_agents')->nullOnDelete();
             $table->foreignId('parent_case_id')->nullable()->constrained('recovery_cases')->nullOnDelete();
             $table->foreignId('opened_by')->nullable()->constrained('users')->nullOnDelete();
-
             $table->text('remarks')->nullable();
-
             $table->timestamp('opened_at')->useCurrent();
             $table->timestamp('closed_at')->nullable();
             $table->timestamps();

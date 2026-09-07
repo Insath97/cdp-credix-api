@@ -9,7 +9,6 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
-
 class CreatePaymentRequest extends FormRequest
 {
     use FriendlyValidationErrors;
@@ -35,6 +34,21 @@ class CreatePaymentRequest extends FormRequest
                 Rule::exists('loan_installments', 'id')->where(function ($query) {
                     return $query->where('loan_application_id', $this->loan_application_id);
                 }),
+                function ($attribute, $value, $fail) {
+                    $installment = LoanInstallment::find($value);
+
+                    if (!$installment) {
+                        return;
+                    }
+
+                    // A month already settled in full must never take another
+                    // payment. The picker endpoint filters these out, but the
+                    // rule is enforced here so it holds no matter what the
+                    // caller sends.
+                    if ($installment->isSettled()) {
+                        $fail("Installment #{$installment->installment_no} is already settled ({$installment->status}) and cannot take another payment. Choose a month that still has a balance.");
+                    }
+                },
             ],
             // Which member of a Group Loan handed the money over. Optional and
             // purely attribution — the installments and outstanding balance
@@ -76,8 +90,7 @@ class CreatePaymentRequest extends FormRequest
         ];
     }
 
-
-    protected function failedValidation(Validator $validator)
+protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
@@ -96,5 +109,4 @@ class CreatePaymentRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
-
 }
