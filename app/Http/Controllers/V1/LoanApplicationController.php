@@ -287,6 +287,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'branch',
                 'appliedByUser:'.User::SUMMARY_COLUMNS,
                 'reviewedByUser:'.User::SUMMARY_COLUMNS,
+                'verifiedByUser:'.User::SUMMARY_COLUMNS,
                 'approvedByUser:'.User::SUMMARY_COLUMNS,
                 'loanApplicationGuarantors.guarantor',
                 'loanApplicationFixedAssets',
