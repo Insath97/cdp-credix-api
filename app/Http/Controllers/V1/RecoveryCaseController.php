@@ -55,6 +55,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
                 'loanApplication.groupLoan',
                 'assignedAgent:'.User::SUMMARY_COLUMNS,
                 'openedBy:'.User::SUMMARY_COLUMNS,
+                'externalAgent:id,name,phone,email',
             ]);
 
             if ($request->has('loan_application_id')) {
@@ -290,7 +291,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Recovery case updated successfully',
-                'data'    => $case->fresh(['loanApplication', 'assignedAgent:'.User::SUMMARY_COLUMNS, 'openedBy:'.User::SUMMARY_COLUMNS]),
+                'data'    => $case->fresh(['loanApplication', 'assignedAgent:'.User::SUMMARY_COLUMNS, 'openedBy:'.User::SUMMARY_COLUMNS, 'externalAgent:id,name,phone,email']),
             ], 200);
 
         } catch (\Throwable $th) {
