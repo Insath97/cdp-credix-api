@@ -2,8 +2,15 @@
 
 namespace App\Enums;
 
+use Illuminate\Support\Str;
+
 enum LoanApplicationStatus: string
 {
+    /**
+     * The single status a customer sees for the whole pre-approval pipeline.
+     * Not an enum case: nothing is ever stored as 'processing'.
+     */
+    public const CUSTOMER_PROCESSING = 'processing';
 
     case Submitted = 'submitted';
     case Reviewed = 'reviewed';
@@ -61,6 +68,34 @@ enum LoanApplicationStatus: string
      * column, which is shared with the future lease module and only needs
      * to track broad progress, not the full granular workflow.
      */
+    /**
+     * The status a customer is allowed to see.
+     *
+     * Review, verification and approval are the lender's internal
+     * maker-checker stages. Which desk a file is sitting on is not the
+     * borrower's business, and naming the stage only invites "who is reviewing
+     * it, can you push it through" -- so all three collapse to 'processing'.
+     *
+     * Everything from approval onwards passes through unchanged, Rejected and
+     * Cancelled included: those are outcomes the customer has to be told.
+     */
+    public function customerFacingStatus(): string
+    {
+        return match ($this) {
+            self::Submitted, self::Reviewed, self::Verified => self::CUSTOMER_PROCESSING,
+            default => $this->value,
+        };
+    }
+
+    /**
+     * Human-readable form of customerFacingStatus(), for the label the customer
+     * portal prints.
+     */
+    public function customerFacingLabel(): string
+    {
+        return Str::title(str_replace('_', ' ', $this->customerFacingStatus()));
+    }
+
     public function toApplicationStatus(): string
     {
         return match ($this) {

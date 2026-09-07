@@ -43,7 +43,7 @@ class EscalateExternalRecoveryCases extends Command
             ->whereHas('recoveryCases', function ($query) {
                 $query->where('stage', 'internal')->whereIn('status', RecoveryCaseService::LIVE_STATUSES);
             })
-            ->with(['customer', 'installments', 'loanApplicationCustomers.customer', 'recoveryCases' => function ($query) {
+            ->with(['application', 'customer', 'installments', 'loanApplicationCustomers.customer', 'recoveryCases' => function ($query) {
                 $query->whereIn('status', RecoveryCaseService::LIVE_STATUSES)->orderBy('id');
             }])
             ->get();
@@ -78,7 +78,7 @@ class EscalateExternalRecoveryCases extends Command
                     $daysOverdue
                 );
 
-                $externalEscalationMessage = "CDP Credix: Your overdue loan account (Loan Application ID: {$loanApplication->id}) has been referred to external recovery. Please settle your outstanding balance immediately.";
+                $externalEscalationMessage = "CDP Credix: Your overdue loan account ({$loanApplication->reference()}) has been referred to external recovery. Please settle your outstanding balance immediately.";
 
                 foreach ($arrears['customers'] as $notifyCustomer) {
                     if (!empty($notifyCustomer->phone_primary)) {

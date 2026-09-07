@@ -302,7 +302,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                         $this->notificationService->sendSms(
                             'group_loan_submitted',
                             $staffPhone,
-                            'CDP Crdix: New group loan application pending for review.',
+                            'CDP Credix: New group loan application pending for review.',
                             ['user_id' => $staffUser->id]
                         );
                     }

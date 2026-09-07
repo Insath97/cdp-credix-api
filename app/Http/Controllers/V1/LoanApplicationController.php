@@ -231,7 +231,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                         $this->notificationService->sendSms(
                             'application_submitted',
                             $staffPhone,
-                            'CDP Crdix: New loan application pending for review.',
+                            'CDP Credix: New loan application pending for review.',
                             ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
                         );
                     }
@@ -890,10 +890,13 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loan_application_id' => $loanApplication->id,
             ]);
 
-            $netAmountLine = $loanApplication->net_disbursement_amount !== null
-                ? "\nNet amount disbursed: {$loanApplication->net_disbursement_amount} (after processing fee of {$loanApplication->processing_fee})."
-                : '';
-            $disbursedMessage = "Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.{$netAmountLine}";
+            // Deliberately no amounts here. Charges deducted at disbursement --
+            // the processing fee, and a group loan's service charge -- are not
+            // quoted to the customer in a notification; they belong on the
+            // disbursement voucher and the repayment schedule, where the customer
+            // sees them in context. Mirrors the group loan disbursed message,
+            // which has never carried them.
+            $disbursedMessage = 'Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.';
 
             foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
                 if (!empty($notifyCustomer->phone_primary)) {

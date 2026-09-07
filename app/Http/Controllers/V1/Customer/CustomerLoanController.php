@@ -347,7 +347,7 @@ class CustomerLoanController extends Controller
                     'loan_product' => $loanApplication->loanProduct?->name,
                     'loan_type' => $loanApplication->loanProduct?->loanType?->title,
                     'loan_term' => $loanApplication->loanProduct?->loanTerm?->title,
-                    'status' => $loanApplication->status->value,
+                    'status' => $loanApplication->status->customerFacingStatus(),
                     'disbursed_at' => $loanApplication->disbursed_at,
                     'maturity_date' => $aggregate->maturity_date ?? null,
                     'requested_amount' => $loanApplication->requested_amount,
@@ -403,8 +403,10 @@ class CustomerLoanController extends Controller
             'loan_product' => $loanApplication->loanProduct?->name,
             'requested_amount' => $loanApplication->requested_amount,
             'applied_date' => $loanApplication->applied_at,
-            'status' => $loanApplication->status->value,
-            'current_stage' => Str::title(str_replace('_', ' ', $loanApplication->status->value)),
+            // Masked, not raw: the review / verification / approval stages are
+            // internal maker-checker steps and collapse to 'processing' here.
+            'status' => $loanApplication->status->customerFacingStatus(),
+            'current_stage' => $loanApplication->status->customerFacingLabel(),
             'rejection_reason' => $loanApplication->rejection_reason,
         ];
     }
@@ -431,7 +433,7 @@ class CustomerLoanController extends Controller
             'remaining_installments' => $aggregate->remaining ?? 0,
             'start_date' => $loanApplication->disbursed_at,
             'maturity_date' => $aggregate->maturity_date ?? null,
-            'status' => $loanApplication->status->value,
+            'status' => $loanApplication->status->customerFacingStatus(),
             'is_islamic' => $loanApplication->loanProduct?->is_islamic,
         ];
     }

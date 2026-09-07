@@ -34,7 +34,7 @@ class EscalateInternalRecoveryCases extends Command
         $thresholdDays = (int) Setting::get('internal_recovery_threshold_days', 30);
 
         $loanApplications = LoanApplication::where('status', LoanApplicationStatus::Overdue)
-            ->with(['customer', 'installments', 'loanApplicationCustomers.customer'])
+            ->with(['application', 'customer', 'installments', 'loanApplicationCustomers.customer'])
             ->get();
 
         $escalated = 0;
@@ -74,7 +74,7 @@ class EscalateInternalRecoveryCases extends Command
                     $arrears['customer_id']
                 );
 
-                $internalEscalationMessage = "CDP Credix: Your loan account (Loan Application ID: {$loanApplication->id}) has become overdue. Please contact us immediately to avoid further recovery actions.";
+                $internalEscalationMessage = "CDP Credix: Your loan account ({$loanApplication->reference()}) has become overdue. Please contact us immediately to avoid further recovery actions.";
 
                 foreach ($arrears['customers'] as $notifyCustomer) {
                     if (!empty($notifyCustomer->phone_primary)) {
