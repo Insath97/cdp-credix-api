@@ -78,12 +78,12 @@ class LoanInstallmentController extends Controller implements HasMiddleware
     }
 
     /**
-     * Get a list of loan installments.
+     * Get a list of loan installments — the full schedule, paid months
+     * included, since the installments page reads this.
      *
-     * This is the picker endpoint the payment screen reads, so it returns only
-     * installments that can still take a payment — a month already settled in
-     * full must not be offered again. Pass `include_settled=true` for the
-     * complete schedule; index() is unfiltered and remains the full ledger.
+     * Pass `payable=true` to narrow it to months that can still take a
+     * payment, which is what a payment picker wants. Either way a settled
+     * month can never actually be paid: CreatePaymentRequest refuses it.
      */
     public function list(Request $request)
     {
@@ -106,10 +106,11 @@ class LoanInstallmentController extends Controller implements HasMiddleware
                 $query->where('status', $request->status);
             }
 
-            // Fully paid (or waived/revised) months are excluded unless the
-            // caller explicitly asks for them, so the payment screen can never
-            // offer a month that is already settled.
-            if (!$request->boolean('include_settled')) {
+            // Opt-in only: pass payable=true to get just the months that can
+            // still take a payment. This endpoint returns the FULL schedule by
+            // default — paid months included — because the installments page
+            // reads it and needs to show them.
+            if ($request->boolean('payable')) {
                 $query->payable();
             }
 
@@ -121,7 +122,7 @@ class LoanInstallmentController extends Controller implements HasMiddleware
 
             $this->logActivity('Index', 'LoanInstallment', 'Loan installments list accessed', [
                 'user_id' => Auth::id(),
-                'filters' => $request->only(['loan_application_id', 'status', 'include_settled']),
+                'filters' => $request->only(['loan_application_id', 'status', 'payable']),
                 'count'   => is_a($installments, \Illuminate\Pagination\AbstractPaginator::class) ? $installments->total() : $installments->count(),
             ]);
 

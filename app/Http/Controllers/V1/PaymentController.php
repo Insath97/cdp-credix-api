@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\LoanInstallment;
 use App\Models\LoanRevision;
