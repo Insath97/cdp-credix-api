@@ -148,6 +148,15 @@ return new class extends Migration
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'key' => 'loan_approval_segregation_enabled',
+                'value' => '1',
+                'type' => 'boolean',
+                'group' => 'loan_approval',
+                'description' => 'Require review, verify and approve to be performed by three different users. Turn off only where one officer legitimately handles the whole file (a very small branch), since it removes the maker-checker control.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 

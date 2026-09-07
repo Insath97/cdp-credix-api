@@ -44,6 +44,7 @@ class GroupLoanController extends Controller implements HasMiddleware
             new Middleware('permission:Group Loan Update', only: ['update']),
             new Middleware('permission:Group Loan Toggle Status', only: ['toggleStatus', 'activate', 'deactivate']),
             new Middleware('permission:Group Loan Delete', only: ['destroy']),
+            new Middleware('permission:Group Loan Review', only: ['review']),
             new Middleware('permission:Group Loan Verify', only: ['verify']),
             new Middleware('permission:Group Loan Approve', only: ['approve']),
             new Middleware('permission:Group Loan Reject', only: ['reject']),
@@ -564,8 +565,8 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $extra = [
-                'reviewed_by' => Auth::id(),
-                'reviewed_at' => now(),
+                'verified_by' => Auth::id(),
+                'verified_at' => now(),
             ];
             if ($request->filled('assigned_reviewer_id')) {
                 $extra['assigned_reviewer_id'] = $request->input('assigned_reviewer_id');
@@ -592,6 +593,57 @@ class GroupLoanController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to verify group loan',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Review a submitted group loan — the first of the three hands before
+     * approval. Records who reviewed it and cascades the stage to the group's
+     * single loan application; the header itself stays Available.
+     */
+    public function review(Request $request, string $id)
+    {
+        try {
+            $groupLoan = GroupLoan::find($id);
+
+            if (!$groupLoan) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan not found',
+                ], 404);
+            }
+
+            $extra = [
+                'reviewed_by' => Auth::id(),
+                'reviewed_at' => now(),
+            ];
+            if ($request->filled('assigned_reviewer_id')) {
+                $extra['assigned_reviewer_id'] = $request->input('assigned_reviewer_id');
+            }
+
+            $groupLoan = $this->workflowService->review($groupLoan, Auth::id(), $request->input('remarks'), $extra);
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} reviewed", [
+                'group_loan_id' => $groupLoan->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Group loan reviewed successfully',
+                'data'    => $groupLoan,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to review group loan',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Models\LoanApplication;
+use App\Models\Setting;
 use Illuminate\Support\Facades\DB;
 
 class LoanApplicationWorkflowService
@@ -34,6 +35,8 @@ class LoanApplicationWorkflowService
                 "Cannot transition loan application from '{$from->value}' to '{$to->value}'."
             );
         }
+
+        $this->assertSegregationOfDuties($loanApplication, $to, $actorId);
 
         // A guarantor is mandatory for Individual Loan before it can be
         // verified, but stays optional for Group Loan members.
@@ -79,10 +82,57 @@ class LoanApplicationWorkflowService
                 'branch',
                 'appliedByUser',
                 'reviewedByUser',
+                'verifiedByUser',
                 'approvedByUser',
                 'assignedReviewer',
                 'installments',
             ]);
         });
+    }
+
+    /**
+     * A loan passes through three separate hands before money moves — review,
+     * verify, approve — and no one person may cover two of them.
+     *
+     * The rule is enforced here rather than in the controllers so it applies to
+     * Individual, Joint and Group loans alike (the group cascade transitions
+     * through this same method). Only the two later stages need checking: the
+     * reviewer is by definition the first checker.
+     *
+     * Turn off with the `loan_approval_segregation_enabled` System Setting
+     * where one officer legitimately handles the whole file — a very small
+     * branch — accepting that this removes the maker-checker control.
+     */
+    protected function assertSegregationOfDuties(
+        LoanApplication $loanApplication,
+        LoanApplicationStatus $to,
+        ?int $actorId
+    ): void {
+        if ($actorId === null) {
+            return;
+        }
+
+        if (!Setting::get('loan_approval_segregation_enabled', true)) {
+            return;
+        }
+
+        $conflicts = match ($to) {
+            LoanApplicationStatus::Verified => ['reviewed_by' => 'reviewed'],
+            LoanApplicationStatus::Approved => ['reviewed_by' => 'reviewed', 'verified_by' => 'verified'],
+            default => [],
+        };
+
+        foreach ($conflicts as $column => $stage) {
+            if ((int) $loanApplication->{$column} !== $actorId) {
+                continue;
+            }
+
+            $action = $to === LoanApplicationStatus::Verified ? 'verify' : 'approve';
+
+            throw new InvalidLoanApplicationTransitionException(
+                "You already {$stage} this loan application, so you cannot also {$action} it. "
+                . 'Review, verification and approval must each be done by a different person.'
+            );
+        }
     }
 }

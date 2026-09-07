@@ -223,6 +223,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/toggle-status', [LoanApplicationController::class, 'toggleStatus']);
         Route::patch('{id}/activate', [LoanApplicationController::class, 'activate']);
         Route::patch('{id}/deactivate', [LoanApplicationController::class, 'deactivate']);
+        Route::patch('{id}/review', [LoanApplicationController::class, 'review']);
         Route::patch('{id}/verify', [LoanApplicationController::class, 'verify']);
         Route::patch('{id}/approve', [LoanApplicationController::class, 'approve']);
         Route::patch('{id}/reject', [LoanApplicationController::class, 'reject']);
@@ -238,6 +239,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/toggle-status', [GroupLoanController::class, 'toggleStatus']);
         Route::patch('{id}/activate', [GroupLoanController::class, 'activate']);
         Route::patch('{id}/deactivate', [GroupLoanController::class, 'deactivate']);
+        Route::patch('{id}/review', [GroupLoanController::class, 'review']);
         Route::patch('{id}/verify', [GroupLoanController::class, 'verify']);
         Route::patch('{id}/approve', [GroupLoanController::class, 'approve']);
         Route::patch('{id}/reject', [GroupLoanController::class, 'reject']);
