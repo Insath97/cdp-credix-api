@@ -414,6 +414,10 @@ class RecoveryCaseService
      * The overdue amount a case should carry: the sum of the balances of every
      * installment currently marked overdue.
      *
+     * Balance is the month's installment plus the late fee it earned, less
+     * anything already paid against it -- so the figure is what the borrower
+     * still has to hand over, which is what an agent is sent to collect.
+     *
      * Pass a customer to scope it to one Group Loan member's own arrears, so a
      * member's case carries what that member owes rather than what the whole
      * group owes.

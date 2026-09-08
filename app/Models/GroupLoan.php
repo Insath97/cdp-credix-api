@@ -186,7 +186,9 @@ class GroupLoan extends Model
             return collect();
         }
 
-        $members = $application->loanApplicationCustomers()->with('customer')->get();
+        // customerDetail carries the GN and DS divisions the members table
+        // displays; without it those columns come back empty.
+        $members = $application->loanApplicationCustomers()->with('customer.customerDetail')->get();
         $memberCount = $members->count();
 
         if ($memberCount === 0) {

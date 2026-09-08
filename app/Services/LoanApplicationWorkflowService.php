@@ -6,6 +6,7 @@ use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Models\LoanApplication;
 use App\Models\Setting;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class LoanApplicationWorkflowService
@@ -99,9 +100,15 @@ class LoanApplicationWorkflowService
      * through this same method). Only the two later stages need checking: the
      * reviewer is by definition the first checker.
      *
-     * Turn off with the `loan_approval_segregation_enabled` System Setting
-     * where one officer legitimately handles the whole file — a very small
-     * branch — accepting that this removes the maker-checker control.
+     * Super Admin is exempt. Every other role is bound by its permissions plus
+     * this rule; Super Admin is the role that exists to be able to act on
+     * anything, and the rest of the app already treats it that way — it is the
+     * only role that may delete a branch or manage admin users. The exemption
+     * means a Super Admin can carry a file from review to approval alone.
+     *
+     * Turn off for everyone with the `loan_approval_segregation_enabled` System
+     * Setting where one officer legitimately handles the whole file — a very
+     * small branch — accepting that this removes the maker-checker control.
      */
     protected function assertSegregationOfDuties(
         LoanApplication $loanApplication,
@@ -113,6 +120,10 @@ class LoanApplicationWorkflowService
         }
 
         if (!Setting::get('loan_approval_segregation_enabled', true)) {
+            return;
+        }
+
+        if (User::find($actorId)?->isSuperAdmin()) {
             return;
         }
 

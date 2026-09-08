@@ -162,8 +162,11 @@ class BranchController extends Controller implements HasMiddleware
                 ], 404);
             }
 
-            // Check if user is Super Admin
-            if (!Auth::user()->hasRole('Super Admin')) {
+            // Super Admin only. isSuperAdmin() rather than hasRole(): the role
+            // is seeded as 'SUPER ADMIN' and Spatie matches the name exactly, so
+            // hasRole('Super Admin') was false even for the Super Admin -- this
+            // guard denied everyone.
+            if (!Auth::user()->isSuperAdmin()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Only Super Admin can delete branches'
