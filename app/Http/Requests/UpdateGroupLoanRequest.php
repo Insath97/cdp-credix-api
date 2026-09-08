@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Setting;
 use App\Traits\FriendlyValidationErrors;
+use Illuminate\Validation\Rule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -28,6 +30,28 @@ class UpdateGroupLoanRequest extends FormRequest
             'branch_id'      => 'nullable|integer|exists:branches,id',
             'group_name'     => 'nullable|string|max:255',
             'term_months'    => 'nullable|integer|min:1',
+
+            // The same three fields the create form collects, so the edit form
+            // can actually change them -- left out, they were silently dropped
+            // by validated() and the edit appeared to do nothing.
+            'loan_product_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('loan_products', 'id')->where(function ($query) {
+                    $query->where('is_group_loan', true)->where('is_active', true);
+                }),
+            ],
+            'competency' => ['nullable', 'string', function ($attribute, $value, $fail) {
+                $allowed = Setting::get('group_loan_competency', []);
+                $normalized = array_map(fn ($c) => trim(mb_strtolower($c)), $allowed);
+                if (!empty($allowed) && !in_array(trim(mb_strtolower($value)), $normalized, true)) {
+                    $fail('The competency must be one of the configured options: ' . implode(', ', $allowed) . '.');
+                }
+            }],
+            // Declared headcount. Floored at the same minimum the member
+            // add/remove endpoints enforce, so the header can never claim
+            // fewer members than a group loan is allowed to have.
+            'number_of_members' => 'nullable|integer|min:2',
 
             // is_active is deliberately not accepted here: it has its own
             // activate/deactivate/toggle-status endpoints, which refuse to

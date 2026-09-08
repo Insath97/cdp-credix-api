@@ -109,6 +109,22 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         return $this->belongsTo(Employee::class);
     }
 
+    /**
+     * The role that is allowed to do anything, so every guard that means
+     * "unless they are the Super Admin" asks here.
+     *
+     * Compared case-insensitively on purpose. Spatie's hasRole() matches the
+     * role name exactly in PHP, and the role is seeded as 'SUPER ADMIN', so
+     * hasRole('Super Admin') is false -- a mismatch that silently locks the
+     * Super Admin out of the very checks written to let them through.
+     */
+    public function isSuperAdmin(): bool
+    {
+        return $this->roles->contains(
+            fn ($role) => strcasecmp((string) $role->name, 'Super Admin') === 0
+        );
+    }
+
     public function customer()
     {
         return $this->belongsTo(Customer::class);

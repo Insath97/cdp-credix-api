@@ -102,7 +102,7 @@ class UserController extends Controller implements HasMiddleware
 
             // Restrict admin user creation to Super Admins only
             if ($data['user_type'] === 'admin') {
-                if (!$currentUser || !$currentUser->hasRole('Super Admin')) {
+                if (!$currentUser || !$currentUser->isSuperAdmin()) {
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Only Super Admin can create admin users'
@@ -294,7 +294,7 @@ class UserController extends Controller implements HasMiddleware
             // Restrict admin user update to Super Admins only (both updating an existing admin or changing user_type to admin)
             $isTargetingAdmin = ($user->user_type === 'admin') || (isset($data['user_type']) && $data['user_type'] === 'admin');
             if ($isTargetingAdmin) {
-                if (!$currentUser || !$currentUser->hasRole('Super Admin')) {
+                if (!$currentUser || !$currentUser->isSuperAdmin()) {
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Only Super Admin can manage admin users'
@@ -404,8 +404,9 @@ class UserController extends Controller implements HasMiddleware
                 ], 404);
             }
 
-            // Check if user is Super Admin
-            if (!Auth::user()->hasRole('Super Admin')) {
+            // Super Admin only -- see the note in BranchController::destroy()
+            // on why this is isSuperAdmin() and not hasRole().
+            if (!Auth::user()->isSuperAdmin()) {
                 $this->logActivity('UNAUTHORIZED_DELETE', 'User', "Unauthorized user deletion attempt on ID: {$id}", ['target_user_id' => $id], 'warning');
                 return response()->json([
                     'status' => 'error',

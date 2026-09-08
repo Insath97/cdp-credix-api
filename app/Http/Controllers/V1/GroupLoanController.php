@@ -393,6 +393,23 @@ class GroupLoanController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            // Editable only while Available, for the same reason the member
+            // list is frozen after approval: once the group loan is Locked the
+            // approved amount has been split across exactly these members on
+            // exactly these terms, and rewriting the header afterwards would
+            // silently disagree with the per-member loan applications and the
+            // schedules already generated from them.
+            if ($groupLoan->status !== GroupLoanStatus::Available) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "This group loan is {$groupLoan->status->value} and its details are locked. Edit it while the group loan is still Available (before approval).",
+                    'errors'  => [
+                        'group_loan_id' => $groupLoan->id,
+                        'status'        => $groupLoan->status->value,
+                    ],
+                ], 422);
+            }
+
             $data = $request->validated();
 
             $groupLoan->update($data);
