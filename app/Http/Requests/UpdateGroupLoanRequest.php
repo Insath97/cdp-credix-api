@@ -48,10 +48,12 @@ class UpdateGroupLoanRequest extends FormRequest
                     $fail('The competency must be one of the configured options: ' . implode(', ', $allowed) . '.');
                 }
             }],
-            // Declared headcount. Floored at the same minimum the member
-            // add/remove endpoints enforce, so the header can never claim
-            // fewer members than a group loan is allowed to have.
-            'number_of_members' => 'nullable|integer|min:2',
+            // Declared headcount, floored at one to match creation: a
+            // Development Fund loan for a single borrower comes through the
+            // same endpoint and would otherwise be uneditable. Dropping a
+            // group below two members is still refused by the member removal
+            // endpoint, which is where that rule belongs.
+            'number_of_members' => 'nullable|integer|min:1',
 
             // is_active is deliberately not accepted here: it has its own
             // activate/deactivate/toggle-status endpoints, which refuse to

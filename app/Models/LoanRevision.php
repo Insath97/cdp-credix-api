@@ -32,8 +32,13 @@ class LoanRevision extends Model
         'effective_date',
     ];
 
+    // created_at stays visible: it is when the revision was requested, and
+    // nothing else records that. The revision list prints it in its Created
+    // column and the detail page opens its approval timeline with it, so
+    // hiding it left both blank -- the timeline card rendered with no rows at
+    // all while the revision was still pending, since approved_at is null then
+    // too.
     protected $hidden = [
-        'created_at',
         'updated_at',
         'deleted_at',
     ];
