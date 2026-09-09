@@ -83,7 +83,12 @@ class Employee extends Model
     }
 
     /**
-     * Scope a query to search employees by name, email, or employee code.
+     * Scope a query to search employees by name, email, employee code, NIC or
+     * phone.
+     *
+     * NIC and phone are here for the loan application's recommender picker: an
+     * officer taking a loan usually has the recommending employee's card or
+     * number in front of them, not the exact spelling of their name.
      */
     public function scopeSearch(Builder $query, ?string $search): Builder
     {
@@ -96,7 +101,10 @@ class Employee extends Model
               ->orWhere('l_name', 'like', "%{$search}%")
               ->orWhere('full_name', 'like', "%{$search}%")
               ->orWhere('employee_code', 'like', "%{$search}%")
-              ->orWhere('email', 'like', "%{$search}%");
+              ->orWhere('email', 'like', "%{$search}%")
+              ->orWhere('id_number', 'like', "%{$search}%")
+              ->orWhere('phone', 'like', "%{$search}%")
+              ->orWhere('phone_primary', 'like', "%{$search}%");
         });
     }
 

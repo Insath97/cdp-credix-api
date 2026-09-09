@@ -40,6 +40,15 @@ class UpdateLoanApplicationRequest extends FormRequest
             'applied_at'             => 'nullable|date',
             'outstanding_balance'    => 'nullable|numeric|min:0',
 
+            // Nullable here, unlike on create: an edit that touches only the
+            // amount must not have to resend the recommender, and a rule of
+            // 'required' would make every partial update fail.
+            'recommended_by_employee_id' => 'nullable|integer|exists:employees,id',
+            'recommender_name'           => 'nullable|string|max:255',
+            'recommender_employee_code'  => 'nullable|string|max:255',
+            'recommender_nic'            => 'nullable|string|max:255',
+            'recommender_phone'          => 'nullable|string|max:255',
+
             // is_active is deliberately not accepted here: it has its own
             // activate/deactivate/toggle-status endpoints, which refuse to
             // reactivate a cancelled, rejected or closed loan. Allowing it

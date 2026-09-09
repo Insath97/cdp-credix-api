@@ -53,7 +53,14 @@ class EmployeeController extends Controller implements HasMiddleware
             }
 
             $employees = $query->orderBy('full_name', 'asc')
-                ->get(['id', 'full_name', 'employee_code', 'branch_id', 'department_id', 'designation_id']);
+                ->get([
+                    'id', 'full_name', 'employee_code', 'id_number',
+                    'phone', 'phone_primary',
+                    'branch_id', 'department_id', 'designation_id',
+                ])
+                ->each(function (Employee $employee) {
+                    $employee->phone = $employee->phone ?: $employee->phone_primary;
+                });
 
             return response()->json([
                 'status' => 'success',

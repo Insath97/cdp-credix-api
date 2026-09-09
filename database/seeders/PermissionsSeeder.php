@@ -289,6 +289,10 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Setting Index', 'group_name' => 'System Settings Permissions'],
             ['name' => 'Setting Update', 'group_name' => 'System Settings Permissions'],
 
+            /* Credit Score Management */
+            ['name' => 'Credit Score Index', 'group_name' => 'Credit Score Management Permissions'],
+            ['name' => 'Credit Score Recompute', 'group_name' => 'Credit Score Management Permissions'],
+
             /* Admin Dashboard Management */
             ['name' => 'Admin Dashboard Index', 'group_name' => 'Admin Dashboard Management Permissions'],
 

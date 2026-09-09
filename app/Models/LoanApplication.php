@@ -44,6 +44,15 @@ class LoanApplication extends Model
         'approved_at',
         'disbursed_at',
         'outstanding_balance',
+        // Written only by LoanApplicationWorkflowService on the first approval.
+        'approval_reference_no',
+        // The recommending employee: the link, plus a snapshot of what they
+        // asserted on the day. See the create migration for why both.
+        'recommended_by_employee_id',
+        'recommender_name',
+        'recommender_employee_code',
+        'recommender_nic',
+        'recommender_phone',
         'is_active',
         'status',
         'assigned_reviewer_id',
@@ -81,6 +90,7 @@ class LoanApplication extends Model
         'is_active'            => 'boolean',
         'status'                => LoanApplicationStatus::class,
         'assigned_reviewer_id'  => 'integer',
+        'recommended_by_employee_id' => 'integer',
     ];
 
     /**
@@ -373,6 +383,20 @@ class LoanApplication extends Model
     public function assignedReviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_reviewer_id');
+    }
+
+    /**
+     * The CDP employee who recommended this customer.
+     *
+     * Null both for a loan taken before recommenders were recorded and for one
+     * whose recommender has since been deleted -- the snapshot columns
+     * (recommender_name and friends) are the record that survives either, so
+     * read those for display and use this relation to walk back to the
+     * employee's current file.
+     */
+    public function recommendedByEmployee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'recommended_by_employee_id');
     }
 
     /**

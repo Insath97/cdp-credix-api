@@ -73,6 +73,15 @@ class CreateCustomerRequest extends FormRequest
         'business_phone'=>'nullable|string|max:20',
         'business_email'=>'nullable|string|max:255',
         'branch_id'=>'required|exists:branches,id',
+
+        // The CDP employee who introduced this customer. The link is optional
+        // so a recommender who is not on the employee register yet can still be
+        // recorded; what the business needs on the file is the four details.
+        'recommended_by_employee_id' => 'nullable|integer|exists:employees,id',
+        'recommender_name'           => 'nullable|string|max:255',
+        'recommender_employee_code'  => 'nullable|string|max:255',
+        'recommender_nic'            => 'nullable|string|max:255',
+        'recommender_phone'          => 'nullable|string|max:255',
         'is_active'=>'boolean',
 
         // Bank Details Validation

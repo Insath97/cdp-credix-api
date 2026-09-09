@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Models\LoanInstallment;
 use App\Models\LoanApplication;
 use App\Models\Customer;
+use App\Services\CreditScoreService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanInstallmentRequest;
 use App\Http\Requests\UpdateLoanInstallmentRequest;
@@ -18,6 +20,11 @@ use Illuminate\Routing\Controllers\Middleware;
 class LoanInstallmentController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
+
+    public function __construct(
+        protected CreditScoreService $creditScoreService,
+    ) {
+    }
 
     public static function middleware(): array
     {
@@ -248,6 +255,27 @@ class LoanInstallmentController extends Controller implements HasMiddleware
                     }
                 }
             });
+
+            // A manual edit here is one of the few ways an installment's
+            // scoring inputs change outside the payment path: waiving it takes
+            // the month out of the score entirely, and editing status or
+            // paid_at rewrites the on-time verdict. Post-commit and never
+            // fatal, same contract as the payment path.
+            $installment->loadMissing('loanApplication');
+
+            if ($installment->loanApplication) {
+                try {
+                    $this->creditScoreService->recomputeForLoan(
+                        $installment->loanApplication,
+                        $installment->loanApplication->isGroupLoan() ? $installment->customer_id : null
+                    );
+                } catch (\Throwable $th) {
+                    Log::warning('Credit score recompute failed after installment edit', [
+                        'loan_installment_id' => $installment->id,
+                        'error'               => $th->getMessage(),
+                    ]);
+                }
+            }
 
             $this->logActivity('UPDATE', 'LoanInstallment', "Updated loan installment ID: {$installment->id}", $data);
 

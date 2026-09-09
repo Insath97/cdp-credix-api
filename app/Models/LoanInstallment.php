@@ -47,7 +47,13 @@ class LoanInstallment extends Model
         'customer_id'          => 'integer',
         'loan_revision_id'    => 'integer',
         'installment_no'      => 'integer',
-        'due_date'             => 'date',
+        // Y-m-d rather than the default ISO datetime: a plain 'date' cast
+        // serialises 2026-07-21 as "2026-07-20T18:30:00Z" (midnight
+        // Asia/Colombo in UTC), and every consumer in the frontend renders a
+        // date by taking its first 10 characters -- so every due date in the
+        // product was showing the day before the money is actually owed.
+        // Harmless for the consumers that parse it with new Date() instead.
+        'due_date'             => 'date:Y-m-d',
         'amount_due'           => 'decimal:2',
         'amount_paid'          => 'decimal:2',
         'penalty_amount'       => 'decimal:2',

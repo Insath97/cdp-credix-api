@@ -44,6 +44,7 @@ use App\Http\Controllers\V1\RecoveryAgentController;
 use App\Http\Controllers\V1\ExternalRecoveryAgentController;
 use App\Http\Controllers\V1\NotificationController;
 use App\Http\Controllers\V1\PasswordChangeController;
+use App\Http\Controllers\V1\CreditScoreController;
 use App\Http\Controllers\V1\SettingController;
 use App\Http\Controllers\V1\AdminDashboardController;
 use App\Http\Controllers\V1\ReportController;
@@ -313,6 +314,13 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
     // Notifications (read-only audit log)
     Route::apiResource('notifications', NotificationController::class)->only(['index', 'show']);
+
+    // Credit Scores (repayment history; read-only plus an on-demand refresh)
+    Route::prefix('credit-scores')->group(function () {
+        Route::post('{customerId}/recompute', [CreditScoreController::class, 'recompute']);
+    });
+    Route::get('credit-scores', [CreditScoreController::class, 'index']);
+    Route::get('credit-scores/{customerId}', [CreditScoreController::class, 'show']);
 
     // System Settings
     Route::prefix('settings')->group(function () {

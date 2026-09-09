@@ -56,6 +56,11 @@ class CreateGroupLoanRequest extends FormRequest
                 }
             }],
             'term_months' => 'required|integer|min:1',
+            'recommended_by_employee_id' => 'nullable|integer|exists:employees,id',
+            'recommender_name'           => 'nullable|string|max:255',
+            'recommender_employee_code'  => 'nullable|string|max:255',
+            'recommender_nic'            => 'nullable|string|max:255',
+            'recommender_phone'          => 'nullable|string|max:255',
 
             // No service_charge_percentage input: a Group Loan's charge always
             // comes from the `group_loan_service_charge_percentage` System
