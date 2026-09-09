@@ -30,8 +30,25 @@ class CreateLoanRevisionRequest extends FormRequest
             'loan_application_id' => 'required|integer|exists:loan_applications,id',
             'revision_type'       => ['required', Rule::enum(LoanRevisionType::class)],
             'reason'              => 'required|string|max:2000',
-            'revised_term'        => 'required_unless:revision_type,principal_only|nullable|integer|min:1',
-            'document'            => 'nullable|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
+
+            // Each revision type is driven by a different input, which is what
+            // actually distinguishes them:
+            //
+            //   reduce_installment -- the officer states the new monthly amount
+            //                         the borrower can manage; the term follows.
+            //   extend_term        -- the officer states the new term; the
+            //                         monthly amount follows.
+            //   principal_only     -- the profit is written off and the
+            //                         remaining principal is spread over the
+            //                         months still left to run, so there is
+            //                         nothing for the officer to state. A term
+            //                         is still honoured if one is sent.
+            'revised_installment_amount' => 'required_if:revision_type,reduce_installment|nullable|numeric|min:0.01',
+            'revised_term'               => 'required_if:revision_type,extend_term|nullable|integer|min:1',
+
+            // Proof of the hardship being claimed is what the approver signs
+            // off against, so a revision cannot be raised without it.
+            'document'            => 'required|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
         ];
     }
 

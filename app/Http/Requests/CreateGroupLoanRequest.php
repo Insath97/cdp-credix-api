@@ -37,9 +37,17 @@ class CreateGroupLoanRequest extends FormRequest
             ],
             'branch_id'         => 'nullable|integer|exists:branches,id',
             'group_name'        => 'required|string|max:255',
-            // Matches GroupLoanWorkflowService::MIN_MEMBERS, which member
-            // removal already enforces from the other direction.
-            'number_of_members' => 'required|integer|min:2',
+            // One, because a Development Fund loan is submitted through this
+            // endpoint for a single borrower as well as for a group -- the
+            // scheme is item-based either way, and the wizard sends one member
+            // for the individual tier. A floor of two here rejected every
+            // individual Development Fund loan outright.
+            //
+            // The group rule is not weakened by this: member removal refuses to
+            // take a loan below GroupLoanWorkflowService::MIN_MEMBERS, so a
+            // group that starts with two or more still cannot drop to one, and
+            // a single-borrower loan cannot lose its only member either.
+            'number_of_members' => 'required|integer|min:1',
             'competency'        => ['required', 'string', function ($attribute, $value, $fail) {
                 $allowed = Setting::get('group_loan_competency', []);
                 $normalized = array_map(fn ($c) => trim(mb_strtolower($c)), $allowed);

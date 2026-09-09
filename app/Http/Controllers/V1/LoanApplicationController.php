@@ -127,7 +127,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loanApplicationCustomers.customer' => fn ($q) => $q
                     ->select(explode(',', Customer::SUMMARY_COLUMNS))
                     ->with('customerDetail'),
-                'loanProduct',
+                'loanProduct.loanType',
+                'loanProduct.loanTerm',
                 'branch',
                 'appliedByUser:'.User::SUMMARY_COLUMNS,
                 'reviewedByUser:'.User::SUMMARY_COLUMNS,
@@ -283,7 +284,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loanApplicationCustomers.customer.movingAssets',
                 'loanApplicationCustomers.customer.liabilities',
                 'loanApplicationCustomers.customer.documents',
-                'loanProduct',
+                'loanProduct.loanType',
+                'loanProduct.loanTerm',
                 'branch',
                 'appliedByUser:'.User::SUMMARY_COLUMNS,
                 'reviewedByUser:'.User::SUMMARY_COLUMNS,

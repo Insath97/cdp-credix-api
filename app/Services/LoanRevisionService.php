@@ -92,18 +92,75 @@ class LoanRevisionService
 
             $revisionType = $data['revision_type'];
 
-            if ($revisionType === LoanRevisionType::PrincipalOnly->value) {
-                $revisedOutstandingAmount = $previousOutstandingAmount;
-                $revisedTerm = 1;
-                $revisedInstallmentAmount = $revisedOutstandingAmount;
-            } else {
-                $revisedTerm = (int) ($data['revised_term'] ?? 0);
-                if ($revisedTerm <= $previousTerm) {
-                    throw new \InvalidArgumentException('The revised term must be greater than the current remaining term.');
-                }
+            switch ($revisionType) {
+                case LoanRevisionType::PrincipalOnly->value:
+                    // Only the capital is still owed: the profit, and a group
+                    // loan's service charge, are written off. Neither is stored
+                    // per installment -- an installment carries one blended
+                    // amount_due -- so the capital still outstanding is the
+                    // outstanding balance scaled by principal's share of the
+                    // whole schedule.
+                    //
+                    // The processing fee is not part of this: it is withheld
+                    // from the disbursement (net_disbursement_amount) and never
+                    // enters the schedule, so there is nothing left to waive.
+                    $liveTotalPayable = (float) $unpaidLive->sum('amount_due')
+                        + (float) $loanApplication->installments()
+                            ->where('status', 'paid')
+                            ->sum('amount_due');
 
-                $revisedOutstandingAmount = $previousOutstandingAmount;
-                $revisedInstallmentAmount = round($revisedOutstandingAmount / $revisedTerm, 2);
+                    if ($liveTotalPayable <= 0) {
+                        throw new \InvalidArgumentException('This loan has no schedule to work out the principal share from.');
+                    }
+
+                    $principalShare = (float) $loanApplication->approved_amount / $liveTotalPayable;
+
+                    // Waiving the profit is not a rescheduling: the borrower
+                    // keeps the months they already have and each one simply
+                    // costs less. So the term defaults to what is still left
+                    // to run, and is only overridden if a caller states one.
+                    $statedTerm = (int) ($data['revised_term'] ?? 0);
+                    $revisedTerm = $statedTerm > 0 ? $statedTerm : $previousTerm;
+
+                    $revisedOutstandingAmount = round($previousOutstandingAmount * $principalShare, 2);
+                    $revisedInstallmentAmount = round($revisedOutstandingAmount / $revisedTerm, 2);
+                    break;
+
+                case LoanRevisionType::ReduceInstallment->value:
+                    // The officer names the monthly figure the borrower can
+                    // manage and the term stretches to cover the same debt.
+                    // Rounded up, so the last month absorbs the remainder
+                    // rather than the borrower owing more than they agreed to
+                    // pay in any single month.
+                    $revisedInstallmentAmount = round((float) ($data['revised_installment_amount'] ?? 0), 2);
+
+                    if ($revisedInstallmentAmount <= 0) {
+                        throw new \InvalidArgumentException('A revised monthly instalment amount is required.');
+                    }
+
+                    if ($revisedInstallmentAmount >= (float) $previousInstallmentAmount) {
+                        throw new \InvalidArgumentException('The revised monthly instalment must be lower than the current one, which is ' . number_format((float) $previousInstallmentAmount, 2) . '.');
+                    }
+
+                    $revisedOutstandingAmount = $previousOutstandingAmount;
+                    $revisedTerm = (int) ceil($revisedOutstandingAmount / $revisedInstallmentAmount);
+                    break;
+
+                case LoanRevisionType::ExtendTerm->value:
+                    // The officer names the new term and the monthly figure
+                    // falls out of it. The debt itself does not change.
+                    $revisedTerm = (int) ($data['revised_term'] ?? 0);
+
+                    if ($revisedTerm <= $previousTerm) {
+                        throw new \InvalidArgumentException('The revised term must be greater than the current remaining term of ' . $previousTerm . ' month(s).');
+                    }
+
+                    $revisedOutstandingAmount = $previousOutstandingAmount;
+                    $revisedInstallmentAmount = round($revisedOutstandingAmount / $revisedTerm, 2);
+                    break;
+
+                default:
+                    throw new \InvalidArgumentException("Unhandled revision type '{$revisionType}'.");
             }
 
             $nextRevisionNo = (int) $loanApplication->revisions()->max('revision_no') + 1;
@@ -185,6 +242,13 @@ class LoanRevisionService
         $loanApplication->update([
             'term_months'         => $revision->revised_term,
             'monthly_installment' => $revision->revised_installment_amount,
+            // The revised schedule is now the whole of the debt, so the
+            // running counter has to follow it. It only mattered once
+            // principal_only started writing off the profit: reduce_installment
+            // and extend_term leave the amount owed alone, so a stale counter
+            // happened to still be right, while a waiver left the loan
+            // reporting more outstanding than its own schedule asks for.
+            'outstanding_balance' => $revision->revised_outstanding_amount,
         ]);
     }
 }
