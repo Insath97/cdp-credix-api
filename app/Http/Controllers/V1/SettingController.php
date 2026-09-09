@@ -5,6 +5,7 @@ namespace App\Http\Controllers\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateSettingRequest;
 use App\Models\Setting;
+use App\Services\CreditScoreService;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -118,6 +119,11 @@ class SettingController extends Controller implements HasMiddleware
             $value = $request->validated()['value'];
             $setting->update(['value' => Setting::serialize($value)]);
             Cache::forget("setting:{$key}");
+
+            // CreditScoreService is a singleton and memoises its settings
+            // snapshot, so anything it scored later in this same request would
+            // otherwise still be using the value that was just replaced.
+            app(CreditScoreService::class)->forgetConfig();
 
             $this->logActivity('UPDATE', 'Setting', "Updated setting: {$key}", [
                 'key'   => $key,

@@ -54,6 +54,29 @@ return new class extends Migration
 
             $table->decimal('outstanding_balance', 15, 2)->nullable();
 
+            // Minted by ReferenceNumberService the first time this application
+            // reaches Approved: CDP-{BRANCH}-{000000001}. Null until then, and
+            // never regenerated -- a reference a customer has been given must
+            // survive the loan being reverted and re-approved.
+            $table->string('approval_reference_no')->nullable()->unique();
+
+            // The CDP employee who recommends this customer. Every loan is
+            // introduced by someone, and when one goes bad the business needs
+            // to know who put it forward.
+            //
+            // The link and the four details are both stored on purpose. The
+            // link is what lets you list every loan an employee introduced;
+            // the snapshot is what the employee actually asserted on the day,
+            // and it has to survive them changing their phone number, being
+            // renamed, or leaving (the FK nulls out, the record does not).
+            // It also lets a recommender who is not yet on the payroll system
+            // be recorded at all.
+            $table->foreignId('recommended_by_employee_id')->nullable()->constrained('employees')->nullOnDelete();
+            $table->string('recommender_name')->nullable();
+            $table->string('recommender_employee_code')->nullable();
+            $table->string('recommender_nic')->nullable();
+            $table->string('recommender_phone')->nullable();
+
             $table->string('status', 30)->default('pending')->index();
             $table->foreignId('assigned_reviewer_id')->nullable()->constrained('users')->nullOnDelete();
 

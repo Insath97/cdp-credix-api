@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\Customer;
 use App\Enums\LoanApplicationStatus;
 use App\Enums\LoanRevisionStatus;
+use App\Services\CreditScoreService;
 use App\Services\GroupLoanWorkflowService;
 use App\Services\LoanApplicationWorkflowService;
 use App\Services\NotificationService;
@@ -36,6 +37,7 @@ class PaymentController extends Controller implements HasMiddleware
         protected GroupLoanWorkflowService $groupLoanWorkflowService,
         protected RecoveryCaseService $recoveryCaseService,
         protected NotificationService $notificationService,
+        protected CreditScoreService $creditScoreService,
     ) {
     }
 
@@ -293,6 +295,30 @@ class PaymentController extends Controller implements HasMiddleware
                 // who is still behind keeps their own case.
                 $paidOn = $payment->paid_at->format('Y-m-d');
 
+                // Rescore the borrower now that this month's paid_at and status
+                // are settled. Post-commit and swallowed on failure by design:
+                // a credit score is a derived, always-rebuildable figure and the
+                // nightly credit-score:recompute picks up anything missed, so it
+                // must never be the reason a cashier's receipt fails.
+                //
+                // The member filter only applies to a group loan. On an
+                // individual or joint loan the score owner is the loan's own
+                // customer, which is not necessarily who the receipt was
+                // attributed to -- passing the payment's customer_id there would
+                // match nobody and silently score nothing.
+                try {
+                    $this->creditScoreService->recomputeForLoan(
+                        $loanApplication,
+                        $loanApplication->isGroupLoan() ? $payment->customer_id : null
+                    );
+                } catch (\Throwable $th) {
+                    Log::warning('Credit score recompute failed after payment', [
+                        'payment_id'          => $payment->id,
+                        'loan_application_id' => $loanApplication->id,
+                        'error'               => $th->getMessage(),
+                    ]);
+                }
+
                 // Messages quote the application_no, which lives on the parent
                 // Application row; the locked loan was fetched bare.
                 $loanApplication->loadMissing(['application', 'customer']);
@@ -513,6 +539,12 @@ class PaymentController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            // Captured before the row is deleted: the reversal below rewinds
+            // the installments' status and paid_at, so the borrower's score has
+            // to be rebuilt from what the schedule says afterwards.
+            $scoredLoan = $payment->loanApplication;
+            $scoredCustomerId = $payment->customer_id;
+
             DB::transaction(function () use ($payment) {
                 $carriedForward = collect($payment->carry_forward_breakdown ?? [])->sum('amount');
 
@@ -558,6 +590,24 @@ class PaymentController extends Controller implements HasMiddleware
 
                 $payment->delete();
             });
+
+            if ($scoredLoan) {
+                // Same post-commit, never-fatal contract as store(): a reversal
+                // that succeeded must not report failure because a derived
+                // figure could not be refreshed.
+                try {
+                    $this->creditScoreService->recomputeForLoan(
+                        $scoredLoan->fresh(),
+                        $scoredLoan->isGroupLoan() ? $scoredCustomerId : null
+                    );
+                } catch (\Throwable $th) {
+                    Log::warning('Credit score recompute failed after payment reversal', [
+                        'payment_id'          => $id,
+                        'loan_application_id' => $scoredLoan->id,
+                        'error'               => $th->getMessage(),
+                    ]);
+                }
+            }
 
             $this->logActivity('DELETE', 'Payment', "Deleted payment ID: {$id}", [
                 'record_id'  => $id,

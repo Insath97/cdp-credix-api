@@ -11,8 +11,10 @@ use Illuminate\Support\Facades\DB;
 
 class LoanApplicationWorkflowService
 {
-    public function __construct(protected InstallmentScheduleService $installmentScheduleService)
-    {
+    public function __construct(
+        protected InstallmentScheduleService $installmentScheduleService,
+        protected ReferenceNumberService $referenceNumberService,
+    ) {
     }
 
     /**
@@ -50,6 +52,16 @@ class LoanApplicationWorkflowService
         }
 
         return DB::transaction(function () use ($loanApplication, $from, $to, $actorId, $remarks, $extra) {
+            // The approval reference, minted the first time this application is
+            // approved. Guarded on being null rather than on the transition
+            // alone: a loan that is reverted and approved again keeps the
+            // reference the customer was already given. Done inside this
+            // transaction so its counter lookup is covered by the same lock
+            // that ReferenceNumberService takes.
+            if ($to === LoanApplicationStatus::Approved && empty($loanApplication->approval_reference_no)) {
+                $extra['approval_reference_no'] = $this->referenceNumberService->forApproval($loanApplication);
+            }
+
             $loanApplication->update(array_merge($extra, [
                 'status' => $to,
                 // A finished loan application must never stay flagged active:

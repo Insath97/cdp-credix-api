@@ -281,6 +281,11 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'applied_by'       => Auth::id(),
                     'applied_at'       => now(),
                     'status'           => LoanApplicationStatus::Submitted,
+                    'recommended_by_employee_id' => $data['recommended_by_employee_id'] ?? null,
+                    'recommender_name'           => $data['recommender_name'] ?? null,
+                    'recommender_employee_code'  => $data['recommender_employee_code'] ?? null,
+                    'recommender_nic'            => $data['recommender_nic'] ?? null,
+                    'recommender_phone'          => $data['recommender_phone'] ?? null,
                 ]);
 
                 foreach ($memberCustomerIds as $customerId) {

@@ -278,6 +278,204 @@ whole day-7/14/21 window.
 
 ---
 
+## 6b. Repayment credit score
+
+A borrower earns points for every installment settled on time and loses points for every
+one settled late or left unpaid past its grace period. The loan's score is the total
+divided by the number of installments **judged**, so a 6-month loan and a 36-month loan are
+directly comparable. Every number in that sentence is a System Setting (§9), not a constant.
+
+**Everything is derived, and is recomputed rather than incremented.** `credit_score_events`,
+`customer_credit_scores` and `customers.credit_score` are all rebuilt from
+`loan_installments` on each run — `CreditScoreService::recomputePair()` deletes a
+`(loan, customer)` pair's events and reinserts them. That is what makes a reversed payment,
+a waived penalty and a loan revision self-correct; an incremental +10/-10 ledger would drift
+out of step with all three and there would be no way to tell that it had. **Nothing outside
+`CreditScoreService` may write to those three places.**
+
+| table | grain | holds |
+|---|---|---|
+| `credit_score_events` | one row per judged installment (unique on `loan_installment_id`) | `event_type` (`on_time` / `late_paid` / `late_unpaid`), signed `points`, `days_late`, `occurred_on` |
+| `customer_credit_scores` | one row per `(loan, customer)` | `total_points`, `installments_counted`, `on_time_count`, `late_count`, `average_points`, `final_score`, `finalized_at` |
+| `customers.credit_score` | one row per customer | the weighted roll-up an officer reads at application time |
+
+**Per party, like recovery (§6).** A Group Loan scores each member separately off their own
+installment rows — one member paying late never marks the other four. Individual and Joint
+loans score the loan's own `customer_id`, matching `InstallmentScheduleService::scheduleOwnersFor()`.
+
+**What is not judged.** `revised` rows (superseded by a restructure — the replacement rows
+carry the real schedule) and `waived` rows (a decision about the debt, not evidence about
+the borrower) are skipped, as is any unpaid installment still inside its window. Skipped
+rows are excluded from the divisor too, so a month that is not yet late cannot drag the
+average down.
+
+**Null is not zero.** A customer with no judged installment has `credit_score = null` and
+`Customer::hasCreditHistory() === false`. A first-time borrower and a serial defaulter must
+never render alike; `CreditScoreService::band()` returns null rather than `'poor'` for them,
+and `GET /credit-scores` hides them unless `?include_unscored=1`.
+
+**Scale.** `average_points` runs from `-credit_score_late_penalty_points` to
+`+credit_score_on_time_points`. `normalize()` maps that linearly onto
+`0..credit_score_normalize_max` for display, so punctual-every-month is the maximum and
+late-every-month is 0. Set `credit_score_normalize_max` to 0 to store the raw average
+instead. `final_score` is provisional while the loan repays and is stamped `finalized_at`
+once it reaches `Closed`.
+
+**Two grace periods, do not confuse them.** `credit_score_grace_days` decides when a payment
+stops counting as punctual. The recovery grace period (§6) decides when a loan turns overdue
+and is charged a penalty. They are independent, and a lender may well want scoring to be the
+stricter of the two.
+
+**Where it recomputes:**
+
+| trigger | file |
+|---|---|
+| payment recorded | `PaymentController::store()`, post-commit |
+| payment reversed | `PaymentController::destroy()`, post-commit |
+| installment edited or penalty waived | `LoanInstallmentController::update()`, post-commit |
+| nightly, 02:30 | `credit-score:recompute` (live loans only — last in the chain, so `loans:mark-overdue` has already stamped today's rows) |
+| backfill / one-off | `credit-score:recompute --all` (also `--customer=` / `--loan=`) |
+
+Every inline hook is **post-commit and never fatal** — it is wrapped in `try/catch` and only
+logs a warning. A credit score is always rebuildable and the nightly job picks up anything
+missed, so it must never be the reason a cashier's receipt fails.
+
+A loan with **no schedule** (never disbursed) gets no score row at all — `recomputePair()`
+deletes one if it finds one, and `--all` additionally prunes rows whose loan has lost its
+schedule. Without that guard every merely-submitted application padded the borrower's
+history with a "no history" loan that said nothing about how they repay.
+
+**`credit_score_band` is appended by the `Customer` model**, so the loan application review,
+the customer profile and the customer list all render the band without a second request and
+without reimplementing the thresholds. That accessor calls `CreditScoreService::band()` once
+per serialised customer, which is why the service is **bound as a singleton** and memoises
+its settings snapshot (`config()` / `forgetConfig()`) — `CACHE_STORE` is `database` here, and
+a fresh instance per call turned a 15-row customer list into 75 cache queries.
+`SettingController::update()` calls `forgetConfig()` so a save cannot leave the snapshot stale.
+
+**A settings change is not retroactive.** Stored scores were produced under the rules in
+force at their last recompute. After changing any `credit_score_*` setting, run
+`credit-score:recompute --all`, or the nightly job will only catch up the live loans.
+
+**API.** `GET /credit-scores` (ranked list, weakest first by default) ·
+`GET /credit-scores/{customerId}` (score, band, per-loan breakdown, ledger, and the rules the
+score was produced under) · `POST /credit-scores/{customerId}/recompute`. Permissions
+`Credit Score Index` / `Credit Score Recompute`.
+
+---
+
+## 6c. The two loan application references
+
+A loan application carries **two** human-readable numbers, both minted by
+`CreditScoreService`'s neighbour `app/Services/ReferenceNumberService.php`:
+
+| | column | format | example | minted |
+|---|---|---|---|---|
+| Application reference | `applications.application_no` | `APP-{BRANCH}-{yyyymmdd}{00000001}` | `APP-COL-2026090900000001` | `Application::boot()` on create |
+| Approval reference | `loan_applications.approval_reference_no` | `CDP-{BRANCH}-{000000001}` | `CDP-COL-000000001` | `LoanApplicationWorkflowService::transition()` on the first `Approved` |
+
+Before approval the application reference **is** the loan's reference —
+`LoanApplication::reference()` returns `application_no`, and that is what every
+SMS quotes. The approval reference is null until approval and is **never
+reissued**: the mint is guarded on the column being null, not on the transition,
+so a loan reverted and approved again keeps the number the customer was given.
+
+The two shapes are deliberately different. The application reference carries the
+day it was taken and restarts its counter daily per branch; the approval
+reference is one unbroken series per branch. Different prefixes *and* the date
+mean the two can never collide, which matters because both appear side by side
+on the review screen.
+
+**Branch code** comes from `branches.code`, uppercased with every
+non-alphanumeric character removed, so `BR-COL` reads `BRCOL`. The separators
+have to go: a reference is split on its hyphens to be read, and a branch code
+carrying one of its own turns a three-part number into a four-part one. Digits
+survive (`NG2` stays `NG2`) — only punctuation and spaces are dropped.
+
+**Legacy numbers are left alone.** Applications created before this format read
+`APP-{BRANCH}-{yymm}{0001}`. They are quoted in SMS already sent and referenced
+from payments, so they are not rewritten, and no prefix the new generator builds
+can match them — the new counter starts clean. `loans:backfill-approval-references`
+(`--dry-run` writes and rolls back, so its preview is truthful) issued approval
+references to loans approved before the column existed, in approval order.
+
+`nextSequence()` takes `lockForUpdate` and orders by `LENGTH(col) DESC` first.
+Every *other* generator in this codebase (§11) does neither: they read the max
+with no lock, and sort strings, so they mint duplicates under concurrency and
+stop advancing once the counter gains a digit.
+
+---
+
+## 6d. The recommending employee
+
+A CDP employee recommends the borrower, and this is recorded at **two
+independent levels**:
+
+| level | table | meaning | required? |
+|---|---|---|---|
+| **Customer-wise** | `customers` | the standing introducer on the customer's file, captured at registration | optional |
+| **Loan-wise** | `loan_applications` | who put *this particular loan* forward | **required** on create |
+
+Both are kept because they diverge: a customer introduced by one officer can
+have a later loan recommended by another, and when a loan goes bad it is the
+loan-level answer the business needs. Neither is derived from the other — the
+frontend may prefill the loan's recommender from the customer's, but the two
+rows are stored and edited separately.
+
+The same five columns on each table: `recommended_by_employee_id` (FK →
+`employees`, nullOnDelete) plus a **snapshot** — `recommender_name`,
+`recommender_employee_code`, `recommender_nic`, `recommender_phone`.
+
+**Both, on purpose.** The link is what lets you list every loan an employee
+introduced. The snapshot is what they asserted on the day, and it has to survive
+them changing their phone number, being renamed, or leaving (the FK nulls out,
+the record does not). It is also what lets a recommender who is not yet in the
+employee register be recorded at all. **Read the snapshot for display**; use the
+relation only to walk back to the employee's current file.
+
+**Validation.** The four details are `required` on
+`CreateLoanApplicationRequest` and `nullable` on
+`Create`/`UpdateCustomerRequest` — an existing customer may have walked in with
+no introducer, but no loan goes out unattributed. `recommended_by_employee_id`
+is nullable everywhere: refusing a loan because the recommender has not been
+entered into the employee register yet would put a data-entry gap ahead of the
+business. On `UpdateLoanApplicationRequest` all five are nullable too — a
+partial edit must not have to resend them.
+
+**Two of the three write paths carry it.** `LoanApplicationController::store()`
+(mass-assigned, so `$fillable` + the rule is enough) and
+`GroupLoanController::store()` (explicit array, nullable there — the group form
+is its own flow). `CustomerController::store()` deliberately does **not**:
+its loan branch fires only when the payload carries `loan_product_id`, and the
+customer registration form has no loan fields at all (`TAB_LIST` in
+`CustomerForm.tsx` ends at "User Account"; the `tab: 10, 'Loan Application'`
+entries in its `FIELD_TAB_MAP` are only a fallback bucket for routing server
+validation errors, not a rendered tab). That branch is unreachable from the UI,
+so wiring a recommender into it would have been code no one could run.
+
+`GET /employees/list` returns `id_number` and `phone` for the picker, with
+`phone` falling back to `phone_primary` (most rows carry only the latter).
+`Employee::scopeSearch()` matches NIC and phone as well as name/code/email — an
+officer usually has the recommender's card or number, not the exact spelling of
+their name.
+
+**There is no frontend for either level yet** — the columns, validation and
+persistence exist and are covered by tests, but nothing in the UI sends them.
+That is why the loan-level fields are `nullable` rather than `required`: making
+them required today would 422 every submission from `LoanApplicationForm` and
+`LoanWizard`. The intent is that no loan goes out unattributed, so **tighten the
+four loan-level rules to `required` as soon as the UI captures them** — the
+comment in `CreateLoanApplicationRequest` says the same. Nullable is not
+unchecked: a supplied `recommended_by_employee_id` must still exist, and the
+`max:255` limits still apply.
+
+`Customer::create()`/`update()` and `LoanApplicationController::store()` are all
+mass-assignment, so `$fillable` plus the request rule is enough on those paths;
+`GroupLoanController::store()` builds its array explicitly and passes the five
+keys through by hand.
+
+---
+
 ## 7. Notifications
 
 `NotificationService` writes a `notifications` row **before** dispatching, then sends SMS
@@ -321,6 +519,7 @@ busts on `set()`. Types: `integer|boolean|json|string`.
 | `group_loan` | `group_loan_service_charge_percentage` 10 · `group_loan_competency` (json list) |
 | `loan_revision` | `loan_revision_enabled` · `loan_revision_allowed_types` |
 | `customer` | `customer_bank_list` (json) |
+| `credit_score` | `credit_score_enabled` · `credit_score_on_time_points` 10 · `credit_score_late_penalty_points` 10 · `credit_score_grace_days` 0 · `credit_score_count_unpaid_overdue` · `credit_score_normalize_max` 100 (see §6b) |
 
 Settings are deliberately minimal — fixed business rules (the 2-member floor, rounding
 convention, cascade behaviour) are hardcoded, not exposed.
@@ -352,6 +551,14 @@ assuming the code is wrong.
 
 **Index swaps.** MySQL uses the leftmost-column index to satisfy a foreign key and refuses
 to drop it. Create the replacement under a new name **first**, then drop the old one.
+
+**Date-only columns need `date:Y-m-d`, not `date`.** `APP_TIMEZONE` is `Asia/Colombo`, so a
+plain `'date'` cast serialises `2026-07-21` as `"2026-07-20T18:30:00Z"` — midnight Colombo
+expressed in UTC. Every date in the frontend is rendered by taking the first 10 characters,
+so a plain cast displays **the day before**. `loan_installments.due_date` and
+`credit_score_events.occurred_on` are cast `date:Y-m-d` for exactly this reason; the PHP-side
+Carbon behaviour is unaffected. **Other date columns in this schema have not been audited for
+it** — check before trusting a date on screen.
 
 **Enum cast changes.** When a `$casts` enum class changes, grep every `!== SomeEnum::`
 comparison on that attribute — a mismatched enum comparison is not a type error in PHP, it

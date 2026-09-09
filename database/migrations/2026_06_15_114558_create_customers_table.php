@@ -70,6 +70,32 @@ return new class extends Migration
             $table->decimal('total_monthly_income', 15, 2)->nullable();
             $table->decimal('other_expenses', 15, 2)->nullable();
             $table->decimal('total_monthly_expenses', 15, 2)->nullable();
+
+            // The CDP employee who introduced this customer. Mirrors the
+            // per-loan recommender on loan_applications: this one is the
+            // standing introducer on the customer's file, that one is who put
+            // a particular loan forward. Both are kept because they diverge --
+            // a customer introduced by one officer can have a later loan
+            // recommended by another.
+            //
+            // Link plus snapshot, for the same reason as the loan-level copy:
+            // the snapshot survives the employee being renamed or leaving.
+            $table->foreignId('recommended_by_employee_id')->nullable()->constrained('employees')->nullOnDelete();
+            $table->string('recommender_name')->nullable();
+            $table->string('recommender_employee_code')->nullable();
+            $table->string('recommender_nic')->nullable();
+            $table->string('recommender_phone')->nullable();
+
+            // Repayment credit score: the weighted average of every
+            // customer_credit_scores row this customer has, denormalised here
+            // so a loan application screen can show it without a join and so
+            // customers can be listed and sorted by it.
+            //
+            // Null, never 0, for a customer with no judged installment yet --
+            // "no history" and "always paid late" must not look alike.
+            $table->decimal('credit_score', 8, 2)->nullable()->index();
+            $table->timestamp('credit_score_updated_at')->nullable();
+
             $table->boolean('is_active')->default(true);
             $table->softDeletes();
             $table->timestamps();
