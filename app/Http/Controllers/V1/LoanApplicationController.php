@@ -12,6 +12,7 @@ use App\Models\LoanApplication;
 use App\Models\LoanApplicationCustomer;
 use App\Models\LoanProduct;
 use App\Models\Customer;
+use App\Models\Document;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationRequest;
@@ -542,9 +543,61 @@ class LoanApplicationController extends Controller implements HasMiddleware
     /**
      * Verify a loan application after review and optionally assign a reviewer.
      */
+    /**
+     * Record which of the application's documents an officer ticked off.
+     *
+     * The list replaces whatever was marked before rather than adding to it,
+     * so unticking a document at a second attempt actually clears it. Ids that
+     * do not belong to this application are ignored — the checklist is built
+     * from the application's own documents, so anything else is a stale or
+     * forged id, not a document this officer looked at.
+     *
+     * Marking is deliberately outside the status transition: a failure to
+     * stamp a checklist must not roll back a workflow step that already
+     * happened, so it is logged and swallowed.
+     */
+    private function markCheckedDocuments(LoanApplication $loanApplication, ?array $documentIds, string $byColumn, string $atColumn): void
+    {
+        if ($documentIds === null) {
+            return;
+        }
+
+        try {
+            $ids = array_values(array_unique(array_filter(array_map('intval', $documentIds))));
+
+            $scope = Document::where('loan_application_id', $loanApplication->id);
+
+            (clone $scope)->whereNotIn('id', $ids ?: [0])
+                ->update([$byColumn => null, $atColumn => null]);
+
+            if ($ids) {
+                (clone $scope)->whereIn('id', $ids)
+                    ->update([$byColumn => Auth::id(), $atColumn => now()]);
+            }
+        } catch (\Throwable $th) {
+            Log::warning('Failed to mark checked documents', [
+                'loan_application_id' => $loanApplication->id,
+                'column' => $byColumn,
+                'error' => $th->getMessage(),
+            ]);
+        }
+    }
+
     public function verify(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $loanApplication = LoanApplication::find($id);
 
             if (!$loanApplication) {
@@ -575,6 +628,13 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 Auth::id(),
                 $request->input('remarks'),
                 $extra
+            );
+
+            $this->markCheckedDocuments(
+                $loanApplication,
+                $request->has('verified_document_ids') ? (array) $request->input('verified_document_ids', []) : null,
+                'verified_by',
+                'verified_at'
             );
 
             $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} verified", [
@@ -609,6 +669,18 @@ class LoanApplicationController extends Controller implements HasMiddleware
     public function review(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $loanApplication = LoanApplication::find($id);
 
             if (!$loanApplication) {
@@ -639,6 +711,13 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 Auth::id(),
                 $request->input('remarks'),
                 $extra
+            );
+
+            $this->markCheckedDocuments(
+                $loanApplication,
+                $request->has('reviewed_document_ids') ? (array) $request->input('reviewed_document_ids', []) : null,
+                'reviewed_by',
+                'reviewed_at'
             );
 
             $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} reviewed", [

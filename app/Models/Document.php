@@ -41,6 +41,10 @@ class Document extends Model
         'guarantor_id',
         'uploaded_by',
         'uploaded_at',
+        'reviewed_by',
+        'reviewed_at',
+        'verified_by',
+        'verified_at',
         'status',
         'remarks',
         'is_active',
@@ -59,6 +63,8 @@ class Document extends Model
         'is_mandatory' => 'boolean',
         'is_active' => 'boolean',
         'uploaded_at' => 'datetime',
+        'reviewed_at' => 'datetime',
+        'verified_at' => 'datetime',
     ];
 
     /**
@@ -94,6 +100,18 @@ class Document extends Model
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
+    /** The officer who ticked this document off during review. */
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /** The officer who ticked it off again during verification. */
+    public function verifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
     }
 
     /**

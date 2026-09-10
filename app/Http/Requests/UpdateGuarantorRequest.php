@@ -37,10 +37,18 @@ class UpdateGuarantorRequest extends FormRequest
             'id_image' => 'nullable|string|max:500',
             'date_of_birth' => 'nullable|date',
             'phone_primary' => 'nullable|string|max:20',
-            'occupation' => 'nullable|string|max:255',
-            'employer_name' => 'nullable|string|max:255',
+
+            // Same pairing as on create: an edit must not be able to leave a
+            // guarantor with a status and no evidence behind it.
+            'employment_status' => 'required|string|in:Employed,Self-Employed',
+            'occupation' => 'required_if:employment_status,Employed|nullable|string|max:255',
+            'employer_name' => 'required_if:employment_status,Employed|nullable|string|max:255',
+            'business_name' => 'required_if:employment_status,Self-Employed|nullable|string|max:255',
+            'business_registration_number' => 'required_if:employment_status,Self-Employed|nullable|string|max:255',
+            'business_phone' => 'required_if:employment_status,Self-Employed|nullable|string|max:20',
+
             'date_joined' => 'nullable|date',
-            'salary' => 'nullable|numeric|min:0',
+            'salary' => 'required_if:employment_status,Employed|nullable|numeric|min:0',
             'allowance' => 'nullable|numeric|min:0',
             'other_income' => 'nullable|numeric|min:0',
             'liabilities' => 'nullable|numeric|min:0',
