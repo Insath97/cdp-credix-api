@@ -146,6 +146,15 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 $query->where('interest_type', $request->interest_type);
             }
 
+            // Accepts one status or a comma-separated list. The document upload
+            // screen uses it to offer only applications still at Submitted --
+            // documents are collected before review, and listing a disbursed or
+            // closed loan there only invites uploading against the wrong one.
+            if ($request->filled('status')) {
+                $statuses = array_filter(array_map('trim', explode(',', (string) $request->status)));
+                $query->whereIn('status', $statuses);
+            }
+
             if ($request->has('is_active')) {
                 $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
             }

@@ -194,6 +194,11 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     });
 
     // Documents
+    //
+    // 'documents/applications' is registered BEFORE the apiResource, or
+    // documents/{document} swallows it and Laravel tries to look up a document
+    // with the id "applications".
+    Route::get('documents/applications', [DocumentController::class, 'applications']);
     Route::apiResource('documents', DocumentController::class);
 
     // Loan Terms

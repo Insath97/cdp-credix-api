@@ -7,7 +7,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use App\Models\Customer;
 use App\Models\Document;
+use App\Models\LoanApplication;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use App\Traits\FileUploadTrait;
@@ -37,7 +39,15 @@ class DocumentController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Document::with(['uploader:'.User::SUMMARY_COLUMNS]);
+            $query = Document::with([
+                // The list names whoever the document belongs to. Guarantor
+                // documents carry no customer_id at all, so both relations are
+                // loaded or those rows show a dash forever.
+                'customer:'.Customer::SUMMARY_COLUMNS,
+                'guarantor:id,customer_id,full_name,id_number',
+                'loanApplication.application:id,application_no',
+                'uploader:'.User::SUMMARY_COLUMNS,
+            ]);
 
             if ($request->has('search')) {
                 $query->search($request->search);
@@ -51,6 +61,22 @@ class DocumentController extends Controller implements HasMiddleware
                 $query->where('status', $request->status);
             }
 
+            // The loan application document checklist loads everything already
+            // collected for one application in a single call, then matches it
+            // against its slots. Without these filters it would have to pull
+            // every document in the system and filter client-side.
+            if ($request->filled('loan_application_id')) {
+                $query->where('loan_application_id', $request->loan_application_id);
+            }
+
+            if ($request->filled('customer_id')) {
+                $query->where('customer_id', $request->customer_id);
+            }
+
+            if ($request->filled('guarantor_id')) {
+                $query->where('guarantor_id', $request->guarantor_id);
+            }
+
             if ($request->has('is_active')) {
                 $query->where('is_active', $request->is_active);
             }
@@ -59,7 +85,7 @@ class DocumentController extends Controller implements HasMiddleware
 
             $this->logActivity('Index', 'Document', 'Documents index accessed', [
                 'user_id' => Auth::id(),
-                'filters' => $request->only(['search', 'document_type', 'status', 'is_active']),
+                'filters' => $request->only(['search', 'document_type', 'status', 'is_active', 'loan_application_id', 'customer_id', 'guarantor_id']),
                 'count' => $documents->count()
             ]);
 
@@ -73,6 +99,60 @@ class DocumentController extends Controller implements HasMiddleware
                 'status' => 'error',
                 'message' => 'Failed to retrieve documents',
                 'error' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Loan applications that have documents, one row each, with a count.
+     *
+     * The flat document list stopped being readable once every application
+     * started contributing a dozen slots -- an officer looking for "what did we
+     * collect for APP-BRCOL-26090012" had to scan hundreds of rows. This is the
+     * index they actually want; the documents themselves are one click away,
+     * filtered by loan_application_id.
+     *
+     * Documents uploaded outside an application (the customer registration
+     * form attaches them to the customer only) have no application to group
+     * under, so their count is returned separately in `meta` rather than being
+     * silently dropped -- nothing should become invisible just because the list
+     * changed shape.
+     */
+    public function applications(Request $request)
+    {
+        try {
+            $perPage = $request->get('per_page', 15);
+
+            $query = LoanApplication::query()
+                ->has('documents')
+                ->withCount('documents')
+                ->with([
+                    'application:id,application_no',
+                    'customer:'.Customer::SUMMARY_COLUMNS,
+                    'loanProduct:id,name',
+                ]);
+
+            if ($request->filled('search')) {
+                $query->search($request->search);
+            }
+
+            $applications = $query
+                ->orderByDesc('updated_at')
+                ->paginate($perPage);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan applications with documents retrieved successfully',
+                'data'    => $applications,
+                'meta'    => [
+                    'unlinked_count' => Document::whereNull('loan_application_id')->count(),
+                ],
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to retrieve loan applications with documents',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
     }
@@ -128,7 +208,15 @@ class DocumentController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $document = Document::with(['uploader:'.User::SUMMARY_COLUMNS])->find($id);
+            $document = Document::with([
+                // The list names whoever the document belongs to. Guarantor
+                // documents carry no customer_id at all, so both relations are
+                // loaded or those rows show a dash forever.
+                'customer:'.Customer::SUMMARY_COLUMNS,
+                'guarantor:id,customer_id,full_name,id_number',
+                'loanApplication.application:id,application_no',
+                'uploader:'.User::SUMMARY_COLUMNS,
+            ])->find($id);
 
             if (!$document) {
                 return response()->json([

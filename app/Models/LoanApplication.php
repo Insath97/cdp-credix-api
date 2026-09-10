@@ -386,6 +386,18 @@ class LoanApplication extends Model
     }
 
     /**
+     * The documents collected for this application.
+     *
+     * Only the ones gathered against this application — a customer's own
+     * papers (an NIC copy uploaded at registration) carry no
+     * loan_application_id and belong to the customer's permanent file instead.
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(Document::class);
+    }
+
+    /**
      * The CDP employee who recommended this customer.
      *
      * Null both for a loan taken before recommenders were recorded and for one
