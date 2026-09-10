@@ -10,6 +10,7 @@ use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\Application;
 use App\Models\Customer;
+use App\Models\Document;
 use App\Models\LoanApplication;
 use App\Models\User;
 use App\Enums\LoanApplicationStatus;
@@ -161,8 +162,40 @@ class CustomerController extends Controller implements HasMiddleware
                 ]);
             }
             if (!empty($data['guarantors'])) {
-                foreach ($data['guarantors'] as $guarantor) {
-                    $customer->guarantors()->create($guarantor);
+                foreach ($data['guarantors'] as $guarantorData) {
+                    // Documents ride in on the guarantor payload but belong to
+                    // the documents table, so they are pulled out before the
+                    // guarantor row is written.
+                    $guarantorDocuments = $guarantorData['documents'] ?? [];
+                    unset($guarantorData['documents']);
+
+                    $guarantor = $customer->guarantors()->create($guarantorData);
+
+                    foreach ($guarantorDocuments as $doc) {
+                        if (empty($doc['file']) && empty($doc['file_path'])) {
+                            continue;
+                        }
+
+                        $documentName = $doc['document_name'] ?? ($doc['document_type'] ?? 'Document');
+
+                        Document::create([
+                            'document_name' => $documentName,
+                            'document_type' => $doc['document_type'] ?? null,
+                            'remarks'       => $doc['remarks'] ?? null,
+                            'is_active'     => $doc['is_active'] ?? true,
+                            'uploaded_at'   => now(),
+                            // Both ids: the guarantor owns the document, and
+                            // the customer is how it is reached from the
+                            // customer's file. customer_id alone would make a
+                            // guarantor's papers indistinguishable from the
+                            // borrower's own.
+                            'guarantor_id'  => $guarantor->id,
+                            'customer_id'   => $customer->id,
+                            'file_path'     => !empty($doc['file'])
+                                ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                                : $doc['file_path'],
+                        ]);
+                    }
                 }
             }
 
@@ -386,8 +419,40 @@ class CustomerController extends Controller implements HasMiddleware
             // Guarantors
             $customer->guarantors()->delete();
             if (!empty($data['guarantors'])) {
-                foreach ($data['guarantors'] as $guarantor) {
-                    $customer->guarantors()->create($guarantor);
+                foreach ($data['guarantors'] as $guarantorData) {
+                    // Documents ride in on the guarantor payload but belong to
+                    // the documents table, so they are pulled out before the
+                    // guarantor row is written.
+                    $guarantorDocuments = $guarantorData['documents'] ?? [];
+                    unset($guarantorData['documents']);
+
+                    $guarantor = $customer->guarantors()->create($guarantorData);
+
+                    foreach ($guarantorDocuments as $doc) {
+                        if (empty($doc['file']) && empty($doc['file_path'])) {
+                            continue;
+                        }
+
+                        $documentName = $doc['document_name'] ?? ($doc['document_type'] ?? 'Document');
+
+                        Document::create([
+                            'document_name' => $documentName,
+                            'document_type' => $doc['document_type'] ?? null,
+                            'remarks'       => $doc['remarks'] ?? null,
+                            'is_active'     => $doc['is_active'] ?? true,
+                            'uploaded_at'   => now(),
+                            // Both ids: the guarantor owns the document, and
+                            // the customer is how it is reached from the
+                            // customer's file. customer_id alone would make a
+                            // guarantor's papers indistinguishable from the
+                            // borrower's own.
+                            'guarantor_id'  => $guarantor->id,
+                            'customer_id'   => $customer->id,
+                            'file_path'     => !empty($doc['file'])
+                                ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                                : $doc['file_path'],
+                        ]);
+                    }
                 }
             }
 

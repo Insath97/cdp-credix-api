@@ -143,6 +143,17 @@ class CreateCustomerRequest extends FormRequest
         'guarantors.*.bank_account_no_of_guarantor' => 'nullable|string|max:255',
         'guarantors.*.bank_branch_of_guarantor' => 'nullable|string|max:255',
 
+        // Documents collected for a guarantor. Same shape as the customer's own
+        // documents block below, but they are written with the guarantor_id so
+        // a guarantor's papers stay distinguishable from the borrower's.
+        'guarantors.*.documents' => 'nullable|array',
+        'guarantors.*.documents.*.document_name' => 'nullable|string|max:255',
+        'guarantors.*.documents.*.document_type' => 'nullable|string|max:60',
+        'guarantors.*.documents.*.remarks' => 'nullable|string|max:1000',
+        'guarantors.*.documents.*.is_active' => 'nullable|boolean',
+        'guarantors.*.documents.*.file' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
+        'guarantors.*.documents.*.file_path' => 'nullable|string|max:1000',
+
         // Documents Validation
         'documents' => 'nullable|array',
         'documents.*.document_name' => 'nullable|string|max:255',
