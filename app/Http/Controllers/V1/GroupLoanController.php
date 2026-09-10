@@ -577,6 +577,18 @@ class GroupLoanController extends Controller implements HasMiddleware
     public function verify(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $groupLoan = GroupLoan::find($id);
 
             if (!$groupLoan) {
@@ -631,6 +643,18 @@ class GroupLoanController extends Controller implements HasMiddleware
     public function review(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $groupLoan = GroupLoan::find($id);
 
             if (!$groupLoan) {

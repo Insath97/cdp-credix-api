@@ -43,8 +43,8 @@ class DocumentController extends Controller implements HasMiddleware
                 // The list names whoever the document belongs to. Guarantor
                 // documents carry no customer_id at all, so both relations are
                 // loaded or those rows show a dash forever.
-                'customer:'.Customer::SUMMARY_COLUMNS,
-                'guarantor:id,customer_id,full_name,id_number',
+                'customer:'.Customer::SUMMARY_COLUMNS.',employment_status',
+                'guarantor:id,customer_id,full_name,id_number,employment_status,employer_name',
                 'loanApplication.application:id,application_no',
                 'uploader:'.User::SUMMARY_COLUMNS,
             ]);
@@ -128,7 +128,7 @@ class DocumentController extends Controller implements HasMiddleware
                 ->withCount('documents')
                 ->with([
                     'application:id,application_no',
-                    'customer:'.Customer::SUMMARY_COLUMNS,
+                    'customer:'.Customer::SUMMARY_COLUMNS.',employment_status',
                     'loanProduct:id,name',
                 ]);
 
@@ -212,8 +212,8 @@ class DocumentController extends Controller implements HasMiddleware
                 // The list names whoever the document belongs to. Guarantor
                 // documents carry no customer_id at all, so both relations are
                 // loaded or those rows show a dash forever.
-                'customer:'.Customer::SUMMARY_COLUMNS,
-                'guarantor:id,customer_id,full_name,id_number',
+                'customer:'.Customer::SUMMARY_COLUMNS.',employment_status',
+                'guarantor:id,customer_id,full_name,id_number,employment_status,employer_name',
                 'loanApplication.application:id,application_no',
                 'uploader:'.User::SUMMARY_COLUMNS,
             ])->find($id);

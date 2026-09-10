@@ -41,6 +41,18 @@ return new class extends Migration
             
             $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('uploaded_at')->useCurrent();
+
+            // Who ticked this document off at each workflow gate.
+            //
+            // The reviewer and the verifier each confirm, document by
+            // document, what they actually looked at. Kept per document rather
+            // than as a count on the application: "reviewed 4 of 6" does not
+            // say which two were skipped, and that is the only thing anyone
+            // asks afterwards.
+            $table->foreignId('reviewed_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('reviewed_at')->nullable();
+            $table->foreignId('verified_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('verified_at')->nullable();
             
             $table->enum('status', ['active', 'rejected', 'expired'])->default('active');
             $table->text('remarks')->nullable();
