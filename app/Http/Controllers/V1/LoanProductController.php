@@ -45,7 +45,7 @@ class LoanProductController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = LoanProduct::query();
+            $query = LoanProduct::with(['loanType', 'loanTerm']);
 
             if ($request->has('search')) {
                 $query->search($request->search);
@@ -100,6 +100,7 @@ class LoanProductController extends Controller implements HasMiddleware
             $data['loan_term_id'] = $this->resolveTermForType($data['loan_type_id']);
 
             $loanProduct = LoanProduct::create($data);
+            $loanProduct->load(['loanType', 'loanTerm']);
 
             $this->logActivity('CREATE', 'LoanProduct', "Created loan product: {$loanProduct->name}", $data);
 
@@ -124,7 +125,7 @@ class LoanProductController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $loanProduct = LoanProduct::find($id);
+            $loanProduct = LoanProduct::with(['loanType', 'loanTerm'])->find($id);
 
             if (!$loanProduct) {
                 return response()->json([
@@ -177,7 +178,7 @@ class LoanProductController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Loan product updated successfully',
-                'data'    => $loanProduct->fresh(),
+                'data'    => $loanProduct->fresh(['loanType', 'loanTerm']),
             ], 200);
 
         } catch (\Throwable $th) {
@@ -361,7 +362,8 @@ class LoanProductController extends Controller implements HasMiddleware
     {
         try {
             $loanProducts = LoanProduct::active()
-                ->select('id', 'name', 'code', 'interest_rate', 'interest_type', 'min_amount', 'max_amount')
+                ->with(['loanType', 'loanTerm'])
+                ->select('id', 'name', 'code', 'loan_type_id', 'loan_term_id', 'interest_rate', 'interest_type', 'min_amount', 'max_amount')
                 ->orderBy('name')
                 ->get();
 
