@@ -141,10 +141,16 @@ class UserController extends Controller implements HasMiddleware
 
                 $employee = Employee::create($employeeData);
 
-                // Set staff credentials automatically to id_number
+                // Staff credentials default to the NIC, so a new officer can be
+                // told "log in with your NIC" without anyone inventing one --
+                // but only as a DEFAULT. An explicitly supplied username used
+                // to be overwritten here, so whatever was typed on the form was
+                // silently discarded and the NIC put back in its place.
                 $data['employee_id'] = $employee->id;
-                $data['username'] = $data['id_number'];
-                $data['password'] = Hash::make($data['id_number']);
+                if (!filled($data['username'] ?? null)) {
+                    $data['username'] = $data['id_number'];
+                }
+                $data['password'] = Hash::make(filled($data['password'] ?? null) ? $data['password'] : $data['id_number']);
             } else {
                 // For admin and customer users
                 $data['employee_id'] = null;
@@ -176,7 +182,11 @@ class UserController extends Controller implements HasMiddleware
                         'user_type' => $user->user_type,
                         'email_verified_at' => $user->email_verified_at,
                     ],
-                    'password' => ($user->user_type === 'staff') ? $data['id_number'] : $request->password,
+                    // The plaintext that was actually set: the NIC only when
+                    // no password was supplied, matching the default above.
+                    'password' => ($user->user_type === 'staff' && !filled($request->password))
+                        ? $data['id_number']
+                        : $request->password,
                     'role' => $data['role'] ?? null,
                     'created_by' => $currentUser ? $currentUser->name : 'System',
                     'login_url' => trim(config('app.frontend_url') ?? config('app.url')),
@@ -333,8 +343,12 @@ class UserController extends Controller implements HasMiddleware
                     $data['employee_id'] = $employee->id;
                 }
 
-                // If id_number is updated, sync username
-                if (isset($data['id_number'])) {
+                // Keep the NIC as the login only while nobody has chosen
+                // otherwise. The form posts the whole record, id_number
+                // included, so syncing on its mere presence overwrote every
+                // username edit with the NIC -- the field looked editable and
+                // never changed.
+                if (!filled($data['username'] ?? null) && isset($data['id_number'])) {
                     $data['username'] = $data['id_number'];
                 }
             } else {
