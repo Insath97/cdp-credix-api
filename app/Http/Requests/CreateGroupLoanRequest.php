@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use App\Models\Setting;
@@ -12,8 +11,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class CreateGroupLoanRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -25,6 +22,25 @@ class CreateGroupLoanRequest extends FormRequest
     /**
      * Get the validation rules that apply to the request.
      */
+
+    /**
+     * How many borrowers this submission is for.
+     *
+     * The Development Fund scheme is item-based whether one person takes the
+     * loan or twenty, so both tiers come through this endpoint. The member
+     * count is the only thing that says which tier it is.
+     */
+    private function borrowerCount(): int
+    {
+        $members = $this->input('members');
+
+        if (is_array($members) && $members !== []) {
+            return count($members);
+        }
+
+        return (int) $this->input('number_of_members', 1);
+    }
+
     public function rules(): array
     {
         return [
@@ -32,11 +48,22 @@ class CreateGroupLoanRequest extends FormRequest
                 'required',
                 'integer',
                 Rule::exists('loan_products', 'id')->where(function ($query) {
-                    $query->where('is_group_loan', true)->where('is_active', true);
+                    $query->where('is_active', true);
+
+                    // is_group_loan marks a product as belonging to the GROUP
+                    // tier of the Development Fund scheme. A single-borrower
+                    // Development Fund loan is submitted through this same
+                    // endpoint and takes an ordinary product of that loan
+                    // type, so demanding the flag from it rejected every
+                    // individual submission with "The selected loan product id
+                    // is invalid."
+                    // Exclusive: a group borrower may pick only flagged
+                    // products, a single borrower only unflagged ones.
+                    $query->where('is_group_loan', $this->borrowerCount() > 1);
                 }),
             ],
             'branch_id'         => 'nullable|integer|exists:branches,id',
-            'group_name'        => 'required|string|max:255',
+            'group_name'        => 'nullable|string|max:255',
             // One, because a Development Fund loan is submitted through this
             // endpoint for a single borrower as well as for a group -- the
             // scheme is item-based either way, and the wizard sends one member

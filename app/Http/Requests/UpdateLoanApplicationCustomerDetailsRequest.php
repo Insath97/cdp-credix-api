@@ -3,8 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Models\LoanApplicationCustomer;
-use App\Traits\FriendlyValidationErrors;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Rule;
 
 /**
@@ -21,8 +22,6 @@ use Illuminate\Validation\Rule;
  */
 class UpdateLoanApplicationCustomerDetailsRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     public function authorize(): bool
     {
         return true;
@@ -71,5 +70,25 @@ class UpdateLoanApplicationCustomerDetailsRequest extends FormRequest
     public function attributes(): array
     {
         return ['id_number' => 'NIC/ID number'];
+    }
+
+    protected function failedValidation(Validator $validator)
+    {
+        $errorMessages = $validator->errors();
+        $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
+            return [
+                'field' => $field,
+                'messages' => $messages,
+            ];
+        })->values();
+
+        $message = $fieldErrors->count() > 1
+            ? 'There are multiple validation errors. Please review the form and correct the issues.'
+            : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.';
+
+        throw new HttpResponseException(response()->json([
+            'message' => $message,
+            'errors' => $fieldErrors,
+        ], 422));
     }
 }
