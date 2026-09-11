@@ -4,15 +4,12 @@ namespace App\Http\Requests;
 
 use App\Models\LoanApplication;
 use App\Models\LoanInstallment;
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 class CreatePaymentRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */

@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use App\Models\User;
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
@@ -11,8 +10,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class UpdateUserRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */

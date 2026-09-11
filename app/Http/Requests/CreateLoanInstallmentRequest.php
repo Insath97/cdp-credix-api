@@ -4,7 +4,6 @@ namespace App\Http\Requests;
 
 use App\Enums\LoanApplicationStatus;
 use App\Models\LoanApplication;
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
@@ -12,8 +11,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class CreateLoanInstallmentRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */

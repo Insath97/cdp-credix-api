@@ -2,15 +2,12 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
 class UpdateBranchRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     public function authorize(): bool
     {
         return true;

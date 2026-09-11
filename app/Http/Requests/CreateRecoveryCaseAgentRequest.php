@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use App\Models\RecoveryCase;
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
@@ -12,8 +11,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class CreateRecoveryCaseAgentRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     public function authorize(): bool
     {
         return true;
