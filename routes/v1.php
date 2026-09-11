@@ -26,6 +26,8 @@ use App\Http\Controllers\V1\DocumentController;
 use App\Http\Controllers\V1\LoanTermController;
 use App\Http\Controllers\V1\LoanTypeController;
 use App\Http\Controllers\V1\LoanProductController;
+use App\Http\Controllers\V1\LegalDocumentController;
+use App\Http\Controllers\V1\LegalDocumentTemplateController;
 use App\Http\Controllers\V1\LoanApplicationController;
 use App\Http\Controllers\V1\GroupLoanController;
 use App\Http\Controllers\V1\GroupLoanItemController;
@@ -242,6 +244,28 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });
     Route::apiResource('loan-applications', LoanApplicationController::class);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Legal
+    |--------------------------------------------------------------------------
+    | Templates are the agreements registered per loan product; legal documents
+    | are the ones drawn up from them against a loan application.
+    */
+    Route::prefix('legal-document-templates')->group(function () {
+        Route::get('list', [LegalDocumentTemplateController::class, 'getActiveList']);
+        Route::patch('{id}/toggle-status', [LegalDocumentTemplateController::class, 'toggleStatus']);
+    });
+    Route::apiResource('legal-document-templates', LegalDocumentTemplateController::class);
+
+    Route::prefix('legal-documents')->group(function () {
+        // Registered before the resource routes so "applications" is not
+        // swallowed by the {id} placeholder.
+        Route::get('applications', [LegalDocumentController::class, 'applications']);
+        Route::patch('{id}/record-print', [LegalDocumentController::class, 'recordPrint']);
+        Route::patch('{id}/toggle-status', [LegalDocumentController::class, 'toggleStatus']);
+    });
+    Route::apiResource('legal-documents', LegalDocumentController::class);
 
     // Group Loans
     Route::prefix('group-loans')->group(function () {

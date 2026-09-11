@@ -18,6 +18,14 @@ use Illuminate\Support\Str;
 class AuthController extends Controller
 {
     /**
+     * How long a login OTP stays valid, in seconds.
+     *
+     * The clock starts when the record is written, not when the SMS lands, so
+     * the gateway's own delivery delay is spent out of this window.
+     */
+    public const LOGIN_OTP_TTL_SECONDS = 60;
+
+    /**
      * Admin / Customer Login
      * Customers get an OTP-required response on their first login instead of a JWT.
      */
@@ -112,12 +120,14 @@ class AuthController extends Controller
                     'user_id' => $user->id,
                     'reference' => $reference,
                     'otp' => $otp,
-                    'expires_at' => now()->addMinutes(30),
+                    'expires_at' => now()->addSeconds(self::LOGIN_OTP_TTL_SECONDS),
                     'status' => 'approved',
                     'ip_address' => $request->ip(),
                 ]);
 
-                $message = config('app.name') . ": Your OTP for login is {$otp}. Valid for 30 minutes.";
+                // The SMS quotes the same constant, so the text can never
+                // promise a window the record does not honour.
+                $message = config('app.name') . ": Your OTP for login is {$otp}. Valid for " . self::LOGIN_OTP_TTL_SECONDS . " seconds.";
 
                 // Never log the OTP or the destination number: the log would be a
                 // standing credential for any account that requests a login code.
