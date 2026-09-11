@@ -187,6 +187,17 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Approve', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Reject', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Offer Response', 'group_name' => 'Loan Application Management Permissions'],
+            /* Legal Management */
+            ['name' => 'Legal Template Index', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Template Create', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Template Update', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Template Delete', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Template Toggle Status', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Index', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Create', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Update', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Delete', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Toggle Status', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Loan Application Disburse', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Cancel', 'group_name' => 'Loan Application Management Permissions'],
 

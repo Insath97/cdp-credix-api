@@ -422,6 +422,12 @@ class LoanApplication extends Model
      * papers (an NIC copy uploaded at registration) carry no
      * loan_application_id and belong to the customer's permanent file instead.
      */
+    /** The legal agreements drawn up against this application. */
+    public function legalDocuments(): HasMany
+    {
+        return $this->hasMany(LegalDocument::class);
+    }
+
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
