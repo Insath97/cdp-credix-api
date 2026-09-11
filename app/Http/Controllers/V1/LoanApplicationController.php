@@ -48,6 +48,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
             new Middleware('permission:Loan Application Verify', only: ['verify']),
             new Middleware('permission:Loan Application Approve', only: ['approve']),
             new Middleware('permission:Loan Application Reject', only: ['reject']),
+            new Middleware('permission:Loan Application Offer Response', only: ['holdOffer', 'acceptOffer', 'declineOffer']),
             new Middleware('permission:Loan Application Disburse', only: ['disburse']),
             new Middleware('permission:Loan Application Cancel', only: ['cancel']),
         ];
@@ -946,6 +947,130 @@ class LoanApplicationController extends Controller implements HasMiddleware
     /**
      * Disburse an approved loan application.
      */
+    /**
+     * Record the borrower's answer to an approved offer.
+     *
+     * Approving 400,000 against a request for 500,000 is an offer, not a
+     * conclusion. Until the borrower answers, the file waits: On Hold while
+     * they think, Accepted when they agree -- and only then may it be
+     * disbursed -- or Declined, which carries the reason and takes the
+     * application straight on to Cancelled.
+     *
+     * One method behind three routes because the three differ only in the
+     * status they land on and whether a reason is required; splitting them
+     * would have meant three copies of the same guards.
+     */
+    private function respondToOffer(Request $request, string $id, LoanApplicationStatus $to)
+    {
+        try {
+            // Remarks are required on every answer: the status alone says what
+            // the borrower decided, never what they actually said, and that
+            // sentence is what the next officer to open the file reads.
+            $rules = ['remarks' => 'required|string|min:3|max:1000'];
+
+            // A decline has to say why: "customers walked away from 12 offers
+            // last quarter" is only actionable with the reason beside it.
+            if ($to === LoanApplicationStatus::Declined) {
+                $rules['decline_reason'] = 'required|string|in:' . implode(',', array_keys(LoanApplication::OFFER_DECLINE_REASONS));
+            }
+
+            $validator = Validator::make($request->all(), $rules);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => $validator->errors()->first(),
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
+            $extra = [
+                'offer_responded_by'   => Auth::id(),
+                'offer_responded_at'   => now(),
+                'offer_remarks'        => $request->input('remarks'),
+                'offer_decline_reason' => $to === LoanApplicationStatus::Declined
+                    ? $request->input('decline_reason')
+                    : null,
+            ];
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                $to,
+                Auth::id(),
+                $request->input('remarks'),
+                $extra
+            );
+
+            // A declined offer is the end of this application. Cancelling it
+            // here rather than leaving it for someone to notice keeps the
+            // pipeline honest -- and both steps land in the status history, so
+            // the reason stays readable after the file is closed.
+            if ($to === LoanApplicationStatus::Declined) {
+                $loanApplication = $this->workflowService->transition(
+                    $loanApplication,
+                    LoanApplicationStatus::Cancelled,
+                    Auth::id(),
+                    'Cancelled: customer declined the approved offer'
+                );
+            }
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} offer {$to->value}", [
+                'loan_application_id' => $loanApplication->id,
+                'decline_reason'      => $extra['offer_decline_reason'],
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => match ($to) {
+                    LoanApplicationStatus::OnHold   => 'Offer put on hold for the customer',
+                    LoanApplicationStatus::Accepted => 'Customer accepted the approved offer',
+                    default                         => 'Customer declined the offer — the application has been cancelled',
+                },
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to record the offer response',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    public function holdOffer(Request $request, string $id)
+    {
+        return $this->respondToOffer($request, $id, LoanApplicationStatus::OnHold);
+    }
+
+    public function acceptOffer(Request $request, string $id)
+    {
+        return $this->respondToOffer($request, $id, LoanApplicationStatus::Accepted);
+    }
+
+    public function declineOffer(Request $request, string $id)
+    {
+        return $this->respondToOffer($request, $id, LoanApplicationStatus::Declined);
+    }
+
     public function disburse(string $id)
     {
         try {

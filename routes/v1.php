@@ -233,6 +233,11 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/verify', [LoanApplicationController::class, 'verify']);
         Route::patch('{id}/approve', [LoanApplicationController::class, 'approve']);
         Route::patch('{id}/reject', [LoanApplicationController::class, 'reject']);
+        // The borrower's answer to an approved offer. Disburse only works
+        // once accept-offer has been recorded.
+        Route::patch('{id}/hold-offer', [LoanApplicationController::class, 'holdOffer']);
+        Route::patch('{id}/accept-offer', [LoanApplicationController::class, 'acceptOffer']);
+        Route::patch('{id}/decline-offer', [LoanApplicationController::class, 'declineOffer']);
         Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });

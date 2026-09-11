@@ -186,6 +186,7 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Verify', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Approve', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Reject', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Offer Response', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Disburse', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Cancel', 'group_name' => 'Loan Application Management Permissions'],
 
