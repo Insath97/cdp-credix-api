@@ -19,11 +19,9 @@ class CustomerCreditScore extends Model
     protected $fillable = [
         'customer_id',
         'loan_application_id',
-        'total_points',
         'installments_counted',
         'on_time_count',
         'late_count',
-        'average_points',
         'final_score',
         'computed_at',
         'finalized_at',
@@ -37,11 +35,9 @@ class CustomerCreditScore extends Model
     protected $casts = [
         'customer_id'          => 'integer',
         'loan_application_id'  => 'integer',
-        'total_points'         => 'decimal:2',
         'installments_counted' => 'integer',
         'on_time_count'        => 'integer',
         'late_count'           => 'integer',
-        'average_points'       => 'decimal:2',
         'final_score'          => 'decimal:2',
         'computed_at'          => 'datetime',
         'finalized_at'         => 'datetime',

@@ -78,7 +78,7 @@ class CreditScoreController extends Controller implements HasMiddleware
                 'status'  => 'success',
                 'message' => 'Credit scores retrieved successfully',
                 'data'    => $customers,
-                'meta'    => ['scale_max' => $config['normalize_max']],
+                'meta'    => [],
             ], 200);
 
         } catch (\Throwable $th) {
@@ -128,11 +128,11 @@ class CreditScoreController extends Controller implements HasMiddleware
                         'installments_counted' => $score->installments_counted,
                         'on_time_count'        => $score->on_time_count,
                         'late_count'           => $score->late_count,
-                        'total_points'         => (float) $score->total_points,
-                        'average_points'       => $score->average_points !== null ? (float) $score->average_points : null,
                         'score'                => $score->final_score !== null ? (float) $score->final_score : null,
+                        // The band reads the on-time share, not the point
+                        // total -- see CreditScoreService::share().
                         'band'                 => $this->creditScoreService->band(
-                            $score->final_score !== null ? (float) $score->final_score : null,
+                            $this->creditScoreService->share($score->on_time_count, $score->installments_counted),
                             $config
                         ),
                         // False while the loan is still repaying: the score is
@@ -157,13 +157,13 @@ class CreditScoreController extends Controller implements HasMiddleware
                     'customer'      => $customer,
                     'score'         => $customer->credit_score !== null ? (float) $customer->credit_score : null,
                     'band'          => $this->creditScoreService->band(
-                        $customer->credit_score !== null ? (float) $customer->credit_score : null,
+                        $customer->credit_score_on_time_rate !== null ? (float) $customer->credit_score_on_time_rate : null,
                         $config
                     ),
+                    'on_time_rate'  => $customer->credit_score_on_time_rate !== null ? (float) $customer->credit_score_on_time_rate : null,
                     // Null score plus this flag is how the UI tells "new
                     // borrower" apart from "scored zero".
                     'has_history'   => $customer->credit_score !== null,
-                    'scale_max'     => $config['normalize_max'],
                     'updated_at'    => $customer->credit_score_updated_at,
                     'summary'       => [
                         'loans_scored'         => $loanScores->count(),

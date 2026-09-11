@@ -80,20 +80,35 @@ return new class extends Migration
             //
             // Link plus snapshot, for the same reason as the loan-level copy:
             // the snapshot survives the employee being renamed or leaving.
-            $table->foreignId('recommended_by_employee_id')->nullable()->constrained('employees')->nullOnDelete();
+            //
+            // The column only -- the foreign key itself is added by
+            // 2026_06_15_114600_add_customer_recommender_foreign_key. This
+            // migration and create_employees_table share a timestamp, and
+            // Laravel orders same-timestamp migrations by filename, so
+            // "customers" runs before "employees" and a constraint declared
+            // here fails on a fresh database with
+            // "1824 Failed to open the referenced table 'employees'".
+            $table->foreignId('recommended_by_employee_id')->nullable()->index();
             $table->string('recommender_name')->nullable();
             $table->string('recommender_employee_code')->nullable();
             $table->string('recommender_nic')->nullable();
             $table->string('recommender_phone')->nullable();
 
-            // Repayment credit score: the weighted average of every
-            // customer_credit_scores row this customer has, denormalised here
-            // so a loan application screen can show it without a join and so
-            // customers can be listed and sorted by it.
+            // Repayment credit score: the sum of every customer_credit_scores
+            // row this customer has, denormalised here so a loan application
+            // screen can show it without a join and so customers can be listed
+            // and sorted by it. Signed -- more late months than punctual ones
+            // puts a borrower below zero.
             //
             // Null, never 0, for a customer with no judged installment yet --
             // "no history" and "always paid late" must not look alike.
             $table->decimal('credit_score', 8, 2)->nullable()->index();
+
+            // What share of their judged installments were on time, 0..100.
+            // The score alone cannot carry the rating badge: it grows with the
+            // length of the record, so +100 is excellent after ten months and
+            // poor after a hundred. The band is read off this instead.
+            $table->decimal('credit_score_on_time_rate', 5, 2)->nullable();
             $table->timestamp('credit_score_updated_at')->nullable();
 
             $table->boolean('is_active')->default(true);

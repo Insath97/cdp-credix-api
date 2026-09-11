@@ -26,7 +26,7 @@ class Customer extends Model
      *
      * Pass to a relation string: ->with('customer:'.Customer::SUMMARY_COLUMNS)
      */
-    public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,credit_score,credit_score_updated_at,is_active';
+    public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,credit_score,credit_score_on_time_rate,credit_score_updated_at,is_active';
 
     /**
      * SUMMARY_COLUMNS plus the means to reach the customer — for recovery and
@@ -126,6 +126,7 @@ class Customer extends Model
 
         // repayment credit score (written only by CreditScoreService)
         'credit_score',
+        'credit_score_on_time_rate',
         'credit_score_updated_at',
         'is_active',
     ];
@@ -150,6 +151,7 @@ class Customer extends Model
         'total_monthly_expenses' => 'decimal:2',
         'recommended_by_employee_id' => 'integer',
         'credit_score' => 'decimal:2',
+        'credit_score_on_time_rate' => 'decimal:2',
         'credit_score_updated_at' => 'datetime',
     ];
 
@@ -271,11 +273,15 @@ class Customer extends Model
      */
     public function getCreditScoreBandAttribute(): ?string
     {
-        if (!array_key_exists('credit_score', $this->attributes) || $this->credit_score === null) {
+        // Read off the on-time rate, not the score: the score is a point
+        // total that grows with the length of the record, so it cannot say on
+        // its own how reliably this person pays.
+        if (!array_key_exists('credit_score_on_time_rate', $this->attributes)
+            || $this->credit_score_on_time_rate === null) {
             return null;
         }
 
-        return app(CreditScoreService::class)->band((float) $this->credit_score);
+        return app(CreditScoreService::class)->band((float) $this->credit_score_on_time_rate);
     }
 
     /**

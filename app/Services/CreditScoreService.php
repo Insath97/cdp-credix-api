@@ -15,12 +15,30 @@ use Illuminate\Support\Facades\DB;
 /**
  * Repayment credit scoring.
  *
- * The rule the business asked for: every installment settled on time earns the
- * borrower points, every one settled late (or left unpaid past its grace
- * period) costs them points, and the loan's score is the total divided by the
- * number of installments judged -- so a 6-month loan and a 36-month loan are
- * directly comparable. All four numbers in that sentence are System Settings,
- * not constants.
+ * The rule: a running point total. Every installment settled on time earns
+ * +credit_score_on_time_points, every one settled late (or left unpaid past
+ * its grace period) costs credit_score_late_penalty_points. The score IS that
+ * total -- signed, unscaled, undivided.
+ *
+ *     score = on-time count * on_time_points - late count * late_penalty_points
+ *
+ * So a borrower three months late and never punctual scores -30, and one who
+ * has paid thirty-six months straight scores +360. Length of history moves the
+ * number, which is the point: a long clean record is worth more than a short
+ * one, and a long bad record is worse than a short one.
+ *
+ * Late is late. Two days and ninety days cost the same, because the business
+ * asked for one verdict per installment, not a severity scale. days_late is
+ * still recorded on every event for anyone who wants to look.
+ *
+ * ## Why there is no normalisation
+ *
+ * An earlier version averaged these points and mapped the average onto 0..100.
+ * That arithmetic provably collapses: with `a` on-time and `b` late out of
+ * `n`, the mapped result is (a*p - b*q + n*q) / (n*(p+q)) = a/n for ANY choice
+ * of p and q -- the weights cancel, because the scale being mapped onto was
+ * defined by those same weights. Mapping made the two point settings inert;
+ * without it they do exactly what they say.
  *
  * ## Recompute, never increment
  *
@@ -92,7 +110,6 @@ class CreditScoreService
             'late_penalty_points'  => (float) Setting::get('credit_score_late_penalty_points', 10),
             'grace_days'           => (int) Setting::get('credit_score_grace_days', 0),
             'count_unpaid_overdue' => (bool) Setting::get('credit_score_count_unpaid_overdue', true),
-            'normalize_max'        => (int) Setting::get('credit_score_normalize_max', 100),
         ];
     }
 
@@ -355,7 +372,6 @@ class CreditScoreService
             }
 
             $counted = $onTime + $late;
-            $average = $counted > 0 ? round($totalPoints / $counted, 2) : null;
 
             return CustomerCreditScore::updateOrCreate(
                 [
@@ -363,12 +379,13 @@ class CreditScoreService
                     'customer_id'         => $customerId,
                 ],
                 [
-                    'total_points'         => round($totalPoints, 2),
                     'installments_counted' => $counted,
                     'on_time_count'        => $onTime,
                     'late_count'           => $late,
-                    'average_points'       => $average,
-                    'final_score'          => $this->normalize($average, $config),
+                    // The total, not an average: the score is the running
+                    // balance of points, so a longer clean record scores
+                    // higher than a short one.
+                    'final_score'          => $counted > 0 ? round($totalPoints, 2) : null,
                     'computed_at'          => now(),
                     // Stamped only once the loan is fully repaid. Cleared again
                     // if it somehow leaves Closed, so the flag can never claim
@@ -383,9 +400,9 @@ class CreditScoreService
      * Roll every loan score a customer has into the single figure a loan
      * officer reads at application time, and denormalise it onto the customer.
      *
-     * Weighted by installments counted rather than a plain mean of the per-loan
-     * scores: 24 punctual months on a long loan should not be cancelled out by
-     * one late month on a 3-month top-up.
+     * Counted across all their installments rather than as a mean of the
+     * per-loan scores: 24 punctual months on a long loan should not be
+     * cancelled out by one late month on a 3-month top-up.
      */
     public function recomputeCustomerAggregate(int $customerId, ?array $config = null): ?float
     {
@@ -394,81 +411,51 @@ class CreditScoreService
         $rows = CustomerCreditScore::where('customer_id', $customerId)->get();
 
         $counted = (int) $rows->sum('installments_counted');
-        $score = null;
-
-        if ($counted > 0) {
-            $score = $this->normalize((float) $rows->sum('total_points') / $counted, $config);
-        }
+        $score = $counted > 0 ? round((float) $rows->sum('final_score'), 2) : null;
+        $rate = $this->share((int) $rows->sum('on_time_count'), $counted);
 
         // Query builder rather than the model, so recomputing a score does not
         // touch customers.updated_at -- that column tracks edits to the
         // customer's own record and the nightly job would otherwise stamp every
         // borrower in the book every night.
         Customer::withTrashed()->whereKey($customerId)->update([
-            'credit_score'            => $score,
-            'credit_score_updated_at' => $counted > 0 ? now() : null,
+            'credit_score'              => $score,
+            'credit_score_on_time_rate' => $rate,
+            'credit_score_updated_at'   => $counted > 0 ? now() : null,
         ]);
 
         return $score;
     }
 
     /**
-     * Map a per-installment average onto the displayed scale.
+     * What share of the judged installments were on time, 0..100.
      *
-     * The average naturally runs from -late_penalty_points (late every month)
-     * to +on_time_points (punctual every month), which is a range that reads
-     * badly in a UI and can go negative. This maps it linearly onto
-     * 0..credit_score_normalize_max, so a perfect borrower scores the maximum
-     * and one who was late every single month scores 0.
-     *
-     * Set credit_score_normalize_max to 0 to opt out and store the raw average
-     * instead -- literally total points / number of installments.
+     * Not the score -- the score is the point total. This is what the rating
+     * band is read off, because a band has to mean "how reliably does this
+     * person pay", and that cannot be judged from a total that also grows with
+     * the length of the record: +100 is excellent after ten months and poor
+     * after a hundred.
      */
-    public function normalize(?float $average, array $config): ?float
+    public function share(int $onTime, int $counted): ?float
     {
-        if ($average === null) {
+        if ($counted <= 0) {
             return null;
         }
 
-        if ($config['normalize_max'] <= 0) {
-            return round($average, 2);
-        }
-
-        $range = $config['on_time_points'] + $config['late_penalty_points'];
-
-        // Both knobs set to zero: there is no scale to map onto and every
-        // borrower would score the same. Report "no score" rather than a
-        // meaningless number.
-        if ($range <= 0) {
-            return null;
-        }
-
-        $ratio = ($average + $config['late_penalty_points']) / $range;
-
-        return round(min(1.0, max(0.0, $ratio)) * $config['normalize_max'], 2);
+        return round($onTime / $counted * 100, 2);
     }
 
-    /**
-     * A plain-language band for a normalised score, for badges and reports.
-     *
-     * Null for a customer with no history -- deliberately not 'poor', because
-     * a first-time borrower has not earned a bad label.
-     */
-    public function band(?float $score, ?array $config = null): ?string
+    public function band(?float $onTimeRate, ?array $config = null): ?string
     {
-        $config ??= $this->config();
-
-        if ($score === null || $config['normalize_max'] <= 0) {
+        if ($onTimeRate === null) {
             return null;
         }
 
-        $percentage = ($score / $config['normalize_max']) * 100;
-
         return match (true) {
-            $percentage >= 90 => 'excellent',
-            $percentage >= 75 => 'good',
-            $percentage >= 50 => 'fair',
-            $percentage >= 25 => 'poor',
+            $onTimeRate >= 90 => 'excellent',
+            $onTimeRate >= 75 => 'good',
+            $onTimeRate >= 50 => 'fair',
+            $onTimeRate >= 25 => 'poor',
             default           => 'very_poor',
         };
     }

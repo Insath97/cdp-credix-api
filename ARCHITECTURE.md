@@ -280,24 +280,38 @@ whole day-7/14/21 window.
 
 ## 6b. Repayment credit score
 
-A borrower earns points for every installment settled on time and loses points for every
-one settled late or left unpaid past its grace period. The loan's score is the total
-divided by the number of installments **judged**, so a 6-month loan and a 36-month loan are
-directly comparable. Every number in that sentence is a System Setting (§9), not a constant.
+The score is a **running point total**: `+credit_score_on_time_points` for every **judged**
+installment settled on time, `-credit_score_late_penalty_points` for every late one, summed.
+Signed and unbounded — three late months and nothing else is `-30`, thirty-six punctual ones
+is `+360`. Length of record moves the number on purpose. **Late is late** — two days and
+ninety days cost the same; `days_late` is recorded on every event but does not enter the
+arithmetic.
+
+**The rating band does not come off the score.** A total grows with the length of the
+record, so `+100` is excellent after ten months and poor after a hundred. The band is read
+off `customers.credit_score_on_time_rate` — `on_time_count / installments_counted * 100`,
+written by the same aggregate pass — via `CreditScoreService::share()`.
+
+There was briefly a normalisation step that averaged the points and mapped the average onto
+`0..credit_score_normalize_max`. It provably collapsed: with `a` on-time and `b` late out of
+`n`, the mapped result is `(a*p - b*q + n*q) / (n*(p+q))` = `a/n` for **any** `p` and `q` —
+the weights cancel, because the scale being mapped onto was defined by those same weights,
+making both point settings inert. It was removed; without it they do exactly what they say.
 
 **Everything is derived, and is recomputed rather than incremented.** `credit_score_events`,
 `customer_credit_scores` and `customers.credit_score` are all rebuilt from
 `loan_installments` on each run — `CreditScoreService::recomputePair()` deletes a
 `(loan, customer)` pair's events and reinserts them. That is what makes a reversed payment,
-a waived penalty and a loan revision self-correct; an incremental +10/-10 ledger would drift
+a waived penalty and a loan revision self-correct; an incremental running tally would drift
 out of step with all three and there would be no way to tell that it had. **Nothing outside
 `CreditScoreService` may write to those three places.**
 
 | table | grain | holds |
 |---|---|---|
 | `credit_score_events` | one row per judged installment (unique on `loan_installment_id`) | `event_type` (`on_time` / `late_paid` / `late_unpaid`), signed `points`, `days_late`, `occurred_on` |
-| `customer_credit_scores` | one row per `(loan, customer)` | `total_points`, `installments_counted`, `on_time_count`, `late_count`, `average_points`, `final_score`, `finalized_at` |
-| `customers.credit_score` | one row per customer | the weighted roll-up an officer reads at application time |
+| `customer_credit_scores` | one row per `(loan, customer)` | `installments_counted`, `on_time_count`, `late_count`, `final_score` (that loan's point total), `finalized_at` |
+| `customers.credit_score` | one row per customer | the sum of every loan's total — what an officer reads at application time |
+| `customers.credit_score_on_time_rate` | one row per customer | the on-time share, 0..100, which the band is read off |
 
 **Per party, like recovery (§6).** A Group Loan scores each member separately off their own
 installment rows — one member paying late never marks the other four. Individual and Joint
@@ -306,20 +320,20 @@ loans score the loan's own `customer_id`, matching `InstallmentScheduleService::
 **What is not judged.** `revised` rows (superseded by a restructure — the replacement rows
 carry the real schedule) and `waived` rows (a decision about the debt, not evidence about
 the borrower) are skipped, as is any unpaid installment still inside its window. Skipped
-rows are excluded from the divisor too, so a month that is not yet late cannot drag the
-average down.
+rows earn and cost nothing, so a month that is not yet late cannot drag the score down.
 
 **Null is not zero.** A customer with no judged installment has `credit_score = null` and
 `Customer::hasCreditHistory() === false`. A first-time borrower and a serial defaulter must
 never render alike; `CreditScoreService::band()` returns null rather than `'poor'` for them,
 and `GET /credit-scores` hides them unless `?include_unscored=1`.
 
-**Scale.** `average_points` runs from `-credit_score_late_penalty_points` to
-`+credit_score_on_time_points`. `normalize()` maps that linearly onto
-`0..credit_score_normalize_max` for display, so punctual-every-month is the maximum and
-late-every-month is 0. Set `credit_score_normalize_max` to 0 to store the raw average
-instead. `final_score` is provisional while the loan repays and is stamped `finalized_at`
-once it reaches `Closed`.
+**Scale.** None — the score is a point total, displayed with its sign (`+40`, `-40`) and no
+denominator. Bands come off `credit_score_on_time_rate` (≥90 excellent, ≥75 good, ≥50 fair,
+≥25 poor, else very_poor). The customer roll-up sums every loan's `final_score`, and the
+rate sums `on_time_count` and `installments_counted` across all their loans rather than
+averaging the per-loan rates, so 24 punctual months are not cancelled by one late month on a
+3-month top-up. `final_score` is provisional while the loan repays and is stamped
+`finalized_at` once it reaches `Closed`.
 
 **Two grace periods, do not confuse them.** `credit_score_grace_days` decides when a payment
 stops counting as punctual. The recovery grace period (§6) decides when a loan turns overdue
@@ -519,7 +533,7 @@ busts on `set()`. Types: `integer|boolean|json|string`.
 | `group_loan` | `group_loan_service_charge_percentage` 10 · `group_loan_competency` (json list) |
 | `loan_revision` | `loan_revision_enabled` · `loan_revision_allowed_types` |
 | `customer` | `customer_bank_list` (json) |
-| `credit_score` | `credit_score_enabled` · `credit_score_on_time_points` 10 · `credit_score_late_penalty_points` 10 · `credit_score_grace_days` 0 · `credit_score_count_unpaid_overdue` · `credit_score_normalize_max` 100 (see §6b) |
+| `credit_score` | `credit_score_enabled` · `credit_score_on_time_points` 10 · `credit_score_late_penalty_points` 10 · `credit_score_grace_days` 0 · `credit_score_count_unpaid_overdue` (see §6b) |
 
 Settings are deliberately minimal — fixed business rules (the 2-member floor, rounding
 convention, cascade behaviour) are hardcoded, not exposed.
@@ -548,6 +562,23 @@ than added as `add_x_to_y` files. The live DB is then brought in step with a thr
 migration that is deleted (with its `migrations` row) once run. Consequence: a migration
 file can look correct while the live column is missing — check `Schema::hasColumn()` before
 assuming the code is wrong.
+
+**Foreign keys that point forward are the trap in that convention.** Merging a column into
+an *early* create migration also moves its constraint there, and the referenced table may
+not exist yet — a fresh `migrate` then dies with *"1824 Failed to open the referenced
+table"* while the live database, patched in the right order, is perfectly fine. Two such
+constraints are therefore declared on their own, after the table they point at:
+
+| Constraint | Column declared in | Constraint added by |
+|---|---|---|
+| `customers.recommended_by_employee_id` → `employees` | `create_customers_table` (2026_06_15_114558) | `2026_06_15_114600_add_customer_recommender_foreign_key` |
+| `documents.loan_application_id` → `loan_applications` | `create_documents_table` (2026_07_16) | `2026_07_20_080100_add_document_loan_application_foreign_key` |
+
+`create_customers_table` and `create_employees_table` share a timestamp, and Laravel breaks
+the tie on **filename** — "customers" sorts before "employees". Both standalone migrations
+check `information_schema` first, so they are no-ops on a database that already has the
+constraint. **After merging any column carrying a `constrained()` into an early create
+migration, run a fresh `migrate` against a scratch database before trusting it.**
 
 **Index swaps.** MySQL uses the leftmost-column index to satisfy a foreign key and refuses
 to drop it. Create the replacement under a new name **first**, then drop the old one.

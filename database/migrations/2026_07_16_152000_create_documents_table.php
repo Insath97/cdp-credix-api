@@ -36,7 +36,13 @@ return new class extends Migration
             // guarantor's papers belong to the guarantor. All three are
             // nullable and independent: a row can name a customer AND the loan
             // application it was collected for.
-            $table->foreignId('loan_application_id')->nullable()->constrained('loan_applications')->cascadeOnDelete();
+            //
+            // The column only -- its foreign key is added by
+            // 2026_07_20_080100_add_document_loan_application_foreign_key,
+            // because loan_applications is created four days later in
+            // migration order and a constraint declared here fails on a fresh
+            // database with "1824 Failed to open the referenced table".
+            $table->foreignId('loan_application_id')->nullable()->index();
             $table->foreignId('guarantor_id')->nullable()->constrained('guarantors')->cascadeOnDelete();
             
             $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete();
