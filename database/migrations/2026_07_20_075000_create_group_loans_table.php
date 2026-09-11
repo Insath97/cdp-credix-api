@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('loan_product_id')->constrained('loan_products')->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained('branches')->nullOnDelete();
 
-            $table->string('group_name');
+            $table->string('group_name')->nullable();
             $table->unsignedInteger('number_of_members');
             $table->string('competency');
 

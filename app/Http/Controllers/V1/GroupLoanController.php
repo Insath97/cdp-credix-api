@@ -238,7 +238,9 @@ class GroupLoanController extends Controller implements HasMiddleware
                 $groupLoan = GroupLoan::create([
                     'loan_product_id'           => $data['loan_product_id'],
                     'branch_id'                 => $data['branch_id'] ?? null,
-                    'group_name'                => $data['group_name'],
+                    // Optional now, so the key may be absent entirely --
+                    // `$data['group_name']` alone is an undefined-key error.
+                    'group_name'                => $data['group_name'] ?? null,
                     'number_of_members'         => $memberCustomerIds->count(),
                     'competency'                => $data['competency'],
                     'requested_amount'          => $requestedAmount,

@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use App\Models\Liability;
 use App\Models\LoanApplication;
 use Illuminate\Foundation\Http\FormRequest;
@@ -12,8 +11,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class CreateLoanApplicationLiabilityRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */
