@@ -27,6 +27,7 @@ return new class extends Migration
             $table->foreignId('loan_application_id')->constrained('loan_applications')->cascadeOnDelete();
             $table->foreignId('loan_installment_id')->constrained('loan_installments')->cascadeOnDelete();
             $table->string('event_type', 20)->index();
+            // Signed: +credit_score_on_time_points, or the penalty negated.
             $table->decimal('points', 8, 2);
             $table->unsignedInteger('days_late')->default(0);
             $table->date('occurred_on')->nullable();
