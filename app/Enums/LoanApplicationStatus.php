@@ -16,6 +16,19 @@ enum LoanApplicationStatus: string
     case Reviewed = 'reviewed';
     case Verified = 'verified';
     case Approved = 'approved';
+
+    /**
+     * The customer's answer to the approved offer.
+     *
+     * Approval is the lender's decision, not the borrower's. Approving less
+     * than was asked for is an offer, and the borrower may take it, refuse it,
+     * or ask for time -- so the file waits here for their answer instead of
+     * going straight to the cash desk.
+     */
+    case OnHold = 'on_hold';
+    case Accepted = 'accepted';
+    case Declined = 'declined';
+
     case Rejected = 'rejected';
     case Disbursed = 'disbursed';
     case Active = 'active';
@@ -37,7 +50,14 @@ enum LoanApplicationStatus: string
             self::Submitted => [self::Reviewed, self::Cancelled],
             self::Reviewed => [self::Verified, self::Rejected, self::Cancelled],
             self::Verified => [self::Approved, self::Rejected, self::Cancelled],
-            self::Approved => [self::Disbursed],
+
+            // Money moves only after the borrower has said yes. On Hold is a
+            // parking place for "give me a few days", not a decision, so it
+            // leads to the same two answers.
+            self::Approved => [self::OnHold, self::Accepted, self::Declined],
+            self::OnHold => [self::Accepted, self::Declined],
+            self::Accepted => [self::Disbursed],
+            self::Declined => [self::Cancelled],
             self::Disbursed => [self::Active],
             self::Active => [self::Overdue, self::Closed],
             self::Overdue => [self::Active, self::Closed],
@@ -100,7 +120,11 @@ enum LoanApplicationStatus: string
     {
         return match ($this) {
             self::Submitted, self::Reviewed, self::Verified => 'in_progress',
-            self::Approved => 'approved',
+            // The coarse column tracks broad progress: an offer awaiting the
+            // borrower's answer is still an approved file. A declined one is
+            // on its way to cancelled and never comes back.
+            self::Approved, self::OnHold, self::Accepted => 'approved',
+            self::Declined => 'cancelled',
             self::Rejected => 'rejected',
             self::Disbursed, self::Active, self::Overdue => 'disbursed',
             self::Closed => 'closed',

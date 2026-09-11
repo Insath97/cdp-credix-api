@@ -52,6 +52,20 @@ return new class extends Migration
             $table->timestamp('approved_at')->nullable();
             $table->timestamp('disbursed_at')->nullable();
 
+            // The borrower's answer to the approved offer.
+            //
+            // One set of columns, not one per outcome: the status says which
+            // answer it was, and these carry the latest one. The full
+            // sequence -- put on hold Tuesday, accepted Friday -- lives in
+            // loan_application_status_history like every other transition.
+            $table->foreignId('offer_responded_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('offer_responded_at')->nullable();
+            // A code from LoanApplication::OFFER_DECLINE_REASONS, not free
+            // text: "why do borrowers walk away from what we approve" is a
+            // question the analytics module has to be able to group by.
+            $table->string('offer_decline_reason', 60)->nullable();
+            $table->text('offer_remarks')->nullable();
+
             $table->decimal('outstanding_balance', 15, 2)->nullable();
 
             // Minted by ReferenceNumberService the first time this application

@@ -15,6 +15,23 @@ class LoanApplication extends Model
 {
     use HasFactory, SoftDeletes;
 
+    /**
+     * Why a borrower turned down an approved offer.
+     *
+     * A fixed list rather than free text: the useful question is not what one
+     * customer wrote, it is how many walked away because the approved amount
+     * was too small -- and that can only be counted if everyone picks from the
+     * same set. 'other' carries the long tail in offer_remarks.
+     */
+    public const OFFER_DECLINE_REASONS = [
+        'amount_too_low'          => 'Approved amount too low',
+        'interest_rate_too_high'  => 'Interest rate too high',
+        'term_not_suitable'       => 'Repayment term not suitable',
+        'no_longer_needed'        => 'No longer needs the loan',
+        'borrowed_elsewhere'      => 'Borrowed from elsewhere',
+        'other'                   => 'Other',
+    ];
+
     protected $fillable = [
         'application_id',
         'customer_id',
@@ -43,6 +60,11 @@ class LoanApplication extends Model
         'verified_at',
         'approved_at',
         'disbursed_at',
+        // The borrower's answer to the approved offer.
+        'offer_responded_by',
+        'offer_responded_at',
+        'offer_decline_reason',
+        'offer_remarks',
         'outstanding_balance',
         // Written only by LoanApplicationWorkflowService on the first approval.
         'approval_reference_no',
@@ -86,6 +108,8 @@ class LoanApplication extends Model
         'verified_at'         => 'datetime',
         'approved_at'         => 'datetime',
         'disbursed_at'        => 'datetime',
+        'offer_responded_by'  => 'integer',
+        'offer_responded_at'  => 'datetime',
         'outstanding_balance' => 'decimal:2',
         'is_active'            => 'boolean',
         'status'                => LoanApplicationStatus::class,
@@ -194,6 +218,12 @@ class LoanApplication extends Model
     public function approvedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /** Who recorded the borrower's answer to the offer. */
+    public function offerRespondedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'offer_responded_by');
     }
 
     /**

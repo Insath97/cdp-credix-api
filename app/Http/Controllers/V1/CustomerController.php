@@ -184,11 +184,6 @@ class CustomerController extends Controller implements HasMiddleware
                             'remarks'       => $doc['remarks'] ?? null,
                             'is_active'     => $doc['is_active'] ?? true,
                             'uploaded_at'   => now(),
-                            // Both ids: the guarantor owns the document, and
-                            // the customer is how it is reached from the
-                            // customer's file. customer_id alone would make a
-                            // guarantor's papers indistinguishable from the
-                            // borrower's own.
                             'guarantor_id'  => $guarantor->id,
                             'customer_id'   => $customer->id,
                             'file_path'     => !empty($doc['file'])
@@ -417,7 +412,17 @@ class CustomerController extends Controller implements HasMiddleware
             }
 
             // Guarantors
-            $customer->guarantors()->delete();
+            //
+            // Only replaced when the caller actually sent a guarantors block.
+            // Guarantors are collected on the loan application now, not on the
+            // customer form, so an edit that says nothing about them must not
+            // touch them: deleting a guarantor cascades to its
+            // loan_application_guarantors links and to its documents, which
+            // silently stripped the guarantors off live loan applications
+            // every time someone renamed a customer.
+            if (array_key_exists('guarantors', $data)) {
+                $customer->guarantors()->delete();
+            }
             if (!empty($data['guarantors'])) {
                 foreach ($data['guarantors'] as $guarantorData) {
                     // Documents ride in on the guarantor payload but belong to
@@ -457,7 +462,16 @@ class CustomerController extends Controller implements HasMiddleware
             }
 
             // Documents
-            $customer->documents()->delete();
+            //
+            // Only the customer's own standalone papers are managed by this
+            // form. Documents collected against a loan application or a
+            // guarantor are owned by the application's document screen and
+            // must survive a customer edit -- the form never sends them, so an
+            // unscoped delete threw them away.
+            $customer->documents()
+                ->whereNull('loan_application_id')
+                ->whereNull('guarantor_id')
+                ->delete();
             if (!empty($data['documents'])) {
                 foreach ($data['documents'] as $doc) {
                     if (empty($doc['file']) && empty($doc['file_path'])) {
