@@ -23,12 +23,8 @@ trait FileUploadTrait
         $this->deleteFile($oldPath);
 
         $file = $request->file($fieldName);
-        $extension = $file->getClientOriginalExtension();
 
-        // Generate filename with optional prefix
-        $fileName = $prefix
-            ? $prefix . '.' . $extension
-            : Str::random(25) . '.' . $extension;
+        $fileName = $this->buildFileName($file, $prefix);
 
         $directory = "uploads/{$module}";
         $filePath = "{$directory}/{$fileName}";
@@ -72,12 +68,7 @@ trait FileUploadTrait
                 continue;
             }
 
-            $extension = $file->getClientOriginalExtension();
-
-            // Generate unique filename
-            $fileName = $prefix
-                ? $prefix . '_' . ($index + 1) . '.' . $extension
-                : Str::random(25) . '_' . ($index + 1) . '.' . $extension;
+            $fileName = $this->buildFileName($file, $prefix === '' ? '' : $prefix . '_' . ($index + 1));
 
             $directory = "uploads/{$module}";
             $filePath = "{$directory}/{$fileName}";
@@ -97,6 +88,32 @@ trait FileUploadTrait
         }
 
         return $uploadedPaths;
+    }
+
+    /**
+     * Build the on-disk filename for an upload.
+     *
+     * The caller's prefix is a human label -- a document name typed by a
+     * clerk -- so it is sanitised before it reaches a path, and a random
+     * token is always appended. Without the token two customers who both
+     * upload a "NIC Copy" write to the same file and the second silently
+     * overwrites the first, leaving both document rows pointing at one
+     * scan.
+     */
+    private function buildFileName($file, string $prefix): string
+    {
+        $extension = strtolower(preg_replace('/[^A-Za-z0-9]/', '', (string) $file->getClientOriginalExtension()));
+        if ($extension === '') {
+            $extension = 'bin';
+        }
+
+        $clean = preg_replace('/[^\p{L}\p{N}\-_]+/u', '_', trim($prefix));
+        $clean = trim((string) $clean, '._');
+        $clean = mb_substr($clean, 0, 80);
+
+        $unique = Str::random(8);
+
+        return ($clean === '' ? $unique : $clean . '_' . $unique) . '.' . $extension;
     }
 
     /**
