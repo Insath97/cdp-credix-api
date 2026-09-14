@@ -84,6 +84,33 @@ enum LoanApplicationStatus: string
     }
 
     /**
+     * Whether the money has already gone out on this application.
+     *
+     * Disbursed, and every state that follows it, means the lending decision
+     * has been acted on. The credit file's documents are then the record of
+     * why it was acted on, so they stop being collectible and become
+     * evidence -- see allowsDocumentChanges().
+     */
+    public function isDisbursedOrLater(): bool
+    {
+        return in_array($this, [self::Disbursed, self::Active, self::Overdue, self::Closed], true);
+    }
+
+    /**
+     * Whether documents may still be uploaded, edited or removed.
+     *
+     * Documents are the evidence the approval rested on. Once the loan is
+     * disbursed, letting anyone swap an NIC copy or a salary slip rewrites
+     * that evidence after the fact -- the file would no longer show what the
+     * approver actually saw. So from Disbursed onwards the document set is
+     * frozen, and the upload screen stops offering these applications at all.
+     */
+    public function allowsDocumentChanges(): bool
+    {
+        return !$this->isDisbursedOrLater();
+    }
+
+    /**
      * Coarse equivalent written through to the generic applications.status
      * column, which is shared with the future lease module and only needs
      * to track broad progress, not the full granular workflow.
