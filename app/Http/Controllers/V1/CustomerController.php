@@ -66,11 +66,6 @@ class CustomerController extends Controller implements HasMiddleware
                 $query->where('branch_id', $request->branch_id);
             }
 
-            // A branch officer sees their own branch's customers only. The
-            // rule moved into ScopesToUserBranch when the same confinement was
-            // put on loan applications, documents and the rest: it was written
-            // out here alone, which is how everything else came to be missing
-            // it.
             $this->scopeToUserBranch($query);
 
             $customers = $query->orderBy('created_at', 'desc')->paginate($perPage);
