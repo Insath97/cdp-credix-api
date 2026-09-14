@@ -194,6 +194,15 @@ return new class extends Migration
                 'updated_at' => now(),
             ],
             [
+                'key' => 'max_loans_per_guarantor',
+                'value' => '1',
+                'type' => 'integer',
+                'group' => 'guarantor',
+                'description' => 'How many live loans one person may stand guarantor for. Counted by ID number across every customer, so the same person is one guarantor no matter how many times they have been entered. Loans that are rejected, cancelled or closed release their guarantors and stop counting. Set 0 for no limit.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
                 'key' => 'credit_score_count_unpaid_overdue',
                 'value' => '1',
                 'type' => 'boolean',

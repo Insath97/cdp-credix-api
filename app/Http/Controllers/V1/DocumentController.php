@@ -12,6 +12,7 @@ use App\Models\Document;
 use App\Models\LoanApplication;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Traits\FileUploadTrait;
 use App\Http\Requests\CreateDocumentRequest;
 use App\Http\Requests\UpdateDocumentRequest;
@@ -20,7 +21,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class DocumentController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait, FileUploadTrait;
+    use ActivityLogTrait, FileUploadTrait, ScopesToUserBranch;
 
     public static function middleware(): array
     {
@@ -121,6 +122,10 @@ class DocumentController extends Controller implements HasMiddleware
                 $query->where('is_active', $request->is_active);
             }
 
+            // A branch officer sees their own branch's documents only; the
+            // branch comes off whichever parent the document actually has.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id']);
+
             $documents = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
             $this->logActivity('Index', 'Document', 'Documents index accessed', [
@@ -175,6 +180,9 @@ class DocumentController extends Controller implements HasMiddleware
             if ($request->filled('search')) {
                 $query->search($request->search);
             }
+
+            // The rows here are loan applications, which carry branch_id.
+            $this->scopeToUserBranch($query);
 
             $applications = $query
                 ->orderByDesc('updated_at')

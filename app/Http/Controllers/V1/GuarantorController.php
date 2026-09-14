@@ -12,13 +12,14 @@ use App\Enums\LoanApplicationStatus;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\UpdateGuarantorRequest;
 use App\Http\Requests\CreateGuarantorRequest;
 
 
 class GuarantorController extends Controller implements HasMiddleware
 {
-     use ActivityLogTrait;
+     use ActivityLogTrait, ScopesToUserBranch;
 
     /**
      * HasMiddleware and Middleware were already imported here but the class
@@ -68,6 +69,10 @@ class GuarantorController extends Controller implements HasMiddleware
                     $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
                 }
             }
+
+            // A branch officer sees their own branch's rows only;
+            // the branch is reached through the parent records.
+            $this->scopeToUserBranchVia($query, ['customer' => 'customer_id']);
 
             $guarantors = $query->orderBy('created_at', 'desc')->paginate($perPage);
 

@@ -141,24 +141,36 @@ class UserController extends Controller implements HasMiddleware
 
                 $employee = Employee::create($employeeData);
 
-                // Staff credentials default to the NIC, so a new officer can be
-                // told "log in with your NIC" without anyone inventing one --
-                // but only as a DEFAULT. An explicitly supplied username used
-                // to be overwritten here, so whatever was typed on the form was
-                // silently discarded and the NIC put back in its place.
+                // The username still defaults to the NIC: it is an identifier,
+                // not a secret, and an officer who was told "sign in with your
+                // NIC" is not thereby told anyone's password.
+                //
+                // The PASSWORD no longer does. It used to fall back to the same
+                // NIC, which is printed on the customer, guarantor and document
+                // screens for every officer to read, and login never checked
+                // password_changed_at -- so the default stood for the life of
+                // the account. CreateUserRequest now requires one.
                 $data['employee_id'] = $employee->id;
                 if (!filled($data['username'] ?? null)) {
                     $data['username'] = $data['id_number'];
                 }
-                $data['password'] = Hash::make(filled($data['password'] ?? null) ? $data['password'] : $data['id_number']);
+                $data['password'] = Hash::make($data['password']);
             } else {
                 // For admin and customer users
                 $data['employee_id'] = null;
                 if ($data['user_type'] === 'admin') {
                     $data['customer_id'] = null;
                 }
-                $data['password'] = Hash::make($data['password'] ?? '');
+                // Never Hash::make('') -- an omitted password used to become a
+                // real, valid hash of the empty string.
+                $data['password'] = Hash::make($data['password']);
             }
+
+            // Stamped at creation: CreateUserRequest now requires a password, so
+            // whoever created the account chose it deliberately. Only the older
+            // accounts whose password was defaulted to their NIC are left for
+            // EnsurePasswordChanged to hold at the door.
+            $data['password_changed_at'] = now();
 
             $user = User::create($data);
 
@@ -182,11 +194,12 @@ class UserController extends Controller implements HasMiddleware
                         'user_type' => $user->user_type,
                         'email_verified_at' => $user->email_verified_at,
                     ],
-                    // The plaintext that was actually set: the NIC only when
-                    // no password was supplied, matching the default above.
-                    'password' => ($user->user_type === 'staff' && !filled($request->password))
-                        ? $data['id_number']
-                        : $request->password,
+                    // Not sent any more. The password is now always chosen by
+                    // whoever creates the account, so they already have it and
+                    // hand it over themselves -- there is nothing here worth
+                    // putting in an inbox, where it would outlive the handover
+                    // and sit in plain text for as long as the mail is kept.
+                    'password' => null,
                     'role' => $data['role'] ?? null,
                     'created_by' => $currentUser ? $currentUser->name : 'System',
                     'login_url' => trim(config('app.frontend_url') ?? config('app.url')),

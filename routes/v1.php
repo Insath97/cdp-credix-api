@@ -69,18 +69,27 @@ Route::prefix('v1')->group(function () {
 });
 
 /* protected routes */
-Route::middleware(['auth:api'])->prefix('v1')->group(function () {
+// password.changed holds anyone who has never set a password of their own at
+// the door, letting through only the change itself, /me and logout.
+Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(function () {
 
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
+    // Both verbs: the profile screen sends a partial update, and PUT is what
+    // it has always sent.
+    Route::match(['put', 'patch'], 'me', [AuthController::class, 'updateProfile']);
 
     // Password
     Route::prefix('password')->group(function () {
         Route::post('request-change', [PasswordChangeController::class, 'requestChange'])->middleware('throttle:otp-request');
         Route::post('change-with-otp', [PasswordChangeController::class, 'changeWithOtp'])->middleware('throttle:otp-verify');
+        // Signed in and able to type the existing password: no OTP needed.
+        Route::post('change', [PasswordChangeController::class, 'changeWithCurrentPassword'])->middleware('throttle:otp-verify');
     });
 
     /*ActivityLog*/
+    // Before the resource, or 'filter-options' is read as an activity id.
+    Route::get('activities/filter-options', [ActivityController::class, 'filterOptions']);
     Route::apiResource('activities', ActivityController::class);
 
     /*Permissions*/
@@ -235,8 +244,6 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/verify', [LoanApplicationController::class, 'verify']);
         Route::patch('{id}/approve', [LoanApplicationController::class, 'approve']);
         Route::patch('{id}/reject', [LoanApplicationController::class, 'reject']);
-        // The borrower's answer to an approved offer. Disburse only works
-        // once accept-offer has been recorded.
         Route::patch('{id}/hold-offer', [LoanApplicationController::class, 'holdOffer']);
         Route::patch('{id}/accept-offer', [LoanApplicationController::class, 'acceptOffer']);
         Route::patch('{id}/decline-offer', [LoanApplicationController::class, 'declineOffer']);
@@ -259,8 +266,6 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     Route::apiResource('legal-document-templates', LegalDocumentTemplateController::class);
 
     Route::prefix('legal-documents')->group(function () {
-        // Registered before the resource routes so "applications" is not
-        // swallowed by the {id} placeholder.
         Route::get('applications', [LegalDocumentController::class, 'applications']);
         Route::patch('{id}/record-print', [LegalDocumentController::class, 'recordPrint']);
         Route::patch('{id}/toggle-status', [LegalDocumentController::class, 'toggleStatus']);
@@ -278,6 +283,9 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/verify', [GroupLoanController::class, 'verify']);
         Route::patch('{id}/approve', [GroupLoanController::class, 'approve']);
         Route::patch('{id}/reject', [GroupLoanController::class, 'reject']);
+        Route::patch('{id}/hold-offer', [GroupLoanController::class, 'holdOffer']);
+        Route::patch('{id}/accept-offer', [GroupLoanController::class, 'acceptOffer']);
+        Route::patch('{id}/decline-offer', [GroupLoanController::class, 'declineOffer']);
         Route::patch('{id}/disburse', [GroupLoanController::class, 'disburse']);
         Route::patch('{id}/cancel', [GroupLoanController::class, 'cancel']);
     });
@@ -289,9 +297,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     // Loan Application Guarantors
     Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);
 
-    // Loan Application Customers — Joint Loan co-borrowers and Group Loan
-    // members alike. Group members are only editable while the group loan is
-    // Available; the controller enforces that.
+    // Loan Application Customers
     Route::patch('loan-application-customers/{id}/customer-details', [LoanApplicationCustomerController::class, 'updateCustomerDetails']);
     Route::apiResource('loan-application-customers', LoanApplicationCustomerController::class)
         ->only(['index', 'store', 'show', 'destroy'])
@@ -359,6 +365,10 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     // System Settings
     Route::prefix('settings')->group(function () {
         Route::get('list', [SettingController::class, 'list']);
+        // Before settings/{key} below, or 'flags' is read as a setting name.
+        // Feature switches only, and no Setting Index needed -- the roles that
+        // act on a switch have to be able to see it.
+        Route::get('flags', [SettingController::class, 'flags']);
     });
     Route::get('settings', [SettingController::class, 'index']);
     Route::get('settings/{key}', [SettingController::class, 'show']);
@@ -386,7 +396,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 });
 
 /* customer dashboard routes */
-Route::middleware(['auth:api', 'customer.auth'])->prefix('v1/my')->group(function () {
+Route::middleware(['auth:api', 'password.changed', 'customer.auth'])->prefix('v1/my')->group(function () {
     Route::get('dashboard', [CustomerDashboardController::class, 'overview']);
 
     Route::get('profile', [CustomerProfileController::class, 'show']);

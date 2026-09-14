@@ -12,6 +12,7 @@ use App\Models\Payment;
 use App\Models\RecoveryCase;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -20,7 +21,7 @@ use Illuminate\Support\Facades\Auth;
 
 class ReportController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public static function middleware(): array
     {
@@ -42,14 +43,39 @@ class ReportController extends Controller implements HasMiddleware
     }
 
     /**
+     * The branch every figure in a report is counted over.
+     *
+     * A branch officer is confined to their own posting whatever branch_id
+     * they send. Reports were reading the request alone, so an officer whose
+     * customer list stops at Colombo could open Reports and read the whole
+     * company's disbursement, collections and recovery -- and these are the
+     * numbers people print and act on.
+     *
+     * Head office (no branch posting) keeps the request filter, so branch_id
+     * stays a way to look at one branch at a time.
+     */
+    protected function reportBranchId(Request $request): ?int
+    {
+        $ownBranchId = $this->userBranchId();
+
+        if ($ownBranchId !== null) {
+            return $ownBranchId;
+        }
+
+        return $request->filled('branch_id') ? (int) $request->branch_id : null;
+    }
+
+    /**
      * Human-readable summary of the filters applied, shown on PDF exports.
      */
     protected function filterSummary(Request $request, Carbon $startDate, Carbon $endDate): string
     {
         $parts = ["{$startDate->toDateString()} to {$endDate->toDateString()}"];
 
-        if ($request->filled('branch_id')) {
-            $branchName = Branch::find($request->branch_id)?->name ?? "#{$request->branch_id}";
+        // The branch actually applied, not the one asked for: an officer is
+        // confined to their own, and the export footer has to say so.
+        if ($branchId = $this->reportBranchId($request)) {
+            $branchName = Branch::find($branchId)?->name ?? "#{$branchId}";
             $parts[] = "Branch: {$branchName}";
         }
         if ($request->filled('search')) {
@@ -158,6 +184,9 @@ class ReportController extends Controller implements HasMiddleware
     protected function branchWiseBaseQuery(Request $request)
     {
         return Branch::query()
+            // One row per branch, so the confinement is on which branches are
+            // listed at all: an officer's branch-wise report is their branch.
+            ->when($this->reportBranchId($request), fn ($q, $bid) => $q->where('id', $bid))
             ->when($request->filled('search'), fn ($q) => $q->search($request->search))
             ->orderBy('name');
     }
@@ -259,7 +288,7 @@ class ReportController extends Controller implements HasMiddleware
     {
         return Customer::query()
             ->when($request->filled('search'), fn ($q) => $q->search($request->search))
-            ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
+            ->when($this->reportBranchId($request), fn ($q, $bid) => $q->where('branch_id', $bid))
             ->orderBy('full_name');
     }
 
@@ -318,7 +347,7 @@ class ReportController extends Controller implements HasMiddleware
         [$startDate, $endDate] = $this->resolveDateRange($request);
 
         return LoanApplication::with(['application', 'customer:'.Customer::SUMMARY_COLUMNS, 'loanProduct', 'branch'])
-            ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
+            ->when($this->reportBranchId($request), fn ($q, $bid) => $q->where('branch_id', $bid))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('search'), function ($q) use ($request) {
                 $search = $request->search;
@@ -433,7 +462,7 @@ class ReportController extends Controller implements HasMiddleware
     protected function recoveryBaseQuery(Request $request)
     {
         return RecoveryCase::with(['loanApplication.customer:'.Customer::SUMMARY_COLUMNS, 'loanApplication.application', 'loanApplication.branch', 'assignedAgent:'.User::SUMMARY_COLUMNS, 'externalAgent'])
-            ->when($request->filled('branch_id'), fn ($q) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $request->branch_id)))
+            ->when($this->reportBranchId($request), fn ($q, $bid) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $bid)))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
             ->when($request->filled('stage'), fn ($q) => $q->where('stage', $request->stage))
             ->when($request->filled('search'), function ($q) use ($request) {
@@ -472,7 +501,7 @@ class ReportController extends Controller implements HasMiddleware
      */
     protected function recoverySummary(Request $request, Carbon $startDate, Carbon $endDate): array
     {
-        $branchId = $request->filled('branch_id') ? (int) $request->branch_id : null;
+        $branchId = $this->reportBranchId($request);
 
         $totalOverdue = LoanInstallment::where('status', 'overdue')
             ->when($branchId, fn ($q) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $branchId)))

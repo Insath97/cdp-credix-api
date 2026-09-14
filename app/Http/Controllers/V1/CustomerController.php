@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V1;
 
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateCustomerRequest;
@@ -27,7 +28,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class CustomerController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(protected NotificationService $notificationService)
     {
@@ -65,12 +66,12 @@ class CustomerController extends Controller implements HasMiddleware
                 $query->where('branch_id', $request->branch_id);
             }
 
-            $currentUser = Auth::guard('api')->user();
-            if ($currentUser && $currentUser->user_type === 'staff') {
-                if ($currentUser->employee && $currentUser->employee->branch_id) {
-                    $query->where('branch_id', $currentUser->employee->branch_id);
-                }
-            }
+            // A branch officer sees their own branch's customers only. The
+            // rule moved into ScopesToUserBranch when the same confinement was
+            // put on loan applications, documents and the rest: it was written
+            // out here alone, which is how everything else came to be missing
+            // it.
+            $this->scopeToUserBranch($query);
 
             $customers = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
@@ -143,6 +144,13 @@ class CustomerController extends Controller implements HasMiddleware
                     'username' => $data['user_username'],
                     'email' => $customer->email,
                     'password' => Hash::make($plainPassword),
+                    // Stamped at creation: the password was chosen for this
+                    // account on purpose, not defaulted to something guessable.
+                    // EnsurePasswordChanged holds accounts whose password
+                    // nobody deliberately picked -- and the customer portal has
+                    // no change-password screen, so leaving this null would
+                    // lock every new customer out of it with no way back.
+                    'password_changed_at' => now(),
                     'user_type' => 'customer',
                     'customer_id' => $customer->id,
                     'is_active' => true,
@@ -155,6 +163,13 @@ class CustomerController extends Controller implements HasMiddleware
                     'username' => $customer->customer_code,
                     'email' => $customer->email,
                     'password' => Hash::make($plainPassword),
+                    // Stamped at creation: the password was chosen for this
+                    // account on purpose, not defaulted to something guessable.
+                    // EnsurePasswordChanged holds accounts whose password
+                    // nobody deliberately picked -- and the customer portal has
+                    // no change-password screen, so leaving this null would
+                    // lock every new customer out of it with no way back.
+                    'password_changed_at' => now(),
                     'user_type' => 'customer',
                     'customer_id' => $customer->id,
                     'is_active' => true,

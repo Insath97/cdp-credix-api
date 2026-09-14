@@ -9,6 +9,9 @@ use App\Models\Customer;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use App\Traits\ActivityLogTrait;
 use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -17,6 +20,8 @@ use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
+    use ActivityLogTrait;
+
     /**
      * How long a login OTP stays valid, in seconds.
      *
@@ -308,17 +313,116 @@ class AuthController extends Controller
     /**
      * Get authenticated admin user
      */
+    /**
+     * Update the signed-in user's own name and email.
+     *
+     * Separate from UserController::update, which is an administrator editing
+     * somebody else and can reach roles, branch posting and the active flag.
+     * This one reaches exactly two columns, because that is all the profile
+     * screen offers and all a user should be able to change about themselves.
+     */
+    public function updateProfile(Request $request)
+    {
+        try {
+            $user = auth('api')->user();
+
+            $data = $request->validate([
+                'name'  => ['sometimes', 'required', 'string', 'max:255'],
+                'email' => ['sometimes', 'nullable', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            ]);
+
+            $user->fill($data)->save();
+
+            $this->logActivity('UPDATE', 'User', "Updated own profile: {$user->username}", $data);
+
+            return $this->meResponse($user, 'Profile updated successfully');
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->validator->errors()->first(),
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to update profile',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * The user payload both me() and updateProfile() answer with.
+     *
+     * Kept in one place so a profile screen reading the update response sees
+     * exactly the shape it saw on load -- branch, zone, region and province
+     * included, which User::toArray() fills only from loaded relations.
+     */
+    private function meResponse(\App\Models\User $user, string $message)
+    {
+        $user->load([
+            'roles' => function ($query) {
+                $query->select('id', 'name')
+                    ->with(['permissions' => function ($query) {
+                        $query->select('id', 'name');
+                    }]);
+            },
+            'employee.branch',
+            'employee.branch.zonal',
+            'employee.branch.region',
+            'employee.branch.province',
+            'employee.zonal',
+            'employee.region',
+            'employee.province',
+            'employee.reportingManager.user',
+            'employee.subordinates.user',
+        ]);
+
+        if ($user->relationLoaded('roles')) {
+            $user->roles->each->makeHidden(['pivot']);
+            $user->roles->each(function ($role) {
+                if ($role->relationLoaded('permissions')) {
+                    $role->permissions->each->makeHidden(['pivot']);
+                }
+            });
+        }
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => $message,
+            'data'    => ['user' => $user],
+        ], 200);
+    }
+
     public function me()
     {
         try {
             $user = auth('api')->user();
 
-            $user->load(['roles' => function ($query) {
-                $query->select('id', 'name')
-                    ->with(['permissions' => function ($query) {
-                        $query->select('id', 'name');
-                    }]);
-            }]);
+            $user->load([
+                'roles' => function ($query) {
+                    $query->select('id', 'name')
+                        ->with(['permissions' => function ($query) {
+                            $query->select('id', 'name');
+                        }]);
+                },
+
+                // User::toArray() fills branch, zone, region, province, parent
+                // and children only from relations that are already loaded --
+                // it will not go to the database itself, so that serialising a
+                // list of users cannot fire four queries per row. Loading them
+                // here is therefore what decides whether the profile screen
+                // shows a posting or four dashes.
+                'employee.branch',
+                'employee.branch.zonal',
+                'employee.branch.region',
+                'employee.branch.province',
+                'employee.zonal',
+                'employee.region',
+                'employee.province',
+                'employee.reportingManager.user',
+                'employee.subordinates.user',
+            ]);
 
             if ($user->relationLoaded('roles')) {
                 $user->roles->each->makeHidden(['pivot']);

@@ -43,7 +43,7 @@ class UpdateLoanApplicationCustomerDetailsRequest extends FormRequest
                 'max:100',
                 Rule::unique('customers', 'id_number')->ignore($customerId),
             ],
-            'date_of_birth'   => 'sometimes|required|date',
+            'date_of_birth'   => 'sometimes|required|date|before:today',
             'phone_primary'   => 'sometimes|required|string|max:20',
             'phone_secondary' => 'sometimes|nullable|string|max:20',
             'email'           => 'sometimes|required|email|max:255',

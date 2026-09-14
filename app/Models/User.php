@@ -137,19 +137,28 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         return $this->employee?->branch;
     }
 
+    /*
+     * Zone, region and province fall back to the branch.
+     *
+     * An employee row carries its own zonal_id, region_id and province_id, but
+     * they are left empty in practice -- staff are posted to a branch and
+     * nothing asks the poster to restate the three tiers above it. The branch
+     * already knows all three, and a branch cannot sit in two zones, so
+     * reading them from there is not a guess.
+     */
     public function getZoneAttribute()
     {
-        return $this->employee?->zonal;
+        return $this->employee?->zonal ?? $this->employee?->branch?->zonal;
     }
 
     public function getRegionAttribute()
     {
-        return $this->employee?->region;
+        return $this->employee?->region ?? $this->employee?->branch?->region;
     }
 
     public function getProvinceAttribute()
     {
-        return $this->employee?->province;
+        return $this->employee?->province ?? $this->employee?->branch?->province;
     }
 
     public function getParentAttribute()
@@ -166,16 +175,54 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         return User::whereIn('employee_id', $subordinateIds)->get();
     }
 
+    /**
+     * Whether this user still has to set a password of their own.
+     *
+     * The timestamp itself stays hidden -- when someone last changed their
+     * password is nobody else's business -- but the frontend needs the yes/no
+     * to send them to the change-password dialog instead of letting them walk
+     * into a wall of 403s from EnsurePasswordChanged.
+     */
+    public function getPasswordChangeRequiredAttribute(): bool
+    {
+        // Only answer when the column was actually loaded. Plenty of endpoints
+        // select a handful of user columns for a nested reference, and reading
+        // a missing attribute as null made every one of those users look like
+        // they had never set a password.
+        if (!array_key_exists('password_changed_at', $this->attributes)) {
+            return false;
+        }
+
+        return $this->password_changed_at === null;
+    }
+
     public function toArray()
     {
         $array = parent::toArray();
+        $array['password_change_required'] = $this->password_change_required;
 
         // If employee relationship is loaded, we can populate branch, zone, region, province
         if ($this->relationLoaded('employee') && $this->employee) {
-            $array['branch'] = $this->employee->relationLoaded('branch') ? $this->employee->branch : null;
-            $array['zone'] = $this->employee->relationLoaded('zonal') ? $this->employee->zonal : null;
-            $array['region'] = $this->employee->relationLoaded('region') ? $this->employee->region : null;
-            $array['province'] = $this->employee->relationLoaded('province') ? $this->employee->province : null;
+            $branch = $this->employee->relationLoaded('branch') ? $this->employee->branch : null;
+
+            // Same fallback as the accessors above, but without ever going to
+            // the database: only relations the caller already loaded are read,
+            // so serialising a page of users cannot turn into four queries a
+            // row. A caller that wants these filled loads them.
+            $posting = function (string $employeeRelation) use ($branch) {
+                if ($this->employee->relationLoaded($employeeRelation) && $this->employee->{$employeeRelation}) {
+                    return $this->employee->{$employeeRelation};
+                }
+
+                return $branch && $branch->relationLoaded($employeeRelation)
+                    ? $branch->{$employeeRelation}
+                    : null;
+            };
+
+            $array['branch'] = $branch;
+            $array['zone'] = $posting('zonal');
+            $array['region'] = $posting('region');
+            $array['province'] = $posting('province');
 
             if ($this->employee->relationLoaded('reportingManager') && $this->employee->reportingManager) {
                 if ($this->employee->reportingManager->relationLoaded('user') && $this->employee->reportingManager->user) {
