@@ -88,24 +88,6 @@ class ReportController extends Controller implements HasMiddleware
         return implode('  |  ', $parts);
     }
 
-    /**
-     * Stream a simple CSV download from headings + row arrays.
-     */
-    protected function downloadCsv(string $filename, array $headings, array $rows)
-    {
-        $handle = fopen('php://output', 'w');
-
-        return response()->streamDownload(function () use ($headings, $rows, $handle) {
-            // UTF-8 BOM so Excel opens it correctly
-            fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, $headings);
-            foreach ($rows as $row) {
-                fputcsv($handle, $row);
-            }
-            fclose($handle);
-        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
-    }
-
     // -------------------------------------------------------------------
     // Branch-wise report
     // -------------------------------------------------------------------
@@ -149,21 +131,6 @@ class ReportController extends Controller implements HasMiddleware
 
             if ($format === 'xlsx') {
                 return Excel::download(new BranchWiseReportExport($rows), 'branch-wise-report.xlsx');
-            }
-
-            if ($format === 'csv') {
-                return $this->downloadCsv(
-                    'branch-wise-report.csv',
-                    ['Branch Code', 'Branch Name', 'Applications', 'Total Disbursed', 'Outstanding Portfolio', 'Total Collected'],
-                    $rows->map(fn ($row) => [
-                        $row['branch_code'],
-                        $row['branch_name'],
-                        $row['applications_count'],
-                        $row['total_disbursed'],
-                        $row['outstanding_portfolio'],
-                        $row['total_collected'],
-                    ])->toArray()
-                );
             }
 
             return Pdf::loadView('reports.branch-wise', [
@@ -251,22 +218,6 @@ class ReportController extends Controller implements HasMiddleware
 
             if ($format === 'xlsx') {
                 return Excel::download(new CustomerWiseReportExport($rows), 'customer-wise-report.xlsx');
-            }
-
-            if ($format === 'csv') {
-                return $this->downloadCsv(
-                    'customer-wise-report.csv',
-                    ['Customer Code', 'Customer Name', 'Total Loans', 'Total Disbursed', 'Outstanding Balance', 'Total Paid', 'Overdue Amount'],
-                    $rows->map(fn ($row) => [
-                        $row['customer_code'],
-                        $row['full_name'],
-                        $row['total_loans'],
-                        $row['total_disbursed'],
-                        $row['outstanding_balance'],
-                        $row['total_paid'],
-                        $row['overdue_amount'],
-                    ])->toArray()
-                );
             }
 
             return Pdf::loadView('reports.customer-wise', [
