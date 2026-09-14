@@ -3,6 +3,7 @@
 namespace App\Traits;
 
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\File;
 
@@ -22,21 +23,31 @@ trait FileUploadTrait
         // Delete old file if exists
         $this->deleteFile($oldPath);
 
-        $file = $request->file($fieldName);
+        return $this->storeUploadedFile($request->file($fieldName), $module, $prefix);
+    }
+
+    /**
+     * Store one already-resolved UploadedFile and return its public path.
+     *
+     * The request-based helper above only reaches a top-level field. Nested
+     * payloads -- a customer created with its documents inline -- hand the
+     * file over directly, so they call this.
+     */
+    public function storeUploadedFile(
+        UploadedFile $file,
+        string $module = 'general',
+        string $prefix = '',
+        ?string $oldPath = null
+    ): string {
+        $this->deleteFile($oldPath);
 
         $fileName = $this->buildFileName($file, $prefix);
-
         $directory = "uploads/{$module}";
-        $filePath = "{$directory}/{$fileName}";
 
-        // Create directory if not exists
-        if (!File::exists(public_path($directory))) {
-            File::makeDirectory(public_path($directory), 0755, true);
-        }
-
+        $this->createDirectory($directory);
         $file->move(public_path($directory), $fileName);
 
-        return $filePath;
+        return "{$directory}/{$fileName}";
     }
 
     /**
@@ -68,16 +79,11 @@ trait FileUploadTrait
                 continue;
             }
 
-            $fileName = $this->buildFileName($file, $prefix === '' ? '' : $prefix . '_' . ($index + 1));
-
-            $directory = "uploads/{$module}";
-            $filePath = "{$directory}/{$fileName}";
-
-            // Create directory if not exists
-            $this->createDirectory($directory);
-
-            $file->move(public_path($directory), $fileName);
-            $uploadedPaths[] = $filePath;
+            $uploadedPaths[] = $this->storeUploadedFile(
+                $file,
+                $module,
+                $prefix === '' ? '' : $prefix . '_' . ($index + 1)
+            );
         }
 
         // Delete old files if new ones were uploaded
@@ -100,7 +106,7 @@ trait FileUploadTrait
      * overwrites the first, leaving both document rows pointing at one
      * scan.
      */
-    private function buildFileName($file, string $prefix): string
+    private function buildFileName(UploadedFile $file, string $prefix): string
     {
         $extension = strtolower(preg_replace('/[^A-Za-z0-9]/', '', (string) $file->getClientOriginalExtension()));
         if ($extension === '') {

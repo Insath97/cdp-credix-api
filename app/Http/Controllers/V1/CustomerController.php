@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\V1;
 
 use App\Traits\ActivityLogTrait;
+use App\Traits\FileUploadTrait;
 use App\Traits\ScopesToUserBranch;
 
 use App\Http\Controllers\Controller;
@@ -20,7 +21,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -28,7 +28,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class CustomerController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait, ScopesToUserBranch;
+    use ActivityLogTrait, FileUploadTrait, ScopesToUserBranch;
 
     public function __construct(protected NotificationService $notificationService)
     {
@@ -197,7 +197,7 @@ class CustomerController extends Controller implements HasMiddleware
                             'guarantor_id'  => $guarantor->id,
                             'customer_id'   => $customer->id,
                             'file_path'     => !empty($doc['file'])
-                                ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                                ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
                                 : $doc['file_path'],
                         ]);
                     }
@@ -217,7 +217,7 @@ class CustomerController extends Controller implements HasMiddleware
                         'is_active' => $doc['is_active'] ?? true,
                         'uploaded_at' => now(),
                         'file_path' => !empty($doc['file'])
-                            ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                            ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
                             : $doc['file_path'],
                     ]);
                 }
@@ -464,7 +464,7 @@ class CustomerController extends Controller implements HasMiddleware
                             'guarantor_id'  => $guarantor->id,
                             'customer_id'   => $customer->id,
                             'file_path'     => !empty($doc['file'])
-                                ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                                ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
                                 : $doc['file_path'],
                         ]);
                     }
@@ -495,7 +495,7 @@ class CustomerController extends Controller implements HasMiddleware
                         'is_active' => $doc['is_active'] ?? true,
                         'uploaded_at' => now(),
                         'file_path' => !empty($doc['file'])
-                            ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                            ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
                             : $doc['file_path'],
                     ]);
                 }
@@ -708,30 +708,4 @@ class CustomerController extends Controller implements HasMiddleware
         }
     }
 
-    private function storeDocumentFile($file, int $customerId, ?string $documentName): string
-    {
-        $directory = 'uploads/documents';
-
-        if (!File::exists(public_path($directory))) {
-            File::makeDirectory(public_path($directory), 0755, true);
-        }
-
-        $extension = $file->getClientOriginalExtension();
-        $clean = preg_replace('/[^\p{L}\p{N}\-_.]+/u', '_', trim($documentName ?? 'document'));
-        $clean = trim($clean, '._');
-        if ($clean === '') {
-            $clean = 'document';
-        }
-        $clean = mb_substr($clean, 0, 80);
-
-        $fileName = $customerId . '_' . $clean . '.' . $extension;
-        $i = 1;
-        while (File::exists(public_path($directory . '/' . $fileName))) {
-            $fileName = $customerId . '_' . $clean . '_' . (++$i) . '.' . $extension;
-        }
-
-        $file->move(public_path($directory), $fileName);
-
-        return $directory . '/' . $fileName;
-    }
 }
