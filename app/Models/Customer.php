@@ -26,7 +26,7 @@ class Customer extends Model
      *
      * Pass to a relation string: ->with('customer:'.Customer::SUMMARY_COLUMNS)
      */
-    public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,credit_score,credit_score_on_time_rate,credit_score_updated_at,is_active';
+    public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,id_number,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,credit_score,credit_score_on_time_rate,credit_score_updated_at,is_active';
 
     /**
      * SUMMARY_COLUMNS plus the means to reach the customer — for recovery and

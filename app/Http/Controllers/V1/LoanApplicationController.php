@@ -302,6 +302,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'reviewedByUser:'.User::SUMMARY_COLUMNS,
                 'verifiedByUser:'.User::SUMMARY_COLUMNS,
                 'approvedByUser:'.User::SUMMARY_COLUMNS,
+                'offerRespondedByUser:'.User::SUMMARY_COLUMNS,
                 'loanApplicationGuarantors.guarantor',
                 'loanApplicationFixedAssets',
                 'loanApplicationMovingAssets',
@@ -1248,7 +1249,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
      * Derive the processing fee from the loan product's configured rule
      * (fixed amount, or a percentage of the approved amount).
      */
-    private function calculateProcessingFee(?LoanProduct $product, $approvedAmount): float
+    private function calculateProcessingFee(?LoanProduct $product, float $approvedAmount): float
     {
         if (!$product || !$product->processing_fee_value) {
             return 0.0;

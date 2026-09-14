@@ -48,18 +48,19 @@ class CreateGroupLoanRequest extends FormRequest
                 'required',
                 'integer',
                 Rule::exists('loan_products', 'id')->where(function ($query) {
-                    $query->where('is_active', true);
-
-                    // is_group_loan marks a product as belonging to the GROUP
-                    // tier of the Development Fund scheme. A single-borrower
-                    // Development Fund loan is submitted through this same
-                    // endpoint and takes an ordinary product of that loan
-                    // type, so demanding the flag from it rejected every
-                    // individual submission with "The selected loan product id
-                    // is invalid."
-                    // Exclusive: a group borrower may pick only flagged
-                    // products, a single borrower only unflagged ones.
-                    $query->where('is_group_loan', $this->borrowerCount() > 1);
+                    // The Development Fund scheme is item-based whether one
+                    // person takes the loan or a whole group, and both tiers
+                    // submit through this endpoint. A product is selectable
+                    // when it belongs to the Development Fund scheme; the
+                    // is_group_loan flag only tells the loan summary which
+                    // tier it is, it must not bar an individual borrower from
+                    // picking the scheme's own product. Requiring the
+                    // Development Fund loan type still keeps Standard
+                    // Borrowing products out.
+                    $query->where('is_active', true)
+                        ->whereIn('loan_type_id', function ($sub) {
+                            $sub->select('id')->from('loan_types')->where('code', 'DEVELOPMENT_FUND');
+                        });
                 }),
             ],
             'branch_id'         => 'nullable|integer|exists:branches,id',
