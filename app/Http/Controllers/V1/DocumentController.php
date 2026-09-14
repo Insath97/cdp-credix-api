@@ -33,6 +33,46 @@ class DocumentController extends Controller implements HasMiddleware
     }
 
     /**
+     * Refuse to add, change or remove documents once the loan has been paid out.
+     *
+     * The upload screen already stops offering disbursed applications, but a
+     * screen is not a rule -- document ids are sequential and the update and
+     * delete endpoints are reachable directly. The freeze is enforced here so
+     * that "nobody can change a disbursed file's documents" is actually true
+     * rather than merely not offered.
+     *
+     * Documents that hang off no loan application at all (the customer
+     * registration form uploads those) are never frozen.
+     *
+     * Returns a 422 response when the change must be refused, or null.
+     */
+    private function frozenApplicationResponse($loanApplicationId)
+    {
+        if (empty($loanApplicationId)) {
+            return null;
+        }
+
+        $loanApplication = LoanApplication::select('id', 'application_id', 'status')
+            ->with('application:id,application_no')
+            ->find($loanApplicationId);
+
+        if (!$loanApplication || $loanApplication->status->allowsDocumentChanges()) {
+            return null;
+        }
+
+        $reference = $loanApplication->application?->application_no ?? "ID {$loanApplication->id}";
+
+        return response()->json([
+            'status'  => 'error',
+            'message' => "Loan application {$reference} is {$loanApplication->status->value}. Its documents are the record the disbursement was made on and can no longer be changed.",
+            'errors'  => [
+                'loan_application_id' => $loanApplication->id,
+                'status'              => $loanApplication->status->value,
+            ],
+        ], 422);
+    }
+
+    /**
      * Display a listing of documents.
      */
     public function index(Request $request)
@@ -165,6 +205,10 @@ class DocumentController extends Controller implements HasMiddleware
         try {
             $data = $request->validated();
 
+            if ($frozen = $this->frozenApplicationResponse($data['loan_application_id'] ?? null)) {
+                return $frozen;
+            }
+
             $filePath = $this->handleFileUpload(
                 $request,
                 'file',
@@ -256,6 +300,14 @@ class DocumentController extends Controller implements HasMiddleware
 
             $data = $request->validated();
 
+            // Both ends: the application the document is on now, and the one
+            // it is being moved to. Either being disbursed freezes the change.
+            foreach ([$document->loan_application_id, $data['loan_application_id'] ?? null] as $applicationId) {
+                if ($frozen = $this->frozenApplicationResponse($applicationId)) {
+                    return $frozen;
+                }
+            }
+
             $filePath = $this->handleFileUpload(
                 $request,
                 'file',
@@ -301,6 +353,10 @@ class DocumentController extends Controller implements HasMiddleware
                     'status' => 'error',
                     'message' => 'Document not found'
                 ], 404);
+            }
+
+            if ($frozen = $this->frozenApplicationResponse($document->loan_application_id)) {
+                return $frozen;
             }
 
             if ($document->file_path) {
