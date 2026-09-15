@@ -224,6 +224,10 @@ class CreditScoreController extends Controller implements HasMiddleware
             $scores = $this->creditScoreService->recomputeForCustomer($customer->id);
             $customer->refresh();
 
+            // Read after the recompute, so the band below is banded against the
+            // same rules the scores were just built with.
+            $config = $this->creditScoreService->config();
+
             $this->logActivity('UPDATE', 'CustomerCreditScore', "Recomputed credit score for customer ID: {$customer->id}", [
                 'customer_id'  => $customer->id,
                 'loans_scored' => $scores->count(),
@@ -236,8 +240,19 @@ class CreditScoreController extends Controller implements HasMiddleware
                 'data'    => [
                     'customer_id'  => $customer->id,
                     'score'        => $customer->credit_score !== null ? (float) $customer->credit_score : null,
+                    // The on-time share, exactly as show() reads it.
+                    //
+                    // This passed credit_score, which is the signed POINT
+                    // TOTAL, into a function whose bands are a percentage out
+                    // of 100. Five punctual months and four late ones is ten
+                    // points, which lands in 'very_poor', while the true share
+                    // of 55.6% is 'fair' -- so the same customer was rated
+                    // differently depending on which endpoint you asked.
                     'band'         => $this->creditScoreService->band(
-                        $customer->credit_score !== null ? (float) $customer->credit_score : null
+                        $customer->credit_score_on_time_rate !== null
+                            ? (float) $customer->credit_score_on_time_rate
+                            : null,
+                        $config
                     ),
                     'loans_scored' => $scores->count(),
                     'updated_at'   => $customer->credit_score_updated_at,

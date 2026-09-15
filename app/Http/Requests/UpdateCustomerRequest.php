@@ -29,7 +29,11 @@ class UpdateCustomerRequest extends FormRequest
         'customer_id'=>'nullable|string|max:255',
         'full_name'=>'required|string|max:500',
         'name_with_initials'=>'required|string|max:255',
-        'customer_code' => 'nullable|string|max:255|unique:customers,customer_code',
+        // Ignoring the row being edited. $id was read above and never used, so
+        // this rule compared the record against itself: the edit screen posts
+        // the whole record back, customer_code included, and every save of an
+        // unchanged customer was refused with "already been taken".
+        'customer_code' => 'nullable|string|max:255|unique:customers,customer_code,' . $id,
         'id_type'=>'required',
         'id_number'=>'required',
         'address_line_1'=>'required',

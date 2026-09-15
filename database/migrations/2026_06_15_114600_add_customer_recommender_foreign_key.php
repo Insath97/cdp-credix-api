@@ -28,6 +28,14 @@ return new class extends Migration
             return;
         }
 
+        // SQLite cannot bolt a constraint onto an existing table at all, and
+        // the test suite runs on an in-memory SQLite database. The column is
+        // what the application reads; the constraint is a production integrity
+        // guarantee, so skipping it here costs the tests nothing.
+        if ($this->connectionCannotAlterForeignKeys()) {
+            return;
+        }
+
         // Databases created before this migration existed already carry the
         // constraint, added by the patch migration that introduced the column.
         if ($this->constraintExists()) {
@@ -44,7 +52,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (!$this->constraintExists()) {
+        if ($this->connectionCannotAlterForeignKeys() || !$this->constraintExists()) {
             return;
         }
 
@@ -53,12 +61,29 @@ return new class extends Migration
         });
     }
 
+    /**
+     * SQLite has no ALTER TABLE ... ADD CONSTRAINT, so a foreign key can only
+     * be declared when the table is created.
+     */
+    private function connectionCannotAlterForeignKeys(): bool
+    {
+        return Schema::getConnection()->getDriverName() === 'sqlite';
+    }
+
+    /**
+     * Asked through Laravel's own schema introspection rather than a raw
+     * information_schema query: that table only exists on MySQL, so the raw
+     * form made this migration -- and therefore the whole test suite -- fail
+     * on every other driver.
+     */
     private function constraintExists(): bool
     {
-        return DB::table('information_schema.KEY_COLUMN_USAGE')
-            ->where('TABLE_SCHEMA', DB::getDatabaseName())
-            ->where('TABLE_NAME', 'customers')
-            ->where('CONSTRAINT_NAME', 'customers_recommended_by_employee_id_foreign')
-            ->exists();
+        foreach (Schema::getForeignKeys('customers') as $foreignKey) {
+            if (in_array('recommended_by_employee_id', $foreignKey['columns'], true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 };

@@ -34,8 +34,11 @@ class UpdateDocumentRequest extends FormRequest
             // update() leaves file_path untouched when no file is sent, so
             // requiring one here rejected an edit the controller handles fine.
             'document_name' => 'nullable|string|max:255',
+            // file_path is deliberately absent, as it is on create: the stored
+            // path is what every read and delete resolves against, so it is
+            // server-generated and never taken from the caller. Sending a new
+            // file replaces it; sending nothing leaves it alone.
             'file'          => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
-            'file_path'     => 'nullable|string|max:1000',
             'remarks'       => 'nullable|string',
             'status'        => 'nullable|string|in:active,rejected,expired',
             'is_active'     => 'nullable|boolean',

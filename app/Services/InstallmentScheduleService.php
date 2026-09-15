@@ -37,16 +37,25 @@ class InstallmentScheduleService
         $owners = $this->scheduleOwnersFor($loanApplication);
         $monthlyShares = GroupLoan::splitEvenly($monthlyInstallment, count($owners));
 
+        // Split the loan's REAL total, not the rounded installment times the
+        // term. The total used to be rebuilt as round($share * $termMonths, 2),
+        // which is derived from a figure that has already been rounded to the
+        // cent, so it drifted from what the borrower was actually approved for:
+        // 100,000 at flat 21% over 12 months owes 121,000.00 but scheduled
+        // 120,999.96, and outstanding_balance was then written as that, leaving
+        // a loan that could never be closed at the approved figure. It also made
+        // writeSchedule()'s "last installment absorbs the remainder" a no-op,
+        // because there was no remainder left to absorb.
+        $totalShares = GroupLoan::splitEvenly($this->totalPayableFor($loanApplication), count($owners));
+
         $grandTotal = 0.0;
 
         foreach ($owners as $index => $customerId) {
-            $share = $monthlyShares[$index];
-
             $grandTotal += $this->writeSchedule(
                 $loanApplication,
                 $customerId,
-                $share,
-                round($share * $termMonths, 2),
+                $monthlyShares[$index],
+                $totalShares[$index],
                 $termMonths,
                 $baseDate,
                 0,
@@ -132,6 +141,41 @@ class InstallmentScheduleService
      *
      * @return float The total actually written, for the caller to aggregate.
      */
+    /**
+     * What this loan actually owes over its whole term.
+     *
+     * The two lending shapes arrive at it differently. A group loan borrows as
+     * one loan and carries its own total_repayment_amount, struck when the
+     * group was approved. An individual or joint loan is the approved principal
+     * plus the interest computed from it, using the same expression approve()
+     * used to derive monthly_installment in the first place.
+     *
+     * Falls back to the rounded installment times the term when neither is
+     * available, which is the figure this method replaced: a loan disbursed
+     * without an approved amount is already in a strange state, and a schedule
+     * that is a few cents out beats no schedule at all.
+     */
+    private function totalPayableFor(LoanApplication $loanApplication): float
+    {
+        if ($loanApplication->isGroupLoan()) {
+            $groupTotal = $loanApplication->groupLoan?->total_repayment_amount;
+
+            if ($groupTotal !== null) {
+                return round((float) $groupTotal, 2);
+            }
+        }
+
+        $approved = $loanApplication->approved_amount;
+
+        if ($approved !== null) {
+            $interest = round((float) $approved * (float) $loanApplication->interest_rate / 100, 2);
+
+            return round((float) $approved + $interest, 2);
+        }
+
+        return round((float) $loanApplication->monthly_installment * $loanApplication->term_months, 2);
+    }
+
     private function writeSchedule(
         LoanApplication $loanApplication,
         ?int $customerId,

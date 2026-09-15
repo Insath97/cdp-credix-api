@@ -593,7 +593,24 @@ class PaymentController extends Controller implements HasMiddleware
 
                 $loanApplication = $payment->loanApplication()->lockForUpdate()->first();
                 if ($loanApplication && $loanApplication->outstanding_balance !== null) {
-                    $loanApplication->outstanding_balance += $payment->amount;
+                    // Rebuilt from the installments, not `+= $payment->amount`.
+                    //
+                    // Posting subtracts with a floor -- max(0, outstanding -
+                    // amount) -- so an overpayment removes less than its face
+                    // value, but the reversal added the whole face value back
+                    // and the two were not inverses. A loan owing 120,000 paid
+                    // with 125,000 went to 0, and deleting that receipt took it
+                    // to 125,000: the borrower ended up owing 5,000 that never
+                    // existed.
+                    //
+                    // The installment rows above have just been restored to
+                    // exactly what they were, and each one's balance already
+                    // carries its own penalty, so their sum is the truthful
+                    // figure however the receipt was applied.
+                    $loanApplication->outstanding_balance = round(
+                        (float) $loanApplication->installments()->sum('balance'),
+                        2
+                    );
                     $loanApplication->save();
                 }
 

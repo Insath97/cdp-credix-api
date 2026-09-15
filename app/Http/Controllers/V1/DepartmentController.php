@@ -21,11 +21,11 @@ class DepartmentController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Department Index', ['only' => ['index', 'show']]),
-            new Middleware('permission:Department Create', ['only' => ['store']]),
-            new Middleware('permission:Department Update', ['only' => ['update']]),
-            new Middleware('permission:Department Delete', ['only' => ['destroy']]),
-            new Middleware('permission:Department Toggle Status', ['only' => ['toggleStatus']]),
+            new Middleware('permission:Department Index', only: ['index', 'show', 'getDesignations']),
+            new Middleware('permission:Department Create', only: ['store']),
+            new Middleware('permission:Department Update', only: ['update']),
+            new Middleware('permission:Department Delete', only: ['destroy']),
+            new Middleware('permission:Department Toggle Status', only: ['toggleStatus']),
         ];
     }
 
@@ -179,6 +179,47 @@ class DepartmentController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to delete department',
+                'error' => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * The designations that sit inside one department.
+     *
+     * Registered in routes/v1.php all along, but the method itself was never
+     * written, so GET departments/{id}/designations answered 500 with "Call to
+     * undefined method" for every caller. Shaped like getDepartmentList(): the
+     * columns a picker needs and nothing more, active rows only, because the
+     * only thing that reads this is the designation dropdown on the employee
+     * and user forms.
+     */
+    public function getDesignations(string $id)
+    {
+        try {
+            $department = Department::find($id);
+
+            if (!$department) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Department not found'
+                ], 404);
+            }
+
+            $designations = $department->designations()
+                ->where('is_active', true)
+                ->orderBy('name', 'asc')
+                ->get(['id', 'name', 'code', 'level', 'department_id']);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Designations retrieved successfully',
+                'data' => $designations,
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retrieve designations',
                 'error' => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }

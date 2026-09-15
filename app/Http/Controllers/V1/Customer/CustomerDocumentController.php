@@ -60,9 +60,15 @@ class CustomerDocumentController extends Controller
     }
 
     /**
-     * Stream one of the customer's own documents. Files are stored under
-     * public/uploads/documents/ (via FileUploadTrait, not the Storage disk),
-     * so file_path is resolved relative to public_path().
+     * Stream one of the customer's own documents.
+     *
+     * Resolved through FileUploadTrait rather than public_path(), which is what
+     * this used to do. Two things changed underneath it: uploads now land in
+     * private storage instead of the web root, and the resolver refuses any
+     * path that escapes its base directory. The second matters even for files
+     * that are where they should be, because the stored path was reachable from
+     * the create endpoint until recently -- a row pointing at ../.env would
+     * otherwise have been streamed straight back here.
      */
     public function download(string $id)
     {
@@ -80,9 +86,9 @@ class CustomerDocumentController extends Controller
                 ], 404);
             }
 
-            $absolutePath = public_path($document->file_path);
+            $absolutePath = $this->resolveStoredFile($document->file_path);
 
-            if (!is_file($absolutePath)) {
+            if ($absolutePath === null) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Document file is missing',

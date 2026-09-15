@@ -309,6 +309,20 @@ class LoanApplication extends Model
     {
         $this->loadMissing('loanProduct');
 
+        // KNOWN LIMITATION, left deliberately as it is.
+        //
+        // `?:` treats 0 as "not set", so a product whose grace period is 0 gets
+        // the installment_due_period_days setting (30) instead of no grace at
+        // all. There is therefore no way to configure a product that is chased
+        // from the day a payment is missed.
+        //
+        // Changing this to `??` is a one-word fix, but it is not only a fix: the
+        // column is NOT NULL DEFAULT 0, so every product left untouched reads as
+        // 0, and two live products here are in exactly that state. Making zero
+        // mean zero would start chasing their borrowers and charging late fees a
+        // month earlier than today, without anyone having asked for it. The
+        // change therefore needs the affected products given an explicit grace
+        // period first, which is a configuration decision rather than a code one.
         return (int) ($this->loanProduct?->grace_period_days
             ?: Setting::get('installment_due_period_days', 30));
     }
