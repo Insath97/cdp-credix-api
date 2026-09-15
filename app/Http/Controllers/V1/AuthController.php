@@ -31,14 +31,6 @@ class AuthController extends Controller
     public const LOGIN_OTP_TTL_SECONDS = 60;
 
     /**
-     * How long a login OTP stays valid, in seconds.
-     *
-     * The clock starts when the record is written, not when the SMS lands, so
-     * the gateway's own delivery delay is spent out of this window.
-     */
-    public const LOGIN_OTP_TTL_SECONDS = 60;
-
-    /**
      * Admin / Customer Login
      * Customers get an OTP-required response on their first login instead of a JWT.
      */
