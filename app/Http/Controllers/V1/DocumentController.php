@@ -107,7 +107,33 @@ class DocumentController extends Controller implements HasMiddleware
             // against its slots. Without these filters it would have to pull
             // every document in the system and filter client-side.
             if ($request->filled('loan_application_id')) {
-                $query->where('loan_application_id', $request->loan_application_id);
+                $loanApplicationId = $request->loan_application_id;
+
+                // A document can name a customer only -- the customer
+                // registration form and the New Loan customer step both attach
+                // files before the application exists -- and a customer's
+                // papers are meant to follow them across loans. The document
+                // view for one application must still surface those rows, or
+                // "what did the customer hand in" silently drops everything
+                // they uploaded without a loan_application_id.
+                $customerIds = LoanApplication::where('id', $loanApplicationId)
+                    ->with(['loanApplicationCustomers' => fn ($query) => $query->select('loan_application_id', 'customer_id')])
+                    ->get(['id', 'customer_id'])
+                    ->flatMap(fn ($application) => array_merge(
+                        [$application->customer_id],
+                        $application->loanApplicationCustomers->pluck('customer_id')->all(),
+                    ))
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                $query->where(function ($query) use ($loanApplicationId, $customerIds) {
+                    $query->where('loan_application_id', $loanApplicationId);
+                    if (!empty($customerIds)) {
+                        $query->orWhereIn('customer_id', $customerIds);
+                    }
+                });
             }
 
             if ($request->filled('customer_id')) {
