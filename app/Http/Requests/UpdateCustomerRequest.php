@@ -43,7 +43,8 @@ class UpdateCustomerRequest extends FormRequest
         'ds_division'=>'nullable|string|max:255',
         'district'=>'nullable|string|max:255',
         'province'=>'nullable|string|max:255',
-        'date_of_birth'=>'required|date',
+        // A birth date in the future is not a person. `date` alone let one through.
+        'date_of_birth'=>'required|date|before:today',
         'phone_primary'=>'required|string|max:20',
         'phone_secondary'=>'nullable|string|max:20',
         'email'=>'required|string|max:255',
@@ -129,7 +130,7 @@ class UpdateCustomerRequest extends FormRequest
         'guarantors.*.type' => 'required_with:guarantors|string|in:guarantor_1,guarantor_2',
         'guarantors.*.id_type' => 'required_with:guarantors|string|max:100',
         'guarantors.*.id_number' => 'required_with:guarantors|string|max:100',
-        'guarantors.*.date_of_birth' => 'nullable|date',
+        'guarantors.*.date_of_birth' => 'nullable|date|before:today',
         'guarantors.*.phone_primary' => 'nullable|string|max:20',
         'guarantors.*.occupation' => 'nullable|string|max:255',
         'guarantors.*.employer_name' => 'nullable|string|max:255',

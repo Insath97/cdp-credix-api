@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\CustomerCreditScore;
 use App\Services\CreditScoreService;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -22,7 +23,7 @@ use Illuminate\Routing\Controllers\Middleware;
  */
 class CreditScoreController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected CreditScoreService $creditScoreService,
@@ -70,6 +71,9 @@ class CreditScoreController extends Controller implements HasMiddleware
             // credit_score_band rides along on every row: Customer appends it.
             // Plain orderBy is enough now that nulls are filtered out -- there
             // is no "sort the blanks last" case left to handle.
+            // A branch officer sees their own branch's customers only.
+            $this->scopeToUserBranch($query);
+
             $customers = $query
                 ->orderBy('credit_score', $direction)
                 ->paginate($perPage);

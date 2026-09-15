@@ -26,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
             'admin.auth' => \App\Http\Middleware\AdminAuthMiddleware::class,
             'customer.auth' => \App\Http\Middleware\CustomerAuthMiddleware::class,
+            'password.changed' => \App\Http\Middleware\EnsurePasswordChanged::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

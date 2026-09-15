@@ -12,6 +12,7 @@ use App\Models\LegalDocumentTemplate;
 use App\Models\LoanApplication;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -30,7 +31,7 @@ use Illuminate\Support\Facades\Log;
  */
 class LegalDocumentController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public static function middleware(): array
     {
@@ -95,6 +96,9 @@ class LegalDocumentController extends Controller implements HasMiddleware
             if ($request->has('is_active')) {
                 $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
             }
+
+            // A branch officer sees their own branch's legal documents only.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id']);
 
             $documents = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
@@ -402,6 +406,9 @@ class LegalDocumentController extends Controller implements HasMiddleware
                     ? $query->has('legalDocuments')
                     : $query->doesntHave('legalDocuments');
             }
+
+            // The rows here are loan applications, which carry branch_id.
+            $this->scopeToUserBranch($query);
 
             $applications = $query->orderBy('created_at', 'desc')->paginate($perPage);
 

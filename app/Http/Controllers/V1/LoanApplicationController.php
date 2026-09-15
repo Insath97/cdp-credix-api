@@ -15,6 +15,7 @@ use App\Models\Customer;
 use App\Models\Document;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\CreateLoanApplicationRequest;
 use App\Http\Requests\UpdateLoanApplicationRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -28,7 +29,7 @@ use Spatie\Permission\Models\Role;
 
 class LoanApplicationController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected LoanApplicationWorkflowService $workflowService,
@@ -160,6 +161,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
             if ($request->has('is_active')) {
                 $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
             }
+
+            // A branch officer sees their own branch's rows only.
+            $this->scopeToUserBranch($query);
 
             $loanApplications = $query->orderBy('created_at', 'desc')->paginate($perPage);
 

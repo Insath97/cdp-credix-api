@@ -10,6 +10,7 @@ use App\Models\Customer;
 use App\Models\User;
 use App\Services\NotificationService;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\CreateRecoveryCaseAgentRequest;
 use App\Http\Requests\CreateRecoveryCaseRequest;
 use App\Http\Requests\UpdateRecoveryCaseRequest;
@@ -19,7 +20,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class RecoveryCaseController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected NotificationService $notificationService,
@@ -45,7 +46,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
         try {
             $perPage = $request->get('per_page', 15);
             $query = RecoveryCase::with([
-                
+
                 'customer:'.Customer::SUMMARY_COLUMNS,
                 'loanApplication.customer:'.Customer::SUMMARY_COLUMNS,
 
@@ -70,6 +71,10 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             if ($request->has('assigned_agent_id')) {
                 $query->where('assigned_agent_id', $request->assigned_agent_id);
             }
+
+            // A branch officer sees their own branch's rows only;
+            // the branch is reached through the parent records.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id']);
 
             $cases = $query->orderByDesc('opened_at')->paginate($perPage);
 
