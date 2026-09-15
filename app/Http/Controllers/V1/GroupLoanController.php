@@ -10,10 +10,12 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Application;
 use App\Models\Branch;
 use App\Models\GroupLoan;
+use App\Models\LoanApplication;
 use App\Models\Setting;
 use App\Models\Customer;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\CreateGroupLoanRequest;
 use App\Http\Requests\UpdateGroupLoanRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -28,7 +30,7 @@ use Spatie\Permission\Models\Role;
 
 class GroupLoanController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected GroupLoanWorkflowService $workflowService,
@@ -48,6 +50,7 @@ class GroupLoanController extends Controller implements HasMiddleware
             new Middleware('permission:Group Loan Verify', only: ['verify']),
             new Middleware('permission:Group Loan Approve', only: ['approve']),
             new Middleware('permission:Group Loan Reject', only: ['reject']),
+            new Middleware('permission:Group Loan Offer Response', only: ['holdOffer', 'acceptOffer', 'declineOffer']),
             new Middleware('permission:Group Loan Disburse', only: ['disburse']),
             new Middleware('permission:Group Loan Cancel', only: ['cancel']),
         ];
@@ -85,6 +88,9 @@ class GroupLoanController extends Controller implements HasMiddleware
 
                 $query->status($status);
             }
+
+            // A branch officer sees their own branch's rows only.
+            $this->scopeToUserBranch($query);
 
             $groupLoans = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
@@ -845,6 +851,100 @@ class GroupLoanController extends Controller implements HasMiddleware
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
+    }
+
+    /**
+     * Record the group's answer to an approved offer.
+     *
+     * The mirror of LoanApplicationController::respondToOffer, for the loan a
+     * group borrows as one. Approving less than was asked for is an offer, and
+     * the group may take it, ask for time, or refuse -- and disbursement waits
+     * for that answer either way.
+     *
+     * One method behind three routes: they differ only in the status they land
+     * on and whether a reason is required.
+     */
+    private function respondToOffer(Request $request, string $id, LoanApplicationStatus $to)
+    {
+        try {
+            // Remarks on every answer: the status says what was decided, never
+            // what was actually said, and that sentence is what the next
+            // officer to open the file reads.
+            $rules = ['remarks' => 'required|string|min:3|max:1000'];
+
+            if ($to === LoanApplicationStatus::Declined) {
+                $rules['decline_reason'] = 'required|string|in:' . implode(',', array_keys(LoanApplication::OFFER_DECLINE_REASONS));
+            }
+
+            $validator = Validator::make($request->all(), $rules);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => $validator->errors()->first(),
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $groupLoan = GroupLoan::find($id);
+
+            if (!$groupLoan) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan not found',
+                ], 404);
+            }
+
+            $groupLoan = $this->workflowService->respondToOffer(
+                $groupLoan,
+                $to,
+                Auth::id(),
+                $request->input('remarks'),
+                $request->input('decline_reason')
+            );
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} offer {$to->value}", [
+                'group_loan_id'  => $groupLoan->id,
+                'decline_reason' => $to === LoanApplicationStatus::Declined ? $request->input('decline_reason') : null,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => match ($to) {
+                    LoanApplicationStatus::OnHold   => 'Offer put on hold for the group',
+                    LoanApplicationStatus::Accepted => 'Group accepted the approved offer',
+                    default                         => 'Group declined the offer — the group loan has been cancelled',
+                },
+                'data'    => $groupLoan,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to record the offer response',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    public function holdOffer(Request $request, string $id)
+    {
+        return $this->respondToOffer($request, $id, LoanApplicationStatus::OnHold);
+    }
+
+    public function acceptOffer(Request $request, string $id)
+    {
+        return $this->respondToOffer($request, $id, LoanApplicationStatus::Accepted);
+    }
+
+    public function declineOffer(Request $request, string $id)
+    {
+        return $this->respondToOffer($request, $id, LoanApplicationStatus::Declined);
     }
 
     /**

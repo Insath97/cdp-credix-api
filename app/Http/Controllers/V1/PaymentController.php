@@ -21,6 +21,7 @@ use App\Services\LoanApplicationWorkflowService;
 use App\Services\NotificationService;
 use App\Services\RecoveryCaseService;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\CreatePaymentRequest;
 use App\Http\Requests\UpdatePaymentRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -30,7 +31,7 @@ use Spatie\Permission\Models\Role;
 
 class PaymentController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected LoanApplicationWorkflowService $workflowService,
@@ -69,6 +70,10 @@ class PaymentController extends Controller implements HasMiddleware
                 'receivedBy:' . User::SUMMARY_COLUMNS,
             ]);
 
+            if ($request->filled('search')) {
+                $query->search($request->search);
+            }
+
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
             }
@@ -76,6 +81,10 @@ class PaymentController extends Controller implements HasMiddleware
             if ($request->has('loan_installment_id')) {
                 $query->where('loan_installment_id', $request->loan_installment_id);
             }
+
+            // A branch officer sees their own branch's rows only;
+            // the branch is reached through the parent records.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id']);
 
             $payments = $query->orderByDesc('paid_at')->paginate($perPage);
 

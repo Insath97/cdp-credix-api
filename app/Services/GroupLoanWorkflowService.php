@@ -301,6 +301,81 @@ class GroupLoanWorkflowService
     }
 
     /**
+     * Record the group's answer to an approved offer.
+     *
+     * Approving 400,000 against a request for 500,000 is an offer, not a
+     * conclusion -- and that is as true of a group as of one borrower. Until
+     * the group answers, the file waits: On Hold while they think, Accepted
+     * when they agree, or Declined, which carries the reason and takes the
+     * loan on to Cancelled.
+     *
+     * The answer is recorded on the application, not on the header. The header
+     * is deliberately coarse -- Available, Locked, Disbursed, Closed -- and an
+     * offer awaiting an answer is still a Locked group loan, exactly as an
+     * approved one is. Only a decline moves the header, because that ends it.
+     *
+     * Without this step a group loan could never legitimately be disbursed:
+     * Approved -> Disbursed is not a transition the state machine allows, so
+     * disburse() threw for every group loan that reached it.
+     */
+    public function respondToOffer(
+        GroupLoan $groupLoan,
+        LoanApplicationStatus $to,
+        int $actorId,
+        ?string $remarks,
+        ?string $declineReason = null
+    ): GroupLoan {
+        return DB::transaction(function () use ($groupLoan, $to, $actorId, $remarks, $declineReason) {
+            $groupLoan = GroupLoan::lockForUpdate()->find($groupLoan->id);
+
+            if ($groupLoan->status !== GroupLoanStatus::Locked) {
+                throw new InvalidLoanApplicationTransitionException(
+                    "Only an approved group loan has an offer to answer; this one is '{$groupLoan->status->value}'."
+                );
+            }
+
+            $application = $this->applicationFor($groupLoan);
+
+            $application = $this->loanApplicationWorkflowService->transition(
+                $application,
+                $to,
+                $actorId,
+                $remarks,
+                [
+                    'offer_responded_by'   => $actorId,
+                    'offer_responded_at'   => now(),
+                    'offer_remarks'        => $remarks,
+                    'offer_decline_reason' => $to === LoanApplicationStatus::Declined ? $declineReason : null,
+                ]
+            );
+
+            // A declined offer is the end of this group loan. Cancelling it
+            // here rather than leaving it for someone to notice keeps the
+            // pipeline honest, and both steps land in the status history.
+            if ($to === LoanApplicationStatus::Declined) {
+                $this->loanApplicationWorkflowService->transition(
+                    $application,
+                    LoanApplicationStatus::Cancelled,
+                    $actorId,
+                    'Cancelled: the group declined the approved offer'
+                );
+
+                // No cancelled_at column on group_loans, and cancel() does not
+                // invent one either -- the status and its history row are the
+                // record.
+                $groupLoan = $this->transition(
+                    $groupLoan,
+                    GroupLoanStatus::Cancelled,
+                    $actorId,
+                    'Cancelled: the group declined the approved offer'
+                );
+            }
+
+            return $groupLoan->fresh(self::RESPONSE_RELATIONS);
+        });
+    }
+
+    /**
      * Disburse the group loan: the two-step Disbursed -> Active transition on
      * its application is what fires InstallmentScheduleService::generate(),
      * producing one schedule for the whole group. The header itself stops at
@@ -315,6 +390,16 @@ class GroupLoanWorkflowService
             ]);
 
             $application = $this->applicationFor($groupLoan);
+
+            // Money moves only after the group has said yes. The state machine
+            // enforces this too (Approved has no edge to Disbursed), but the
+            // message it would give names a status, not the thing that is
+            // actually missing.
+            if ($application->status !== LoanApplicationStatus::Accepted) {
+                throw new InvalidLoanApplicationTransitionException(
+                    'The group has not accepted the approved offer yet, so this loan cannot be disbursed.'
+                );
+            }
 
             $application = $this->loanApplicationWorkflowService->transition(
                 $application,

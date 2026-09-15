@@ -211,6 +211,7 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Group Loan Verify', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Approve', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Reject', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Offer Response', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Disburse', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Cancel', 'group_name' => 'Group Loan Management Permissions'],
 
@@ -325,6 +326,17 @@ class PermissionsSeeder extends Seeder
         $allPermissions = Permission::all();
         $role->syncPermissions($allPermissions);
 
-        Role::firstOrCreate(['guard_name' => 'api', 'name' => 'Employee']);
+        // The baseline every staff member gets before a real role is assigned.
+        //
+        // Seeded with nothing at all, a user whose only role was Employee could
+        // sign in and then be bounced straight off the dashboard by its
+        // permission gate, with no page left to land on -- a login that leads
+        // nowhere reads as a broken account rather than an unconfigured one.
+        // These two are what a person needs to see that they are in and that
+        // someone has to grant them the rest.
+        $employee = Role::firstOrCreate(['guard_name' => 'api', 'name' => 'Employee']);
+        $employee->syncPermissions(
+            Permission::whereIn('name', ['Admin Dashboard Index', 'Notification Index'])->get()
+        );
     }
 }

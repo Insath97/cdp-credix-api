@@ -31,6 +31,15 @@ class NotificationController extends Controller implements HasMiddleware
             $perPage = $request->get('per_page', 15);
             $query = Notification::with(['loanApplication', 'customer:'.Customer::SUMMARY_COLUMNS, 'user']);
 
+            // ?mine=1 -- the ones addressed to the signed-in user, which is what
+            // the header bell wants. Without it this endpoint answers with the
+            // whole outbound log: every SMS and email sent to every customer,
+            // recipient numbers and addresses included. That is a delivery log
+            // for an administrator to read, not somebody's inbox.
+            if ($request->boolean('mine')) {
+                $query->where('user_id', Auth::id());
+            }
+
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
             }
@@ -51,7 +60,7 @@ class NotificationController extends Controller implements HasMiddleware
 
             $this->logActivity('Index', 'Notification', 'Notifications index accessed', [
                 'user_id' => Auth::id(),
-                'filters' => $request->only(['loan_application_id', 'customer_id', 'type', 'status']),
+                'filters' => $request->only(['mine', 'loan_application_id', 'customer_id', 'type', 'status']),
                 'count'   => $notifications->count(),
             ]);
 

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Guarantor;
+use App\Services\GuarantorLoanLimitService;
 use App\Models\LoanApplication;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -48,8 +49,8 @@ class CreateLoanApplicationGuarantorRequest extends FormRequest
                         return;
                     }
 
-                    if ($guarantor->used_for_loan) {
-                        $fail('This guarantor is already pledged to an active loan application.');
+                    if ($message = GuarantorLoanLimitService::refusalFor($guarantor, $this->loan_application_id)) {
+                        $fail($message);
                     }
                 },
             ],
