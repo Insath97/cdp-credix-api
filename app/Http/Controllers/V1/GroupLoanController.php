@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Application;
 use App\Models\Branch;
 use App\Models\GroupLoan;
+use App\Models\Guarantor;
 use App\Models\LoanApplication;
 use App\Models\Setting;
 use App\Models\Customer;
@@ -302,6 +303,20 @@ class GroupLoanController extends Controller implements HasMiddleware
                     ]);
                 }
 
+                foreach ($data['guarantors'] ?? [] as $guarantorData) {
+                    // A guarantor stands for a single borrower — the primary
+                    // member on the row the whole group's money lands on.
+                    $guarantor = Guarantor::create(array_merge($guarantorData, [
+                        'customer_id' => $memberCustomerIds->first(),
+                    ]));
+
+                    $loanApplication->loanApplicationGuarantors()->create([
+                        'guarantor_id'   => $guarantor->id,
+                        'guarantor_type' => $guarantorData['type'],
+                        'status'         => 'pending',
+                    ]);
+                }
+
                 return $groupLoan;
             });
 
@@ -330,6 +345,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'branch',
                     'items',
                     'loanApplication.loanApplicationCustomers.customer.customerDetail',
+                    'loanApplication.loanApplicationGuarantors.guarantor',
                     'appliedByUser:'.User::SUMMARY_COLUMNS,
                 ]),
             ], 201);
