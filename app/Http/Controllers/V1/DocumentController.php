@@ -7,8 +7,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use App\Models\Customer;
 use App\Models\Document;
+use App\Models\LoanApplication;
+use App\Models\User;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Traits\FileUploadTrait;
 use App\Http\Requests\CreateDocumentRequest;
 use App\Http\Requests\UpdateDocumentRequest;
@@ -17,7 +21,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class DocumentController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait, FileUploadTrait;
+    use ActivityLogTrait, FileUploadTrait, ScopesToUserBranch;
 
     public static function middleware(): array
     {
@@ -30,13 +34,61 @@ class DocumentController extends Controller implements HasMiddleware
     }
 
     /**
+     * Refuse to add, change or remove documents once the loan has been paid out.
+     *
+     * The upload screen already stops offering disbursed applications, but a
+     * screen is not a rule -- document ids are sequential and the update and
+     * delete endpoints are reachable directly. The freeze is enforced here so
+     * that "nobody can change a disbursed file's documents" is actually true
+     * rather than merely not offered.
+     *
+     * Documents that hang off no loan application at all (the customer
+     * registration form uploads those) are never frozen.
+     *
+     * Returns a 422 response when the change must be refused, or null.
+     */
+    private function frozenApplicationResponse($loanApplicationId)
+    {
+        if (empty($loanApplicationId)) {
+            return null;
+        }
+
+        $loanApplication = LoanApplication::select('id', 'application_id', 'status')
+            ->with('application:id,application_no')
+            ->find($loanApplicationId);
+
+        if (!$loanApplication || $loanApplication->status->allowsDocumentChanges()) {
+            return null;
+        }
+
+        $reference = $loanApplication->application?->application_no ?? "ID {$loanApplication->id}";
+
+        return response()->json([
+            'status'  => 'error',
+            'message' => "Loan application {$reference} is {$loanApplication->status->value}. Its documents are the record the disbursement was made on and can no longer be changed.",
+            'errors'  => [
+                'loan_application_id' => $loanApplication->id,
+                'status'              => $loanApplication->status->value,
+            ],
+        ], 422);
+    }
+
+    /**
      * Display a listing of documents.
      */
     public function index(Request $request)
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Document::with(['uploader']);
+            $query = Document::with([
+                // The list names whoever the document belongs to. Guarantor
+                // documents carry no customer_id at all, so both relations are
+                // loaded or those rows show a dash forever.
+                'customer:'.Customer::SUMMARY_COLUMNS.',employment_status',
+                'guarantor:id,customer_id,full_name,id_number,employment_status,employer_name',
+                'loanApplication.application:id,application_no',
+                'uploader:'.User::SUMMARY_COLUMNS,
+            ]);
 
             if ($request->has('search')) {
                 $query->search($request->search);
@@ -50,15 +102,35 @@ class DocumentController extends Controller implements HasMiddleware
                 $query->where('status', $request->status);
             }
 
+            // The loan application document checklist loads everything already
+            // collected for one application in a single call, then matches it
+            // against its slots. Without these filters it would have to pull
+            // every document in the system and filter client-side.
+            if ($request->filled('loan_application_id')) {
+                $query->where('loan_application_id', $request->loan_application_id);
+            }
+
+            if ($request->filled('customer_id')) {
+                $query->where('customer_id', $request->customer_id);
+            }
+
+            if ($request->filled('guarantor_id')) {
+                $query->where('guarantor_id', $request->guarantor_id);
+            }
+
             if ($request->has('is_active')) {
                 $query->where('is_active', $request->is_active);
             }
+
+            // A branch officer sees their own branch's documents only; the
+            // branch comes off whichever parent the document actually has.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id']);
 
             $documents = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
             $this->logActivity('Index', 'Document', 'Documents index accessed', [
                 'user_id' => Auth::id(),
-                'filters' => $request->only(['search', 'document_type', 'status', 'is_active']),
+                'filters' => $request->only(['search', 'document_type', 'status', 'is_active', 'loan_application_id', 'customer_id', 'guarantor_id']),
                 'count' => $documents->count()
             ]);
 
@@ -77,12 +149,73 @@ class DocumentController extends Controller implements HasMiddleware
     }
 
     /**
+     * Loan applications that have documents, one row each, with a count.
+     *
+     * The flat document list stopped being readable once every application
+     * started contributing a dozen slots -- an officer looking for "what did we
+     * collect for APP-BRCOL-26090012" had to scan hundreds of rows. This is the
+     * index they actually want; the documents themselves are one click away,
+     * filtered by loan_application_id.
+     *
+     * Documents uploaded outside an application (the customer registration
+     * form attaches them to the customer only) have no application to group
+     * under, so their count is returned separately in `meta` rather than being
+     * silently dropped -- nothing should become invisible just because the list
+     * changed shape.
+     */
+    public function applications(Request $request)
+    {
+        try {
+            $perPage = $request->get('per_page', 15);
+
+            $query = LoanApplication::query()
+                ->has('documents')
+                ->withCount('documents')
+                ->with([
+                    'application:id,application_no',
+                    'customer:'.Customer::SUMMARY_COLUMNS.',employment_status',
+                    'loanProduct:id,name',
+                ]);
+
+            if ($request->filled('search')) {
+                $query->search($request->search);
+            }
+
+            // The rows here are loan applications, which carry branch_id.
+            $this->scopeToUserBranch($query);
+
+            $applications = $query
+                ->orderByDesc('updated_at')
+                ->paginate($perPage);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan applications with documents retrieved successfully',
+                'data'    => $applications,
+                'meta'    => [
+                    'unlinked_count' => Document::whereNull('loan_application_id')->count(),
+                ],
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to retrieve loan applications with documents',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
      * Store a newly created document.
      */
     public function store(CreateDocumentRequest $request)
     {
         try {
             $data = $request->validated();
+
+            if ($frozen = $this->frozenApplicationResponse($data['loan_application_id'] ?? null)) {
+                return $frozen;
+            }
 
             $filePath = $this->handleFileUpload(
                 $request,
@@ -110,7 +243,7 @@ class DocumentController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'success',
                 'message' => 'Document created successfully',
-                'data' => $document->load('uploader')
+                'data' => $document->load('uploader:'.User::SUMMARY_COLUMNS)
             ], 201);
         } catch (\Throwable $th) {
             return response()->json([
@@ -127,7 +260,15 @@ class DocumentController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $document = Document::with(['uploader'])->find($id);
+            $document = Document::with([
+                // The list names whoever the document belongs to. Guarantor
+                // documents carry no customer_id at all, so both relations are
+                // loaded or those rows show a dash forever.
+                'customer:'.Customer::SUMMARY_COLUMNS.',employment_status',
+                'guarantor:id,customer_id,full_name,id_number,employment_status,employer_name',
+                'loanApplication.application:id,application_no',
+                'uploader:'.User::SUMMARY_COLUMNS,
+            ])->find($id);
 
             if (!$document) {
                 return response()->json([
@@ -167,6 +308,14 @@ class DocumentController extends Controller implements HasMiddleware
 
             $data = $request->validated();
 
+            // Both ends: the application the document is on now, and the one
+            // it is being moved to. Either being disbursed freezes the change.
+            foreach ([$document->loan_application_id, $data['loan_application_id'] ?? null] as $applicationId) {
+                if ($frozen = $this->frozenApplicationResponse($applicationId)) {
+                    return $frozen;
+                }
+            }
+
             $filePath = $this->handleFileUpload(
                 $request,
                 'file',
@@ -188,7 +337,7 @@ class DocumentController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'success',
                 'message' => 'Document updated successfully',
-                'data' => $document->load('uploader')
+                'data' => $document->load('uploader:'.User::SUMMARY_COLUMNS)
             ], 200);
         } catch (\Throwable $th) {
             return response()->json([
@@ -212,6 +361,10 @@ class DocumentController extends Controller implements HasMiddleware
                     'status' => 'error',
                     'message' => 'Document not found'
                 ], 404);
+            }
+
+            if ($frozen = $this->frozenApplicationResponse($document->loan_application_id)) {
+                return $frozen;
             }
 
             if ($document->file_path) {

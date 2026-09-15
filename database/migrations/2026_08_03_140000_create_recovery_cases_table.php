@@ -15,16 +15,17 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('loan_application_id')->constrained('loan_applications')->cascadeOnDelete();
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
             $table->string('case_no')->unique();
-
             $table->enum('status', ['open', 'in_progress', 'resolved', 'escalated', 'closed'])->default('open')->index();
+            $table->enum('stage', ['internal', 'external'])->default('internal');
             $table->decimal('overdue_amount', 15, 2)->nullable();
 
             $table->foreignId('assigned_agent_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->foreignId('external_agent_id')->nullable()->constrained('external_recovery_agents')->nullOnDelete();
+            $table->foreignId('parent_case_id')->nullable()->constrained('recovery_cases')->nullOnDelete();
             $table->foreignId('opened_by')->nullable()->constrained('users')->nullOnDelete();
-
             $table->text('remarks')->nullable();
-
             $table->timestamp('opened_at')->useCurrent();
             $table->timestamp('closed_at')->nullable();
             $table->timestamps();

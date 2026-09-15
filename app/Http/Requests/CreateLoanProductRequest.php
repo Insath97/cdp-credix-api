@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
@@ -24,8 +25,20 @@ class CreateLoanProductRequest extends FormRequest
         return [
             'name' => 'required|string|max:255',
             'code' => 'nullable|string|max:50|unique:loan_products,code',
+            'loan_type_id' => 'required|integer|exists:loan_types,id',
+            'loan_term_id' => 'nullable|integer|exists:loan_terms,id',
             'description' => 'nullable|string',
-            'interest_rate' => 'required|numeric|min:0|max:999.999',
+            // A Group Loan product has no interest rate at all — repayment is
+            // derived from the service charge percentage in System Settings.
+            // Every other product still needs one, since approve() computes
+            // interest from it.
+            'interest_rate' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999.999',
+                Rule::requiredIf(fn () => !$this->boolean('is_group_loan')),
+            ],
             'interest_type' => 'nullable|string|in:flat,reducing',
             'min_amount' => 'required|numeric|min:0',
             'max_amount' => 'required|numeric|min:0|gte:min_amount',
@@ -36,16 +49,18 @@ class CreateLoanProductRequest extends FormRequest
             'penalty_value' => 'nullable|numeric|min:0',
             'grace_period_days' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean',
+            'is_islamic' => 'nullable|boolean',
+            'is_group_loan' => 'nullable|boolean',
         ];
     }
+
 
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
-                'field'    => $field,
+                'field' => $field,
                 'messages' => $messages,
             ];
         })->values();
@@ -56,7 +71,8 @@ class CreateLoanProductRequest extends FormRequest
 
         throw new HttpResponseException(response()->json([
             'message' => $message,
-            'errors'  => $fieldErrors,
+            'errors' => $fieldErrors,
         ], 422));
     }
+
 }

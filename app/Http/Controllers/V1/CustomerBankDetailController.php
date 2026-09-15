@@ -6,32 +6,49 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Http\Requests\CreateCustomerBankDetailRequest;
 use App\Http\Requests\UpdateCustomerBankDetailRequest;
+use App\Enums\LoanApplicationStatus;
 use App\Models\CustomerBankDetail;
 use App\Models\Customer;
+use App\Models\Setting;
 use Illuminate\Support\Facades\DB;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class CustomerBankDetailController extends Controller
+class CustomerBankDetailController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
 
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:CustomerBankDetail Index', only: ['index', 'show']),
-            new Middleware('permission:CustomerBankDetail Create', only: ['store']),
-            new Middleware('permission:CustomerBankDetail Update', only: ['update']),
-            new Middleware('permission:CustomerBankDetail Delete', only: ['destroy']),
-            new Middleware('permission:CustomerBankDetail Toggle Status', only: ['toggleStatus'])
+            new Middleware('permission:Customer Bank Detail Index', only: ['index', 'show', 'bankOptions']),
+            new Middleware('permission:Customer Bank Detail Create', only: ['store']),
+            new Middleware('permission:Customer Bank Detail Update', only: ['update']),
+            new Middleware('permission:Customer Bank Detail Delete', only: ['destroy']),
+            new Middleware('permission:Customer Bank Detail Toggle Status', only: ['toggleStatus'])
         ];
+    }
+
+    /**
+     * Display the configurable list of bank names for the customer bank
+     * details dropdown (managed via System Settings, key: customer_bank_list).
+     */
+    public function bankOptions()
+    {
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Bank options retrieved successfully',
+            'data'    => Setting::get('customer_bank_list', []),
+        ], 200);
     }
     
     public function index(Request $request)
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = CustomerBankDetail::with(['customer']);
+            $query = CustomerBankDetail::with(['customer:'.Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('search') ) {
                 $query->search($request->search);
@@ -39,6 +56,20 @@ class CustomerBankDetailController extends Controller
 
             if ($request->has('customer_id')) {
                 $query->where('customer_id', $request->customer_id);
+            }
+
+            if ($request->has('used_for_loan')) {
+                $terminalStatuses = [
+                    LoanApplicationStatus::Rejected->value,
+                    LoanApplicationStatus::Cancelled->value,
+                    LoanApplicationStatus::Closed->value,
+                ];
+
+                if ($request->boolean('used_for_loan')) {
+                    $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                } else {
+                    $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                }
             }
 
             $customerbankdetail = $query->orderBy('created_at', 'desc')->paginate($perPage);
@@ -99,7 +130,7 @@ class CustomerBankDetailController extends Controller
     public function show(string $id)
     {
         try {
-            $customerbankdetail = CustomerBankDetail::with(['customer'])->find($id);
+            $customerbankdetail = CustomerBankDetail::with(['customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$customerbankdetail) {
                 return response()->json([

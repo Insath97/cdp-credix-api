@@ -12,7 +12,15 @@
     <ul>
         <li><strong>Username:</strong> {{ $user['username'] }}</li>
         <li><strong>Email:</strong> {{ $user['email'] }}</li>
-        <li><strong>Password:</strong> {{ $password }}</li>
+        {{-- The password is not mailed. Whoever created the account chose it
+             and passes it on themselves, so there is nothing to print here --
+             an emailed password outlives the handover and sits in plain text
+             for as long as the mail is kept. --}}
+        @if (!empty($password))
+            <li><strong>Password:</strong> {{ $password }}</li>
+        @else
+            <li><strong>Password:</strong> set by whoever created your account — ask them for it</li>
+        @endif
         @if (isset($role) && !empty($role))
             <li><strong>Role:</strong> {{ $role }}</li>
         @endif

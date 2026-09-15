@@ -36,17 +36,31 @@ class UpdateLoanApplicationRequest extends FormRequest
             'applied_by'             => 'nullable|integer|exists:users,id',
             'applied_at'             => 'nullable|date',
             'outstanding_balance'    => 'nullable|numeric|min:0',
-            'is_active'              => 'nullable|boolean',
+
+            // Nullable here, unlike on create: an edit that touches only the
+            // amount must not have to resend the recommender, and a rule of
+            // 'required' would make every partial update fail.
+            'recommended_by_employee_id' => 'nullable|integer|exists:employees,id',
+            'recommender_name'           => 'nullable|string|max:255',
+            'recommender_employee_code'  => 'nullable|string|max:255',
+            'recommender_nic'            => 'nullable|string|max:255',
+            'recommender_phone'          => 'nullable|string|max:255',
+
+            // is_active is deliberately not accepted here: it has its own
+            // activate/deactivate/toggle-status endpoints, which refuse to
+            // reactivate a cancelled, rejected or closed loan. Allowing it
+            // through a generic update would bypass that guard and let a
+            // finished loan display as "Active" again.
         ];
     }
+
 
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
-                'field'    => $field,
+                'field' => $field,
                 'messages' => $messages,
             ];
         })->values();
@@ -57,7 +71,8 @@ class UpdateLoanApplicationRequest extends FormRequest
 
         throw new HttpResponseException(response()->json([
             'message' => $message,
-            'errors'  => $fieldErrors,
+            'errors' => $fieldErrors,
         ], 422));
     }
+
 }

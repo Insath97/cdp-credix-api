@@ -2,9 +2,12 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Document;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\ValidationException;
 
 class CreateDocumentRequest extends FormRequest
 {
@@ -23,7 +26,9 @@ class CreateDocumentRequest extends FormRequest
     {
         return [
             'customer_id'   => 'nullable|integer|exists:customers,id',
-            'document_type' => 'nullable|string|in:nic_copy,passport_copy,driving_license,salary_slip,bank_statement,billing_proof,salary_assignment_letter,employer_letter,photo,other',
+            'loan_application_id' => 'nullable|integer|exists:loan_applications,id',
+            'guarantor_id'        => 'nullable|integer|exists:guarantors,id',
+            'document_type' => ['nullable', 'string', Rule::in(array_keys(Document::TYPES))],
             'is_mandatory'  => 'nullable|boolean',
             'document_name' => 'required|string|max:255',
             'file'          => 'required_without:file_path|file|mimes:pdf,jpg,jpeg,png|max:10240',
@@ -37,7 +42,6 @@ class CreateDocumentRequest extends FormRequest
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
                 'field' => $field,
@@ -54,4 +58,5 @@ class CreateDocumentRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

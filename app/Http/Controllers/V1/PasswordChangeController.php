@@ -5,6 +5,7 @@ namespace App\Http\Controllers\V1;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendSmsJob;
 use App\Models\PasswordChangeRequest;
+use App\Models\Customer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -12,6 +13,73 @@ use Illuminate\Support\Facades\Validator;
 
 class PasswordChangeController extends Controller
 {
+
+    /**
+     * Change the signed-in user's own password, proved by their current one.
+     *
+     * The OTP routes below exist for the case where the user cannot prove who
+     * they are -- a forgotten password, or a first login. Someone already
+     * signed in and able to type their existing password has proved it, and
+     * sending them an SMS to re-prove it only fails whenever the phone on file
+     * is stale, which on a staff record it often is.
+     *
+     * Every other session is left alone deliberately: invalidating them is a
+     * separate decision, and doing it silently would sign the user out of the
+     * device they are standing at.
+     */
+    public function changeWithCurrentPassword(Request $request)
+    {
+        try {
+            $user = auth('api')->user();
+
+            $validator = Validator::make($request->all(), [
+                'current_password' => 'required|string',
+                'password'         => 'required|string|min:8|confirmed|different:current_password',
+            ], [
+                'password.confirmed' => 'The new password and its confirmation do not match.',
+                'password.different' => 'The new password must be different from the current one.',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => $validator->errors()->first(),
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            if (!Hash::check($request->current_password, $user->password)) {
+                // Named separately from the validation failures above: "that is
+                // not your password" is the one thing the user can actually act
+                // on, and burying it in a field error list hides it.
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Your current password is incorrect.',
+                    'errors'  => ['current_password' => ['Your current password is incorrect.']],
+                ], 422);
+            }
+
+            $user->update([
+                'password'            => Hash::make($request->password),
+                'password_changed_at' => now(),
+            ]);
+
+            Log::info('Password changed with current password', ['user_id' => $user->id]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Password changed successfully',
+            ], 200);
+        } catch (\Throwable $th) {
+            Log::error('Password change failed', ['error' => $th->getMessage()]);
+
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to change password',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
 
     /**
      * Resolve the recipient's phone number based on user type
@@ -26,19 +94,48 @@ class PasswordChangeController extends Controller
         return $user->employee?->phone_primary;
     }
 
+    /**
+     * Generate an OTP, store it as an already-approved PasswordChangeRequest,
+     * and queue it via SMS.
+     */
+    private function issueDirectOtp(\App\Models\User $user, string $phone, string $purpose): \Illuminate\Http\JsonResponse
+    {
+        $otp = (string) rand(100000, 999999);
+        $expiresAt = now()->addMinutes(60);
+
+        PasswordChangeRequest::create([
+            'user_id' => $user->id,
+            'employee_id' => $user->employee_id,
+            'otp' => $otp,
+            'expires_at' => $expiresAt,
+            'status' => 'approved',
+        ]);
+
+        $message = config('app.name') . ": Your OTP for {$purpose} is {$otp}. Valid for 60 minutes.";
+        SendSmsJob::dispatch($phone, $message);
+        Log::info("{$purpose} OTP SMS queued", [
+            'user_id' => $user->id,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'OTP sent successfully to your primary phone number.',
+        ], 200);
+    }
+
     public function requestChange(Request $request)
     {
         try {
             $user = auth('api')->user();
 
-            if (! in_array($user->user_type, ['staff', 'customer'])) {
+            if (! in_array($user->user_type, ['admin', 'staff', 'customer'])) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'This feature is only available for staff and customer users.',
+                    'message' => 'This feature is only available for admin, staff, and customer users.',
                 ], 403);
             }
 
-            $user->load($user->user_type === 'customer' ? 'customer' : 'employee');
+            $user->load($user->user_type === 'customer' ? 'customer:'.Customer::SUMMARY_COLUMNS : 'employee');
             $phone = $this->resolveRecipientPhone($user);
 
             if (empty($phone)) {
@@ -63,61 +160,7 @@ class PasswordChangeController extends Controller
                 ], 400);
             }
 
-            if (is_null($user->password_changed_at)) {
-                // First time changing password
-                $otp = (string) rand(100000, 999999);
-                $expiresAt = now()->addMinutes(60);
-
-                $changeRequest = PasswordChangeRequest::create([
-                    'user_id' => $user->id,
-                    'employee_id' => $user->employee_id,
-                    'otp' => $otp,
-                    'expires_at' => $expiresAt,
-                    'status' => 'approved',
-                ]);
-
-                // Queue SMS
-                $message = config('app.name') . ": Your OTP for password change is {$otp}. Valid for 60 minutes.";
-                SendSmsJob::dispatch($phone, $message);
-                Log::info('First-time password change OTP SMS queued', [
-                    'user_id' => $user->id,
-                    'phone' => $phone,
-                ]);
-
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'OTP sent successfully to your primary phone number.',
-                ], 200);
-
-            } else {
-                // Subsequent change: requires admin approval
-                $changeRequest = PasswordChangeRequest::create([
-                    'user_id' => $user->id,
-                    'employee_id' => $user->employee_id,
-                    'status' => 'pending',
-                ]);
-
-                // Send SMS notification to Super Admin users
-                $admins = \App\Models\User::role('Super Admin')->where('is_active', true)->with('employee')->get();
-                $notifiedPhones = [];
-                foreach ($admins as $admin) {
-                    if ($admin->employee && !empty($admin->employee->phone_primary)) {
-                        $adminMessage = config('app.name') . ": {$user->name} ({$user->username}) requested a password change approval.";
-                        SendSmsJob::dispatch($admin->employee->phone_primary, $adminMessage);
-                        $notifiedPhones[] = $admin->employee->phone_primary;
-                    }
-                }
-                Log::info('Password change request: admin SMS notifications queued', [
-                    'change_request_id' => $changeRequest->id,
-                    'admin_count' => count($admins),
-                    'notified_phones' => $notifiedPhones,
-                ]);
-
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Password change request sent to admin for approval.',
-                ], 200);
-            }
+            return $this->issueDirectOtp($user, $phone, 'password change');
 
         } catch (\Throwable $th) {
             return response()->json([
@@ -215,16 +258,17 @@ class PasswordChangeController extends Controller
                 ], 404);
             }
 
-            if (! in_array($user->user_type, ['staff', 'customer'])) {
+            if (! in_array($user->user_type, ['admin', 'staff', 'customer'])) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'This feature is only available for staff and customer users.',
+                    'message' => 'This feature is only available for admin, staff, and customer users.',
                 ], 403);
             }
 
-            $user->load($user->user_type === 'customer' ? 'customer' : 'employee');
+            $user->load($user->user_type === 'customer' ? 'customer:'.Customer::SUMMARY_COLUMNS : 'employee');
+            $phone = $this->resolveRecipientPhone($user);
 
-            if (empty($this->resolveRecipientPhone($user))) {
+            if (empty($phone)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Primary phone number not found. Cannot request password change.',
@@ -246,33 +290,7 @@ class PasswordChangeController extends Controller
                 ], 400);
             }
 
-            // Forgot password requires admin approval
-            $changeRequest = PasswordChangeRequest::create([
-                'user_id' => $user->id,
-                'employee_id' => $user->employee_id,
-                'status' => 'pending',
-            ]);
-
-            // Send SMS notification to Super Admin users
-            $admins = \App\Models\User::role('Super Admin')->where('is_active', true)->with('employee')->get();
-            $notifiedPhones = [];
-            foreach ($admins as $admin) {
-                if ($admin->employee && !empty($admin->employee->phone_primary)) {
-                    $adminMessage = config('app.name') . ": {$user->name} ({$user->username}) requested a password reset approval.";
-                    SendSmsJob::dispatch($admin->employee->phone_primary, $adminMessage);
-                    $notifiedPhones[] = $admin->employee->phone_primary;
-                }
-            }
-            Log::info('Forgot password: admin SMS notifications queued', [
-                'change_request_id' => $changeRequest->id,
-                'admin_count' => count($admins),
-                'notified_phones' => $notifiedPhones,
-            ]);
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Password reset request sent to admin for approval.',
-            ], 200);
+            return $this->issueDirectOtp($user, $phone, 'password reset');
 
         } catch (\Throwable $th) {
             return response()->json([

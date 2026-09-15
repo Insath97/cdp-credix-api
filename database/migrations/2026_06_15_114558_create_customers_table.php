@@ -18,7 +18,7 @@ return new class extends Migration
             $table->string('full_name');
             $table->string('name_with_initials')->nullable();
             $table->string('id_type')->nullable();
-            $table->string('id_number')->nullable();
+            $table->string('id_number')->nullable()->unique();
             $table->date('date_of_birth')->nullable();
             $table->string('address_line_1')->nullable();
             $table->string('address_line_2')->nullable();
@@ -70,6 +70,47 @@ return new class extends Migration
             $table->decimal('total_monthly_income', 15, 2)->nullable();
             $table->decimal('other_expenses', 15, 2)->nullable();
             $table->decimal('total_monthly_expenses', 15, 2)->nullable();
+
+            // The CDP employee who introduced this customer. Mirrors the
+            // per-loan recommender on loan_applications: this one is the
+            // standing introducer on the customer's file, that one is who put
+            // a particular loan forward. Both are kept because they diverge --
+            // a customer introduced by one officer can have a later loan
+            // recommended by another.
+            //
+            // Link plus snapshot, for the same reason as the loan-level copy:
+            // the snapshot survives the employee being renamed or leaving.
+            //
+            // The column only -- the foreign key itself is added by
+            // 2026_06_15_114600_add_customer_recommender_foreign_key. This
+            // migration and create_employees_table share a timestamp, and
+            // Laravel orders same-timestamp migrations by filename, so
+            // "customers" runs before "employees" and a constraint declared
+            // here fails on a fresh database with
+            // "1824 Failed to open the referenced table 'employees'".
+            $table->foreignId('recommended_by_employee_id')->nullable()->index();
+            $table->string('recommender_name')->nullable();
+            $table->string('recommender_employee_code')->nullable();
+            $table->string('recommender_nic')->nullable();
+            $table->string('recommender_phone')->nullable();
+
+            // Repayment credit score: the sum of every customer_credit_scores
+            // row this customer has, denormalised here so a loan application
+            // screen can show it without a join and so customers can be listed
+            // and sorted by it. Signed -- more late months than punctual ones
+            // puts a borrower below zero.
+            //
+            // Null, never 0, for a customer with no judged installment yet --
+            // "no history" and "always paid late" must not look alike.
+            $table->decimal('credit_score', 8, 2)->nullable()->index();
+
+            // What share of their judged installments were on time, 0..100.
+            // The score alone cannot carry the rating badge: it grows with the
+            // length of the record, so +100 is excellent after ten months and
+            // poor after a hundred. The band is read off this instead.
+            $table->decimal('credit_score_on_time_rate', 5, 2)->nullable();
+            $table->timestamp('credit_score_updated_at')->nullable();
+
             $table->boolean('is_active')->default(true);
             $table->softDeletes();
             $table->timestamps();

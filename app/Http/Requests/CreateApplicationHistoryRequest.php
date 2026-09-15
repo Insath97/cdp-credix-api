@@ -6,6 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
+
 class CreateApplicationHistoryRequest extends FormRequest
 {
     /**
@@ -50,7 +51,6 @@ class CreateApplicationHistoryRequest extends FormRequest
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
                 'field' => $field,
@@ -67,4 +67,6 @@ class CreateApplicationHistoryRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
+
 }

@@ -7,22 +7,67 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\Guarantor;
+use App\Models\Customer;
+use App\Enums\LoanApplicationStatus;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\UpdateGuarantorRequest;
 use App\Http\Requests\CreateGuarantorRequest;
 
 
-class GuarantorController extends Controller
+class GuarantorController extends Controller implements HasMiddleware
 {
-     use ActivityLogTrait;
+     use ActivityLogTrait, ScopesToUserBranch;
+
+    /**
+     * HasMiddleware and Middleware were already imported here but the class
+     * never implemented the interface, so every /guarantors endpoint sat behind
+     * auth:api alone -- any signed-in user could list, create, edit or delete
+     * guarantors regardless of their permissions, even though the four
+     * permissions below have been seeded all along.
+     *
+     * toggleStatus is grouped under Update rather than given its own string:
+     * 'Guarantor Toggle Status' is not in PermissionsSeeder, and a permission
+     * name that does not exist denies everyone except Super Admin.
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('permission:Guarantor Index',  only: ['index', 'show']),
+            new Middleware('permission:Guarantor Create', only: ['store']),
+            new Middleware('permission:Guarantor Update', only: ['update', 'toggleStatus']),
+            new Middleware('permission:Guarantor Delete', only: ['destroy']),
+        ];
+    }
+
+    /**
+     * HasMiddleware and Middleware were already imported here but the class
+     * never implemented the interface, so every /guarantors endpoint sat behind
+     * auth:api alone -- any signed-in user could list, create, edit or delete
+     * guarantors regardless of their permissions, even though the four
+     * permissions below have been seeded all along.
+     *
+     * toggleStatus is grouped under Update rather than given its own string:
+     * 'Guarantor Toggle Status' is not in PermissionsSeeder, and a permission
+     * name that does not exist denies everyone except Super Admin.
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware('permission:Guarantor Index',  only: ['index', 'show']),
+            new Middleware('permission:Guarantor Create', only: ['store']),
+            new Middleware('permission:Guarantor Update', only: ['update', 'toggleStatus']),
+            new Middleware('permission:Guarantor Delete', only: ['destroy']),
+        ];
+    }
 
      public function index(Request $request)
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Guarantor::with(['customer']);
+            $query = Guarantor::with(['customer:'.Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('search') ) {
                 $query->search($request->search);
@@ -31,6 +76,24 @@ class GuarantorController extends Controller
             if ($request->has('customer_id')) {
                 $query->where('customer_id', $request->customer_id);
             }
+
+            if ($request->has('used_for_loan')) {
+                $terminalStatuses = [
+                    LoanApplicationStatus::Rejected->value,
+                    LoanApplicationStatus::Cancelled->value,
+                    LoanApplicationStatus::Closed->value,
+                ];
+
+                if ($request->boolean('used_for_loan')) {
+                    $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                } else {
+                    $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                }
+            }
+
+            // A branch officer sees their own branch's rows only;
+            // the branch is reached through the parent records.
+            $this->scopeToUserBranchVia($query, ['customer' => 'customer_id']);
 
             $guarantors = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
@@ -72,7 +135,7 @@ class GuarantorController extends Controller
             return response()->json([
                 'status' => 'success',
                 'message' => 'Guarantor created successfully',
-                'data' => $guarantor->load('customer'),
+                'data' => $guarantor->load('customer:'.Customer::SUMMARY_COLUMNS),
             ], 201);
         } catch (\Throwable $th) {
             return response()->json([
@@ -86,7 +149,7 @@ class GuarantorController extends Controller
      public function show(string $id)
     {
         try {
-            $guarantor = Guarantor::with(['customer'])->find($id);
+            $guarantor = Guarantor::with(['customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$guarantor) {
                 return response()->json([

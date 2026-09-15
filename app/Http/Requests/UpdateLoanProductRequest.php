@@ -26,6 +26,8 @@ class UpdateLoanProductRequest extends FormRequest
         return [
             'name' => 'nullable|string|max:255',
             'code' => 'nullable|string|max:50|unique:loan_products,code,' . $id,
+            'loan_type_id' => 'nullable|integer|exists:loan_types,id',
+            'loan_term_id' => 'nullable|integer|exists:loan_terms,id',
             'description' => 'nullable|string',
             'interest_rate' => 'nullable|numeric|min:0|max:999.999',
             'interest_type' => 'nullable|string|in:flat,reducing',
@@ -38,16 +40,18 @@ class UpdateLoanProductRequest extends FormRequest
             'penalty_value' => 'nullable|numeric|min:0',
             'grace_period_days' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean',
+            'is_islamic' => 'nullable|boolean',
+            'is_group_loan' => 'nullable|boolean',
         ];
     }
+
 
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
-                'field'    => $field,
+                'field' => $field,
                 'messages' => $messages,
             ];
         })->values();
@@ -58,7 +62,8 @@ class UpdateLoanProductRequest extends FormRequest
 
         throw new HttpResponseException(response()->json([
             'message' => $message,
-            'errors'  => $fieldErrors,
+            'errors' => $fieldErrors,
         ], 422));
     }
+
 }

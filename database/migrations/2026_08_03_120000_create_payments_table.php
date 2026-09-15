@@ -17,12 +17,19 @@ return new class extends Migration
             $table->foreignId('loan_application_id')->constrained('loan_applications')->cascadeOnDelete();
             $table->foreignId('loan_installment_id')->nullable()->constrained('loan_installments')->nullOnDelete();
 
+            // Which member of a Group Loan actually handed the money over. The
+            // installment schedule and outstanding balance stay group-level;
+            // this only attributes the receipt. Null for Individual/Joint Loans
+            // and for group payments recorded without attribution.
+            $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
+
             $table->string('receipt_no')->unique();
             $table->decimal('amount', 15, 2);
             $table->enum('payment_method', ['cash', 'bank_transfer', 'cheque', 'online'])->default('cash');
 
             $table->foreignId('received_by')->nullable()->constrained('users')->nullOnDelete();
             $table->text('remarks')->nullable();
+            $table->json('carry_forward_breakdown')->nullable();
 
             $table->timestamp('paid_at')->useCurrent();
             $table->timestamps();

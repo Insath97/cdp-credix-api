@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\MovingAssests;
+use App\Models\Customer;
+use App\Enums\LoanApplicationStatus;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateMovingAssetsRequest;
 use App\Http\Requests\UpdateMovingAssetsRequest;
@@ -31,7 +33,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
      {
          try {
              $perPage = $request->get('per_page', 15);
-             $query = MovingAssests::with(['customer']);
+             $query = MovingAssests::with(['customer:'.Customer::SUMMARY_COLUMNS]);
 
              if ($request->has('search')) {
                  $query->search($request->search);
@@ -43,6 +45,20 @@ class MovingAssestsController extends Controller implements HasMiddleware
 
              if ($request->has('is_active')) {
                  $query->where('is_active', $request->is_active);
+             }
+
+             if ($request->has('used_for_loan')) {
+                 $terminalStatuses = [
+                     LoanApplicationStatus::Rejected->value,
+                     LoanApplicationStatus::Cancelled->value,
+                     LoanApplicationStatus::Closed->value,
+                 ];
+
+                 if ($request->boolean('used_for_loan')) {
+                     $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                 } else {
+                     $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                 }
              }
 
              $moving_assests = $query->orderBy('created_at', 'desc')->paginate($perPage);
@@ -84,7 +100,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
              return response()->json([
                  'status' => 'success',
                  'message' => 'Moving assets created successfully',
-                 'data' => $moving_assests->load('customer'),
+                 'data' => $moving_assests->load('customer:'.Customer::SUMMARY_COLUMNS),
              ], 201);
          } catch (\Throwable $th) {
              return response()->json([
@@ -98,7 +114,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
      public function show(string $id)
      {
          try {
-             $moving_assests = MovingAssests::with(['customer'])->find($id);
+             $moving_assests = MovingAssests::with(['customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
              if (!$moving_assests) {
                  return response()->json([
@@ -147,7 +163,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
              return response()->json([
                  'status' => 'success',
                  'message' => 'Moving assets updated successfully',
-                 'data' => $moving_assests->load('customer'),
+                 'data' => $moving_assests->load('customer:'.Customer::SUMMARY_COLUMNS),
              ], 200);
          } catch (\Throwable $th) {
              return response()->json([

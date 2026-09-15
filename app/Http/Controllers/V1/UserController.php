@@ -102,7 +102,7 @@ class UserController extends Controller implements HasMiddleware
 
             // Restrict admin user creation to Super Admins only
             if ($data['user_type'] === 'admin') {
-                if (!$currentUser || !$currentUser->hasRole('Super Admin')) {
+                if (!$currentUser || !$currentUser->isSuperAdmin()) {
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Only Super Admin can create admin users'
@@ -141,18 +141,36 @@ class UserController extends Controller implements HasMiddleware
 
                 $employee = Employee::create($employeeData);
 
-                // Set staff credentials automatically to id_number
+                // The username still defaults to the NIC: it is an identifier,
+                // not a secret, and an officer who was told "sign in with your
+                // NIC" is not thereby told anyone's password.
+                //
+                // The PASSWORD no longer does. It used to fall back to the same
+                // NIC, which is printed on the customer, guarantor and document
+                // screens for every officer to read, and login never checked
+                // password_changed_at -- so the default stood for the life of
+                // the account. CreateUserRequest now requires one.
                 $data['employee_id'] = $employee->id;
-                $data['username'] = $data['id_number'];
-                $data['password'] = Hash::make($data['id_number']);
+                if (!filled($data['username'] ?? null)) {
+                    $data['username'] = $data['id_number'];
+                }
+                $data['password'] = Hash::make($data['password']);
             } else {
                 // For admin and customer users
                 $data['employee_id'] = null;
                 if ($data['user_type'] === 'admin') {
                     $data['customer_id'] = null;
                 }
-                $data['password'] = Hash::make($data['password'] ?? '');
+                // Never Hash::make('') -- an omitted password used to become a
+                // real, valid hash of the empty string.
+                $data['password'] = Hash::make($data['password']);
             }
+
+            // Stamped at creation: CreateUserRequest now requires a password, so
+            // whoever created the account chose it deliberately. Only the older
+            // accounts whose password was defaulted to their NIC are left for
+            // EnsurePasswordChanged to hold at the door.
+            $data['password_changed_at'] = now();
 
             $user = User::create($data);
 
@@ -176,7 +194,12 @@ class UserController extends Controller implements HasMiddleware
                         'user_type' => $user->user_type,
                         'email_verified_at' => $user->email_verified_at,
                     ],
-                    'password' => ($user->user_type === 'staff') ? $data['id_number'] : $request->password,
+                    // Not sent any more. The password is now always chosen by
+                    // whoever creates the account, so they already have it and
+                    // hand it over themselves -- there is nothing here worth
+                    // putting in an inbox, where it would outlive the handover
+                    // and sit in plain text for as long as the mail is kept.
+                    'password' => null,
                     'role' => $data['role'] ?? null,
                     'created_by' => $currentUser ? $currentUser->name : 'System',
                     'login_url' => trim(config('app.frontend_url') ?? config('app.url')),
@@ -294,7 +317,7 @@ class UserController extends Controller implements HasMiddleware
             // Restrict admin user update to Super Admins only (both updating an existing admin or changing user_type to admin)
             $isTargetingAdmin = ($user->user_type === 'admin') || (isset($data['user_type']) && $data['user_type'] === 'admin');
             if ($isTargetingAdmin) {
-                if (!$currentUser || !$currentUser->hasRole('Super Admin')) {
+                if (!$currentUser || !$currentUser->isSuperAdmin()) {
                     return response()->json([
                         'status' => 'error',
                         'message' => 'Only Super Admin can manage admin users'
@@ -333,8 +356,12 @@ class UserController extends Controller implements HasMiddleware
                     $data['employee_id'] = $employee->id;
                 }
 
-                // If id_number is updated, sync username
-                if (isset($data['id_number'])) {
+                // Keep the NIC as the login only while nobody has chosen
+                // otherwise. The form posts the whole record, id_number
+                // included, so syncing on its mere presence overwrote every
+                // username edit with the NIC -- the field looked editable and
+                // never changed.
+                if (!filled($data['username'] ?? null) && isset($data['id_number'])) {
                     $data['username'] = $data['id_number'];
                 }
             } else {
@@ -404,8 +431,9 @@ class UserController extends Controller implements HasMiddleware
                 ], 404);
             }
 
-            // Check if user is Super Admin
-            if (!Auth::user()->hasRole('Super Admin')) {
+            // Super Admin only -- see the note in BranchController::destroy()
+            // on why this is isSuperAdmin() and not hasRole().
+            if (!Auth::user()->isSuperAdmin()) {
                 $this->logActivity('UNAUTHORIZED_DELETE', 'User', "Unauthorized user deletion attempt on ID: {$id}", ['target_user_id' => $id], 'warning');
                 return response()->json([
                     'status' => 'error',

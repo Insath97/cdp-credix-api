@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
 class SendSmsJob implements ShouldQueue
 {
@@ -26,6 +27,11 @@ class SendSmsJob implements ShouldQueue
 
     public function handle(SmsService $smsService): void
     {
+        Log::info('Processing SendSmsJob', [
+            'notification_id' => $this->notificationId,
+            'numbers'         => $this->numbers,
+        ]);
+
         $sent = $smsService->sendSms($this->numbers, $this->message);
 
         if ($this->notificationId) {
@@ -37,6 +43,18 @@ class SendSmsJob implements ShouldQueue
                     : ['status' => 'failed', 'error' => 'SMS gateway rejected the message. Check logs for details.']
                 );
             }
+        }
+
+        if ($sent) {
+            Log::info('SendSmsJob completed successfully', [
+                'notification_id' => $this->notificationId,
+                'numbers'         => $this->numbers,
+            ]);
+        } else {
+            Log::error('SendSmsJob failed: SMS gateway rejected the message', [
+                'notification_id' => $this->notificationId,
+                'numbers'         => $this->numbers,
+            ]);
         }
     }
 }

@@ -235,15 +235,17 @@ class RoleController extends Controller implements HasMiddleware
     public function getAvailableRoles()
     {
         try {
-            $user = auth('api')->user();
-
-            $query = Role::query();
-
-            if ($user->hasRole('Super Admin')) {
-                $query->where('name', '!=', 'Super Admin');
-            }
-
-            $query->where('guard_name', 'api');
+            // Super Admin is never offered as a choice, to anyone. It is a
+            // seeded bootstrap role, and a role picker that lists it lets one
+            // admin hand out full control of the system.
+            //
+            // Compared with LOWER() rather than a plain != so the exclusion
+            // does not rest on the column's collation: the role is seeded as
+            // 'SUPER ADMIN', and the guard this replaced compared it against
+            // 'Super Admin' in PHP, which never matched.
+            $query = Role::query()
+                ->whereRaw('LOWER(name) != ?', ['super admin'])
+                ->where('guard_name', 'api');
 
             $roles = $query->select('id', 'name', 'guard_name')->get();
 

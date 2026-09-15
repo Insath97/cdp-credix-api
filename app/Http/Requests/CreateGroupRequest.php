@@ -5,7 +5,6 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
-
 class CreateGroupRequest extends FormRequest
 {
     /**
@@ -32,10 +31,10 @@ class CreateGroupRequest extends FormRequest
     /**
      * Handle failed validation and return a JSON error response.
      */
-    protected function failedValidation(Validator $validator)
+
+protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
                 'field' => $field,
@@ -52,4 +51,5 @@ class CreateGroupRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

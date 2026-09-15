@@ -8,10 +8,36 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use App\Services\CreditScoreService;
 
 class Customer extends Model
 {
     use HasFactory, SoftDeletes;
+
+    /**
+     * Columns to select when a customer is loaded as a nested reference — on a
+     * loan, a payment, a recovery case — rather than as the record being viewed.
+     *
+     * Those screens only need to name the customer, so the NIC, date of birth,
+     * home address, income figures and employer/business details are never
+     * queried and so can never reach the browser. Endpoints whose subject IS the
+     * customer (CustomerController, CustomerProfileController) select normally.
+     *
+     * Pass to a relation string: ->with('customer:'.Customer::SUMMARY_COLUMNS)
+     */
+    public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,credit_score,credit_score_on_time_rate,credit_score_updated_at,is_active';
+
+    /**
+     * SUMMARY_COLUMNS plus the means to reach the customer — for recovery and
+     * collections screens, where an officer has to call or visit a defaulter.
+     *
+     * Still withholds the NIC, date of birth, income figures and the employer /
+     * business profile, none of which are needed to make contact.
+     */
+    public const CONTACT_COLUMNS = self::SUMMARY_COLUMNS
+        .',phone_secondary,email,have_whatsapp,whatsapp_number'
+        .',address_line_1,address_line_2,landmark,city,state,country,postal_code';
 
     protected static function boot()
     {
@@ -90,7 +116,25 @@ class Customer extends Model
         'total_monthly_income',
         'other_expenses',
         'total_monthly_expenses',
+
+        // the CDP employee who introduced this customer
+        'recommended_by_employee_id',
+        'recommender_name',
+        'recommender_employee_code',
+        'recommender_nic',
+        'recommender_phone',
+
+        // repayment credit score (written only by CreditScoreService)
+        'credit_score',
+        'credit_score_on_time_rate',
+        'credit_score_updated_at',
         'is_active',
+    ];
+
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
     ];
 
     protected $casts = [
@@ -105,7 +149,21 @@ class Customer extends Model
         'total_monthly_income' => 'decimal:2',
         'other_expenses' => 'decimal:2',
         'total_monthly_expenses' => 'decimal:2',
+        'recommended_by_employee_id' => 'integer',
+        'credit_score' => 'decimal:2',
+        'credit_score_on_time_rate' => 'decimal:2',
+        'credit_score_updated_at' => 'datetime',
     ];
+
+    /**
+     * Appended so every screen that already receives a customer -- the loan
+     * application review, the customer profile, the customer list -- can render
+     * the score band without a second request and without reimplementing the
+     * thresholds. Those thresholds live in CreditScoreService::band() alone;
+     * duplicating them in the frontend would let the two drift, and the scale
+     * they are measured against is itself a System Setting.
+     */
+    protected $appends = ['credit_score_band'];
 
     public function scopeActive(Builder $query): Builder
     {
@@ -175,5 +233,65 @@ class Customer extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
+    }
+
+    public function customerDetail(): HasOne
+    {
+        return $this->hasOne(CustomerDetail::class);
+    }
+
+    /**
+     * The CDP employee who introduced this customer.
+     *
+     * The standing introducer on the file. A particular loan can have been put
+     * forward by someone else -- that one lives on
+     * LoanApplication::recommendedByEmployee(). Read the snapshot columns for
+     * display; this relation is for walking back to the employee's file.
+     */
+    public function recommendedByEmployee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'recommended_by_employee_id');
+    }
+
+    public function creditScores(): HasMany
+    {
+        return $this->hasMany(CustomerCreditScore::class);
+    }
+
+    public function creditScoreEvents(): HasMany
+    {
+        return $this->hasMany(CreditScoreEvent::class);
+    }
+
+    /**
+     * The score's plain-language band: excellent / good / fair / poor /
+     * very_poor, or null.
+     *
+     * Null covers two cases the UI must not conflate with a bad score: a
+     * customer with no repayment history at all, and a query that did not
+     * select the credit_score column in the first place.
+     */
+    public function getCreditScoreBandAttribute(): ?string
+    {
+        // Read off the on-time rate, not the score: the score is a point
+        // total that grows with the length of the record, so it cannot say on
+        // its own how reliably this person pays.
+        if (!array_key_exists('credit_score_on_time_rate', $this->attributes)
+            || $this->credit_score_on_time_rate === null) {
+            return null;
+        }
+
+        return app(CreditScoreService::class)->band((float) $this->credit_score_on_time_rate);
+    }
+
+    /**
+     * Whether this customer has ever had an installment judged.
+     *
+     * Read this before showing the score anywhere: a null credit_score means
+     * "no repayment history yet", which must not be rendered as a zero.
+     */
+    public function hasCreditHistory(): bool
+    {
+        return $this->credit_score !== null;
     }
 }

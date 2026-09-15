@@ -155,6 +155,20 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Document Update', 'group_name' => 'Document Management Permissions'],
             ['name' => 'Document Delete', 'group_name' => 'Document Management Permissions'],
 
+            /* Loan Term Management */
+            ['name' => 'Loan Term Index', 'group_name' => 'Loan Term Management Permissions'],
+            ['name' => 'Loan Term Create', 'group_name' => 'Loan Term Management Permissions'],
+            ['name' => 'Loan Term Update', 'group_name' => 'Loan Term Management Permissions'],
+            ['name' => 'Loan Term Delete', 'group_name' => 'Loan Term Management Permissions'],
+            ['name' => 'Loan Term Toggle Status', 'group_name' => 'Loan Term Management Permissions'],
+
+            /* Loan Type Management */
+            ['name' => 'Loan Type Index', 'group_name' => 'Loan Type Management Permissions'],
+            ['name' => 'Loan Type Create', 'group_name' => 'Loan Type Management Permissions'],
+            ['name' => 'Loan Type Update', 'group_name' => 'Loan Type Management Permissions'],
+            ['name' => 'Loan Type Delete', 'group_name' => 'Loan Type Management Permissions'],
+            ['name' => 'Loan Type Toggle Status', 'group_name' => 'Loan Type Management Permissions'],
+
             /* Loan Product Management */
             ['name' => 'Loan Product Index', 'group_name' => 'Loan Product Management Permissions'],
             ['name' => 'Loan Product Create', 'group_name' => 'Loan Product Management Permissions'],
@@ -168,18 +182,82 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Update', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Delete', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Toggle Status', 'group_name' => 'Loan Application Management Permissions'],
-            ['name' => 'Loan Application Submit', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Review', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Verify', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Approve', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Reject', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Offer Response', 'group_name' => 'Loan Application Management Permissions'],
+            /* Legal Management */
+            ['name' => 'Legal Template Index', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Template Create', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Template Update', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Template Delete', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Template Toggle Status', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Index', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Create', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Update', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Delete', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Toggle Status', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Loan Application Disburse', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Cancel', 'group_name' => 'Loan Application Management Permissions'],
+
+            /* Group Loan Management */
+            ['name' => 'Group Loan Index', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Create', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Update', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Delete', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Toggle Status', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Review', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Verify', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Approve', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Reject', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Offer Response', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Disburse', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Cancel', 'group_name' => 'Group Loan Management Permissions'],
+
+            /* Group Loan Item Management */
+            ['name' => 'Group Loan Item Index', 'group_name' => 'Group Loan Item Management Permissions'],
+            ['name' => 'Group Loan Item Create', 'group_name' => 'Group Loan Item Management Permissions'],
+            ['name' => 'Group Loan Item Delete', 'group_name' => 'Group Loan Item Management Permissions'],
+
+            /* Loan Revision Management */
+            ['name' => 'Loan Revision Index', 'group_name' => 'Loan Revision Management Permissions'],
+            ['name' => 'Loan Revision Create', 'group_name' => 'Loan Revision Management Permissions'],
+            ['name' => 'Loan Revision Approve', 'group_name' => 'Loan Revision Management Permissions'],
+            ['name' => 'Loan Revision Reject', 'group_name' => 'Loan Revision Management Permissions'],
+            ['name' => 'Loan Revision Cancel', 'group_name' => 'Loan Revision Management Permissions'],
 
             /* Loan Application Guarantor Management */
             ['name' => 'Loan Application Guarantor Index', 'group_name' => 'Loan Application Guarantor Management Permissions'],
             ['name' => 'Loan Application Guarantor Create', 'group_name' => 'Loan Application Guarantor Management Permissions'],
             ['name' => 'Loan Application Guarantor Update', 'group_name' => 'Loan Application Guarantor Management Permissions'],
             ['name' => 'Loan Application Guarantor Delete', 'group_name' => 'Loan Application Guarantor Management Permissions'],
+
+            /* Loan Application Customer Management (Joint Loan co-borrowers and Group Loan members) */
+            ['name' => 'Loan Application Customer Index', 'group_name' => 'Loan Application Customer Management Permissions'],
+            ['name' => 'Loan Application Customer Create', 'group_name' => 'Loan Application Customer Management Permissions'],
+            ['name' => 'Loan Application Customer Update', 'group_name' => 'Loan Application Customer Management Permissions'],
+            ['name' => 'Loan Application Customer Delete', 'group_name' => 'Loan Application Customer Management Permissions'],
+
+            /* Loan Application Fixed Asset Management */
+            ['name' => 'Loan Application Fixed Asset Index', 'group_name' => 'Loan Application Fixed Asset Management Permissions'],
+            ['name' => 'Loan Application Fixed Asset Create', 'group_name' => 'Loan Application Fixed Asset Management Permissions'],
+            ['name' => 'Loan Application Fixed Asset Delete', 'group_name' => 'Loan Application Fixed Asset Management Permissions'],
+
+            /* Loan Application Moving Asset Management */
+            ['name' => 'Loan Application Moving Asset Index', 'group_name' => 'Loan Application Moving Asset Management Permissions'],
+            ['name' => 'Loan Application Moving Asset Create', 'group_name' => 'Loan Application Moving Asset Management Permissions'],
+            ['name' => 'Loan Application Moving Asset Delete', 'group_name' => 'Loan Application Moving Asset Management Permissions'],
+
+            /* Loan Application Liability Management */
+            ['name' => 'Loan Application Liability Index', 'group_name' => 'Loan Application Liability Management Permissions'],
+            ['name' => 'Loan Application Liability Create', 'group_name' => 'Loan Application Liability Management Permissions'],
+            ['name' => 'Loan Application Liability Delete', 'group_name' => 'Loan Application Liability Management Permissions'],
+
+            /* Loan Application Bank Detail Management */
+            ['name' => 'Loan Application Bank Detail Index', 'group_name' => 'Loan Application Bank Detail Management Permissions'],
+            ['name' => 'Loan Application Bank Detail Create', 'group_name' => 'Loan Application Bank Detail Management Permissions'],
+            ['name' => 'Loan Application Bank Detail Delete', 'group_name' => 'Loan Application Bank Detail Management Permissions'],
 
             /* Loan Installment Management */
             ['name' => 'Loan Installment Index', 'group_name' => 'Loan Installment Management Permissions'],
@@ -219,6 +297,20 @@ class PermissionsSeeder extends Seeder
 
             /* Notification Management */
             ['name' => 'Notification Index', 'group_name' => 'Notification Management Permissions'],
+
+            /* System Settings Management */
+            ['name' => 'Setting Index', 'group_name' => 'System Settings Permissions'],
+            ['name' => 'Setting Update', 'group_name' => 'System Settings Permissions'],
+
+            /* Credit Score Management */
+            ['name' => 'Credit Score Index', 'group_name' => 'Credit Score Management Permissions'],
+            ['name' => 'Credit Score Recompute', 'group_name' => 'Credit Score Management Permissions'],
+
+            /* Admin Dashboard Management */
+            ['name' => 'Admin Dashboard Index', 'group_name' => 'Admin Dashboard Management Permissions'],
+
+            /* Report Management */
+            ['name' => 'Report Index', 'group_name' => 'Report Management Permissions'],
         ];
 
         foreach ($permissions as $permission) {
@@ -234,6 +326,17 @@ class PermissionsSeeder extends Seeder
         $allPermissions = Permission::all();
         $role->syncPermissions($allPermissions);
 
-        Role::firstOrCreate(['guard_name' => 'api', 'name' => 'Employee']);
+        // The baseline every staff member gets before a real role is assigned.
+        //
+        // Seeded with nothing at all, a user whose only role was Employee could
+        // sign in and then be bounced straight off the dashboard by its
+        // permission gate, with no page left to land on -- a login that leads
+        // nowhere reads as a broken account rather than an unconfigured one.
+        // These two are what a person needs to see that they are in and that
+        // someone has to grant them the rest.
+        $employee = Role::firstOrCreate(['guard_name' => 'api', 'name' => 'Employee']);
+        $employee->syncPermissions(
+            Permission::whereIn('name', ['Admin Dashboard Index', 'Notification Index'])->get()
+        );
     }
 }

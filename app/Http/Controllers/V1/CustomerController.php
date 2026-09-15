@@ -3,23 +3,32 @@
 namespace App\Http\Controllers\V1;
 
 use App\Traits\ActivityLogTrait;
+use App\Traits\FileUploadTrait;
+use App\Traits\ScopesToUserBranch;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateCustomerRequest;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Http\Requests\UpdateCustomerRequest;
+use App\Models\Application;
 use App\Models\Customer;
+use App\Models\Document;
+use App\Models\LoanApplication;
+use App\Models\User;
+use App\Enums\LoanApplicationStatus;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
 class CustomerController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, FileUploadTrait, ScopesToUserBranch;
 
     public function __construct(protected NotificationService $notificationService)
     {
@@ -42,7 +51,7 @@ class CustomerController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = Customer::with(['user']);
+            $query = Customer::with(['user', 'customerDetail']);
 
             if ($request->has('search') ) {
                 $query->search($request->search);
@@ -53,18 +62,11 @@ class CustomerController extends Controller implements HasMiddleware
                 $query->where('customer_id', $request->customer_id);
             }
 
-            // Filter by specific branch if requested
             if ($request->has('branch_id')) {
                 $query->where('branch_id', $request->branch_id);
             }
 
-            // Automatically restrict staff members to their own branch
-            $currentUser = Auth::guard('api')->user();
-            if ($currentUser && $currentUser->user_type === 'staff') {
-                if ($currentUser->employee && $currentUser->employee->branch_id) {
-                    $query->where('branch_id', $currentUser->employee->branch_id);
-                }
-            }
+            $this->scopeToUserBranch($query);
 
             $customers = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
@@ -97,6 +99,15 @@ class CustomerController extends Controller implements HasMiddleware
 
             $customer = Customer::create($data);
 
+            if (array_filter($data, fn ($key) => in_array($key, ['gn_division', 'ds_division', 'district', 'province']) && !empty($data[$key]), ARRAY_FILTER_USE_KEY)) {
+                $customer->customerDetail()->create([
+                    'gn_division' => $data['gn_division'] ?? null,
+                    'ds_division' => $data['ds_division'] ?? null,
+                    'district'    => $data['district'] ?? null,
+                    'province'    => $data['province'] ?? null,
+                ]);
+            }
+
             if (!empty($data['bank_details'])) {
                 foreach ($data['bank_details'] as $bankDetail) {
                     $customer->bankDetails()->create($bankDetail);
@@ -121,22 +132,195 @@ class CustomerController extends Controller implements HasMiddleware
                 }
             }
 
+            if (!empty($data['create_user_account']) && !empty($data['user_username'])) {
+                $plainPassword = $data['user_password'] ?? Str::random(10);
+                $user = User::create([
+                    'name' => $customer->full_name,
+                    'username' => $data['user_username'],
+                    'email' => $customer->email,
+                    'password' => Hash::make($plainPassword),
+                    // Stamped at creation: the password was chosen for this
+                    // account on purpose, not defaulted to something guessable.
+                    // EnsurePasswordChanged holds accounts whose password
+                    // nobody deliberately picked -- and the customer portal has
+                    // no change-password screen, so leaving this null would
+                    // lock every new customer out of it with no way back.
+                    'password_changed_at' => now(),
+                    'user_type' => 'customer',
+                    'customer_id' => $customer->id,
+                    'is_active' => true,
+                    'can_login' => true,
+                ]);
+            } else {
+                $plainPassword = Str::random(10);
+                $user = User::create([
+                    'name' => $customer->full_name,
+                    'username' => $customer->customer_code,
+                    'email' => $customer->email,
+                    'password' => Hash::make($plainPassword),
+                    // Stamped at creation: the password was chosen for this
+                    // account on purpose, not defaulted to something guessable.
+                    // EnsurePasswordChanged holds accounts whose password
+                    // nobody deliberately picked -- and the customer portal has
+                    // no change-password screen, so leaving this null would
+                    // lock every new customer out of it with no way back.
+                    'password_changed_at' => now(),
+                    'user_type' => 'customer',
+                    'customer_id' => $customer->id,
+                    'is_active' => true,
+                    'can_login' => true,
+                ]);
+            }
+            if (!empty($data['guarantors'])) {
+                foreach ($data['guarantors'] as $guarantorData) {
+                    // Documents ride in on the guarantor payload but belong to
+                    // the documents table, so they are pulled out before the
+                    // guarantor row is written.
+                    $guarantorDocuments = $guarantorData['documents'] ?? [];
+                    unset($guarantorData['documents']);
+
+                    $guarantor = $customer->guarantors()->create($guarantorData);
+
+                    foreach ($guarantorDocuments as $doc) {
+                        if (empty($doc['file']) && empty($doc['file_path'])) {
+                            continue;
+                        }
+
+                        $documentName = $doc['document_name'] ?? ($doc['document_type'] ?? 'Document');
+
+                        Document::create([
+                            'document_name' => $documentName,
+                            'document_type' => $doc['document_type'] ?? null,
+                            'remarks'       => $doc['remarks'] ?? null,
+                            'is_active'     => $doc['is_active'] ?? true,
+                            'uploaded_at'   => now(),
+                            'guarantor_id'  => $guarantor->id,
+                            'customer_id'   => $customer->id,
+                            'file_path'     => !empty($doc['file'])
+                                ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
+                                : $doc['file_path'],
+                        ]);
+                    }
+                }
+            }
+
+            if (!empty($data['documents'])) {
+                foreach ($data['documents'] as $doc) {
+                    if (empty($doc['file']) && empty($doc['file_path'])) {
+                        continue;
+                    }
+                    $documentName = $doc['document_name'] ?? ($doc['document_type'] ?? 'Document');
+                    $customer->documents()->create([
+                        'document_name' => $documentName,
+                        'document_type' => $doc['document_type'],
+                        'remarks' => $doc['remarks'] ?? null,
+                        'is_active' => $doc['is_active'] ?? true,
+                        'uploaded_at' => now(),
+                        'file_path' => !empty($doc['file'])
+                            ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
+                            : $doc['file_path'],
+                    ]);
+                }
+            }
+
+            if (!empty($data['loan_product_id'])) {
+                $branchName = !empty($data['branch_id'])
+                    ? \App\Models\Branch::find($data['branch_id'])?->name
+                    : null;
+
+                $application = Application::create([
+                    'application_type' => 'loan',
+                    'branch' => $branchName,
+                    'requested_amount' => $data['requested_amount'] ?? null,
+                    'repayment_period_months' => $data['term_months'] ?? null,
+                    'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
+                ]);
+
+                LoanApplication::create([
+                    'application_id' => $application->id,
+                    'customer_id' => $customer->id,
+                    'loan_product_id' => $data['loan_product_id'],
+                    'branch_id' => $data['branch_id'] ?? null,
+                    'requested_amount' => $data['requested_amount'] ?? null,
+                    'interest_rate' => $data['interest_rate'] ?? null,
+                    'interest_type' => $data['interest_type'] ?? 'flat',
+                    'term_months' => $data['term_months'] ?? null,
+                    'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
+                    'applied_by' => Auth::id(),
+                    'applied_at' => now(),
+                    'status' => LoanApplicationStatus::Submitted->value,
+                    'is_active' => true,
+                ]);
+            }
+
             DB::commit();
 
-            $customer->load(['bankDetails', 'fixedAssets', 'movingAssets','liabilities']);
+            $customer->load(['customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
 
-            if (!empty($customer->phone_primary)) {
-                $this->notificationService->sendSms(
-                    'registration',
-                    $customer->phone_primary,
-                    'Welcome! Your customer registration has been completed successfully.',
-                    ['customer_id' => $customer->id]
+            $credentialsMessage = "Welcome! Your CDP Credix account has been created.\nUsername: {$user->username}\nPassword: {$plainPassword}\nPlease keep this information secure and change your password after logging in.";
+
+            if (!empty($customer->email)) {
+                $emailNotification = $this->notificationService->sendEmail(
+                    'customer_registration_credentials',
+                    $customer->email,
+                    'Your CDP Credix Account Credentials',
+                    $credentialsMessage,
+                    ['customer_id' => $customer->id, 'user_id' => $user->id],
+                    'Login credentials email sent to customer.'
                 );
+
+                if ($emailNotification->status === 'sent') {
+                    $this->logActivity('EMAIL_SENT', 'Customer', "Registration credentials email sent to customer: {$customer->email}", [
+                        'customer_id'     => $customer->id,
+                        'email'           => $customer->email,
+                        'notification_id' => $emailNotification->id,
+                    ]);
+                } else {
+                    $this->logActivity('EMAIL_FAILED', 'Customer', "Failed to send registration credentials email to customer: {$customer->email}", [
+                        'customer_id'     => $customer->id,
+                        'email'           => $customer->email,
+                        'notification_id' => $emailNotification->id,
+                        'error'           => $emailNotification->error,
+                    ], 'error');
+                }
+            } elseif (!empty($customer->phone_primary)) {
+                $smsNotification = $this->notificationService->sendSms(
+                    'customer_registration_credentials',
+                    $customer->phone_primary,
+                    $credentialsMessage,
+                    ['customer_id' => $customer->id, 'user_id' => $user->id],
+                    'Login credentials SMS sent to customer.'
+                );
+
+                if ($smsNotification->status !== 'failed') {
+                    $this->logActivity('SMS_QUEUED', 'Customer', "Registration credentials SMS queued for customer: {$customer->phone_primary}", [
+                        'customer_id'     => $customer->id,
+                        'phone'           => $customer->phone_primary,
+                        'notification_id' => $smsNotification->id,
+                    ]);
+                } else {
+                    $this->logActivity('SMS_FAILED', 'Customer', "Failed to queue registration credentials SMS for customer: {$customer->phone_primary}", [
+                        'customer_id'     => $customer->id,
+                        'phone'           => $customer->phone_primary,
+                        'notification_id' => $smsNotification->id,
+                        'error'           => $smsNotification->error,
+                    ], 'error');
+                }
+            } else {
+                $this->logActivity('NOTIFICATION_SKIPPED', 'Customer', "No email or primary phone available to send registration credentials for customer: {$customer->customer_code}", [
+                    'customer_id' => $customer->id,
+                ], 'warning');
             }
 
             $this->logActivity('Create', 'Customer', 'Customer created with associated details', [
                 'creator_id' => $currentUser ? $currentUser->id : null,
                 'customer_code' => $customer->customer_code
+            ]);
+
+            $this->logActivity('Create', 'User', "Login account created for customer: {$customer->customer_code}", [
+                'customer_id' => $customer->id,
+                'user_id' => $user->id,
+                'username' => $user->username,
             ]);
 
             return response()->json([
@@ -157,7 +341,7 @@ class CustomerController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $customer = Customer::with(['user', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities'])->find($id);
+            $customer = Customer::with(['user', 'customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents'])->find($id);
 
             if (!$customer) {
                 return response()->json([
@@ -182,6 +366,7 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function update(UpdateCustomerRequest $request, string $id)
     {
+        DB::beginTransaction();
         try {
             $customer = Customer::find($id);
 
@@ -195,6 +380,131 @@ class CustomerController extends Controller implements HasMiddleware
             $data = $request->validated();
             $customer->update($data);
 
+            if (array_filter($data, fn ($key) => in_array($key, ['gn_division', 'ds_division', 'district', 'province']) && !empty($data[$key]), ARRAY_FILTER_USE_KEY)) {
+                $customer->customerDetail()->updateOrCreate([], [
+                    'gn_division' => $data['gn_division'] ?? null,
+                    'ds_division' => $data['ds_division'] ?? null,
+                    'district'    => $data['district'] ?? null,
+                    'province'    => $data['province'] ?? null,
+                ]);
+            }
+
+            // Bank Details
+            $customer->bankDetails()->delete();
+            if (!empty($data['bank_details'])) {
+                foreach ($data['bank_details'] as $bankDetail) {
+                    $customer->bankDetails()->create($bankDetail);
+                }
+            }
+
+            // Fixed Assets
+            $customer->fixedAssets()->delete();
+            if (!empty($data['fixed_assets'])) {
+                foreach ($data['fixed_assets'] as $fixedAsset) {
+                    $customer->fixedAssets()->create($fixedAsset);
+                }
+            }
+
+            // Moving Assets
+            $customer->movingAssets()->delete();
+            if (!empty($data['moving_assets'])) {
+                foreach ($data['moving_assets'] as $movingAsset) {
+                    $customer->movingAssets()->create($movingAsset);
+                }
+            }
+
+            // Liabilities
+            $customer->liabilities()->delete();
+            if (!empty($data['liabilities'])) {
+                foreach ($data['liabilities'] as $liability) {
+                    $customer->liabilities()->create($liability);
+                }
+            }
+
+            // Guarantors
+            //
+            // Only replaced when the caller actually sent a guarantors block.
+            // Guarantors are collected on the loan application now, not on the
+            // customer form, so an edit that says nothing about them must not
+            // touch them: deleting a guarantor cascades to its
+            // loan_application_guarantors links and to its documents, which
+            // silently stripped the guarantors off live loan applications
+            // every time someone renamed a customer.
+            if (array_key_exists('guarantors', $data)) {
+                $customer->guarantors()->delete();
+            }
+            if (!empty($data['guarantors'])) {
+                foreach ($data['guarantors'] as $guarantorData) {
+                    // Documents ride in on the guarantor payload but belong to
+                    // the documents table, so they are pulled out before the
+                    // guarantor row is written.
+                    $guarantorDocuments = $guarantorData['documents'] ?? [];
+                    unset($guarantorData['documents']);
+
+                    $guarantor = $customer->guarantors()->create($guarantorData);
+
+                    foreach ($guarantorDocuments as $doc) {
+                        if (empty($doc['file']) && empty($doc['file_path'])) {
+                            continue;
+                        }
+
+                        $documentName = $doc['document_name'] ?? ($doc['document_type'] ?? 'Document');
+
+                        Document::create([
+                            'document_name' => $documentName,
+                            'document_type' => $doc['document_type'] ?? null,
+                            'remarks'       => $doc['remarks'] ?? null,
+                            'is_active'     => $doc['is_active'] ?? true,
+                            'uploaded_at'   => now(),
+                            // Both ids: the guarantor owns the document, and
+                            // the customer is how it is reached from the
+                            // customer's file. customer_id alone would make a
+                            // guarantor's papers indistinguishable from the
+                            // borrower's own.
+                            'guarantor_id'  => $guarantor->id,
+                            'customer_id'   => $customer->id,
+                            'file_path'     => !empty($doc['file'])
+                                ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
+                                : $doc['file_path'],
+                        ]);
+                    }
+                }
+            }
+
+            // Documents
+            //
+            // Only the customer's own standalone papers are managed by this
+            // form. Documents collected against a loan application or a
+            // guarantor are owned by the application's document screen and
+            // must survive a customer edit -- the form never sends them, so an
+            // unscoped delete threw them away.
+            $customer->documents()
+                ->whereNull('loan_application_id')
+                ->whereNull('guarantor_id')
+                ->delete();
+            if (!empty($data['documents'])) {
+                foreach ($data['documents'] as $doc) {
+                    if (empty($doc['file']) && empty($doc['file_path'])) {
+                        continue;
+                    }
+                    $documentName = $doc['document_name'] ?? ($doc['document_type'] ?? 'Document');
+                    $customer->documents()->create([
+                        'document_name' => $documentName,
+                        'document_type' => $doc['document_type'],
+                        'remarks' => $doc['remarks'] ?? null,
+                        'is_active' => $doc['is_active'] ?? true,
+                        'uploaded_at' => now(),
+                        'file_path' => !empty($doc['file'])
+                            ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
+                            : $doc['file_path'],
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            $customer->load(['customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
+
             $this->logActivity('Update', 'Customer', 'Customer updated', [
                 'updater_id' => Auth::id(),
                 'customer_id' => $customer->id
@@ -206,6 +516,7 @@ class CustomerController extends Controller implements HasMiddleware
                 'data' => $customer
             ], 200);
         } catch (\Throwable $th) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to update customer',
@@ -396,4 +707,5 @@ class CustomerController extends Controller implements HasMiddleware
             ], 500);
         }
     }
+
 }

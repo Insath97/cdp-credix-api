@@ -13,23 +13,58 @@ class Document extends Model
 {
     use HasFactory, SoftDeletes;
 
+   
+    public const TYPES = [
+        'nic_copy'                        => 'NIC Copy',
+        'passport_copy'                   => 'Passport Copy',
+        'driving_license'                 => 'Driving License',
+        'salary_slip'                     => 'Salary Slips (last 3 months)',
+        'salary_confirmation_letter'      => 'Salary Confirmation Letter',
+        'employment_confirmation_letter'  => 'Employment Confirmation Letter',
+        'bank_statement'                  => 'Bank Statement (last 6 months)',
+        'gs_division_certificate'         => 'GS Division Confirmation',
+        'ds_division_certificate'         => 'DS Division Confirmation',
+        'billing_proof'                   => 'Billing Proof',
+        'salary_assignment_letter'        => 'Salary Assignment Letter',
+        'employer_letter'                 => 'Employer Letter',
+        'photo'                           => 'Photo',
+        'other'                           => 'Other',
+    ];
+
     protected $fillable = [
         'document_type',
         'is_mandatory',
         'document_name',
         'file_path',
         'customer_id',
+        'loan_application_id',
+        'guarantor_id',
         'uploaded_by',
         'uploaded_at',
+        'reviewed_by',
+        'reviewed_at',
+        'verified_by',
+        'verified_at',
         'status',
         'remarks',
         'is_active',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
+        'customer_id' => 'integer',
+        'loan_application_id' => 'integer',
+        'guarantor_id' => 'integer',
         'is_mandatory' => 'boolean',
         'is_active' => 'boolean',
         'uploaded_at' => 'datetime',
+        'reviewed_at' => 'datetime',
+        'verified_at' => 'datetime',
     ];
 
     /**
@@ -41,11 +76,42 @@ class Document extends Model
     }
 
     /**
+     * The loan application this document was collected for, if any.
+     *
+     * Null for a document that belongs to the customer's permanent file (an
+     * NIC copy) rather than to one application (that application's pay slips).
+     */
+    public function loanApplication(): BelongsTo
+    {
+        return $this->belongsTo(LoanApplication::class);
+    }
+
+    /**
+     * The guarantor this document belongs to, if any.
+     */
+    public function guarantor(): BelongsTo
+    {
+        return $this->belongsTo(Guarantor::class);
+    }
+
+    /**
      * Get the user who uploaded the document.
      */
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
+    /** The officer who ticked this document off during review. */
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /** The officer who ticked it off again during verification. */
+    public function verifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
     }
 
     /**

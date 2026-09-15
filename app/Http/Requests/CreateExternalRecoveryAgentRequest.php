@@ -34,10 +34,9 @@ class CreateExternalRecoveryAgentRequest extends FormRequest
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
-                'field'    => $field,
+                'field' => $field,
                 'messages' => $messages,
             ];
         })->values();
@@ -48,7 +47,8 @@ class CreateExternalRecoveryAgentRequest extends FormRequest
 
         throw new HttpResponseException(response()->json([
             'message' => $message,
-            'errors'  => $fieldErrors,
+            'errors' => $fieldErrors,
         ], 422));
     }
+
 }

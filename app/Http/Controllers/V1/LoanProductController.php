@@ -9,6 +9,7 @@ use App\Models\LoanProduct;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanProductRequest;
 use App\Http\Requests\UpdateLoanProductRequest;
+use App\Models\LoanType;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -29,13 +30,22 @@ class LoanProductController extends Controller implements HasMiddleware
     }
 
     /**
+     * Resolve the loan term id for a loan product from its loan type.
+     * The term is always derived from the type (loan_types.loan_term_id).
+     */
+    private function resolveTermForType(int $loanTypeId): ?int
+    {
+        return LoanType::find($loanTypeId)?->loan_term_id;
+    }
+
+    /**
      * Display a listing of loan products.
      */
     public function index(Request $request)
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = LoanProduct::query();
+            $query = LoanProduct::with(['loanType', 'loanTerm']);
 
             if ($request->has('search')) {
                 $query->search($request->search);
@@ -84,7 +94,13 @@ class LoanProductController extends Controller implements HasMiddleware
         try {
             $data = $request->validated();
 
+            // The loan term for a product is always derived from the selected
+            // loan type's term (loan_types.loan_term_id) — never taken from an
+            // independently-supplied value. This keeps term/type consistent.
+            $data['loan_term_id'] = $this->resolveTermForType($data['loan_type_id']);
+
             $loanProduct = LoanProduct::create($data);
+            $loanProduct->load(['loanType', 'loanTerm']);
 
             $this->logActivity('CREATE', 'LoanProduct', "Created loan product: {$loanProduct->name}", $data);
 
@@ -109,7 +125,7 @@ class LoanProductController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $loanProduct = LoanProduct::find($id);
+            $loanProduct = LoanProduct::with(['loanType', 'loanTerm'])->find($id);
 
             if (!$loanProduct) {
                 return response()->json([
@@ -149,6 +165,12 @@ class LoanProductController extends Controller implements HasMiddleware
             }
 
             $data = $request->validated();
+
+            // Keep the product's term in sync with the loan type's term.
+            if (!empty($data['loan_type_id'])) {
+                $data['loan_term_id'] = $this->resolveTermForType($data['loan_type_id']);
+            }
+
             $loanProduct->update($data);
 
             $this->logActivity('UPDATE', 'LoanProduct', "Updated loan product: {$loanProduct->name}", $data);
@@ -156,7 +178,7 @@ class LoanProductController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Loan product updated successfully',
-                'data'    => $loanProduct->fresh(),
+                'data'    => $loanProduct->fresh(['loanType', 'loanTerm']),
             ], 200);
 
         } catch (\Throwable $th) {
@@ -340,7 +362,8 @@ class LoanProductController extends Controller implements HasMiddleware
     {
         try {
             $loanProducts = LoanProduct::active()
-                ->select('id', 'name', 'code', 'interest_rate', 'interest_type', 'min_amount', 'max_amount')
+                ->with(['loanType', 'loanTerm'])
+                ->select('id', 'name', 'code', 'loan_type_id', 'loan_term_id', 'interest_rate', 'interest_type', 'min_amount', 'max_amount')
                 ->orderBy('name')
                 ->get();
 

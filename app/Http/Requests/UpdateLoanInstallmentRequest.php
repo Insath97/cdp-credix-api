@@ -3,9 +3,9 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
-use Illuminate\Validation\Rule;
 
 class UpdateLoanInstallmentRequest extends FormRequest
 {
@@ -42,18 +42,18 @@ class UpdateLoanInstallmentRequest extends FormRequest
             'penalty_waived_by'      => 'nullable|integer|exists:users,id',
             'penalty_waived_reason'  => 'nullable|string',
             'balance'                 => 'nullable|numeric|min:0',
-            'status'                  => 'nullable|string|in:upcoming,due,partially_paid,paid,overdue,waived',
+            'status'                  => 'nullable|string|in:upcoming,due,partially_paid,paid,overdue,waived,revised',
             'paid_at'                 => 'nullable|date',
         ];
     }
 
+
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
-                'field'    => $field,
+                'field' => $field,
                 'messages' => $messages,
             ];
         })->values();
@@ -64,7 +64,8 @@ class UpdateLoanInstallmentRequest extends FormRequest
 
         throw new HttpResponseException(response()->json([
             'message' => $message,
-            'errors'  => $fieldErrors,
+            'errors' => $fieldErrors,
         ], 422));
     }
+
 }

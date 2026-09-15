@@ -35,10 +35,10 @@ class UpdateCountryRequest extends FormRequest
     /**
      * Handle a failed validation attempt.
      */
+
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
                 'field' => $field,
@@ -55,4 +55,5 @@ class UpdateCountryRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

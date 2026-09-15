@@ -2,15 +2,19 @@
 
 namespace App\Models;
 
+use App\Enums\LoanApplicationStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Liability extends Model
 {
     use HasFactory, SoftDeletes;
+
+    protected $appends = ['used_for_loan'];
 
     protected $fillable = [
         'customer_id',
@@ -25,6 +29,12 @@ class Liability extends Model
         'is_active',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'original_amount' => 'decimal:2',
         'outstanding_balance' => 'decimal:2',
@@ -37,6 +47,29 @@ class Liability extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /**
+     * Loan applications this liability has been referenced on.
+     */
+    public function loanApplications(): BelongsToMany
+    {
+        return $this->belongsToMany(LoanApplication::class, 'loan_application_liabilities', 'liability_id', 'loan_application_id');
+    }
+
+    /**
+     * Whether this liability is currently referenced on a loan application that
+     * hasn't reached a terminal (released) status.
+     */
+    public function getUsedForLoanAttribute(): bool
+    {
+        return $this->loanApplications()
+            ->whereNotIn('status', [
+                LoanApplicationStatus::Rejected->value,
+                LoanApplicationStatus::Cancelled->value,
+                LoanApplicationStatus::Closed->value,
+            ])
+            ->exists();
     }
 
     public function scopeActive(Builder $query): Builder

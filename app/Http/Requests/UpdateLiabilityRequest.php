@@ -37,10 +37,10 @@ class UpdateLiabilityRequest extends FormRequest
         ];
     }
 
+
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
                 'field' => $field,
@@ -57,4 +57,5 @@ class UpdateLiabilityRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

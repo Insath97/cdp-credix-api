@@ -58,4 +58,5 @@ class CreateBranchRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

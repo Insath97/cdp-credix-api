@@ -19,6 +19,12 @@ class RecoveryAgent extends Model
         'remarks',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'user_id'   => 'integer',
         'branch_id' => 'integer',

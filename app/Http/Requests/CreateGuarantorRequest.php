@@ -30,12 +30,22 @@ class CreateGuarantorRequest extends FormRequest
             'id_type' => 'required|string|max:100',
             'id_number' => 'required|string|max:100',
             'id_image' => 'nullable|string|max:500',
-            'date_of_birth' => 'nullable|date',
+            'date_of_birth' => 'nullable|date|before:today',
             'phone_primary' => 'nullable|string|max:20',
-            'occupation' => 'nullable|string|max:255',
-            'employer_name' => 'nullable|string|max:255',
+
+            // A guarantor is asked to prove income one of two ways, and the
+            // status decides which block is mandatory. Neither block is
+            // accepted half-filled: a salary with no employer, or a business
+            // name with no registration, is not evidence of anything.
+            'employment_status' => 'required|string|in:Employed,Self-Employed',
+            'occupation' => 'required_if:employment_status,Employed|nullable|string|max:255',
+            'employer_name' => 'required_if:employment_status,Employed|nullable|string|max:255',
+            'business_name' => 'required_if:employment_status,Self-Employed|nullable|string|max:255',
+            'business_registration_number' => 'required_if:employment_status,Self-Employed|nullable|string|max:255',
+            'business_phone' => 'required_if:employment_status,Self-Employed|nullable|string|max:20',
+
             'date_joined' => 'nullable|date',
-            'salary' => 'nullable|numeric|min:0',
+            'salary' => 'required_if:employment_status,Employed|nullable|numeric|min:0',
             'allowance' => 'nullable|numeric|min:0',
             'other_income' => 'nullable|numeric|min:0',
             'liabilities' => 'nullable|numeric|min:0',
@@ -45,10 +55,9 @@ class CreateGuarantorRequest extends FormRequest
         ];
     }
 
-    protected function failedValidation(Validator $validator)
+protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
                 'field' => $field,
@@ -65,4 +74,5 @@ class CreateGuarantorRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

@@ -40,6 +40,7 @@ class UpdateBranchRequest extends FormRequest
         ];
     }
 
+
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
@@ -59,4 +60,5 @@ class UpdateBranchRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

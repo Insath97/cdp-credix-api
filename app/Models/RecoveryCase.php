@@ -13,20 +13,33 @@ class RecoveryCase extends Model
 
     protected $fillable = [
         'loan_application_id',
+        'customer_id',
         'case_no',
         'status',
+        'stage',
         'overdue_amount',
         'assigned_agent_id',
+        'external_agent_id',
+        'parent_case_id',
         'opened_by',
         'remarks',
         'opened_at',
         'closed_at',
     ];
 
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
     protected $casts = [
         'loan_application_id' => 'integer',
+        'customer_id'          => 'integer',
         'overdue_amount'       => 'decimal:2',
         'assigned_agent_id'    => 'integer',
+        'external_agent_id'    => 'integer',
+        'parent_case_id'       => 'integer',
         'opened_by'            => 'integer',
         'opened_at'            => 'datetime',
         'closed_at'            => 'datetime',
@@ -38,6 +51,15 @@ class RecoveryCase extends Model
     public function loanApplication(): BelongsTo
     {
         return $this->belongsTo(LoanApplication::class);
+    }
+
+    /**
+     * For a Group Loan, the member this case is pursuing. Null on Individual
+     * and Joint loans, where the loan itself is the debtor.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     /**
@@ -62,5 +84,30 @@ class RecoveryCase extends Model
     public function activities(): HasMany
     {
         return $this->hasMany(RecoveryActivity::class)->orderBy('performed_at');
+    }
+
+    /**
+     * Relationship with the assigned external recovery agent.
+     */
+    public function externalAgent(): BelongsTo
+    {
+        return $this->belongsTo(ExternalRecoveryAgent::class);
+    }
+
+    /**
+     * Relationship with the case this one was escalated from (e.g. the
+     * closed internal case that preceded an external-recovery case).
+     */
+    public function parentCase(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_case_id');
+    }
+
+    /**
+     * Relationship with the case this one was escalated into.
+     */
+    public function childCase(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(self::class, 'parent_case_id');
     }
 }

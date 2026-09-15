@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\FixedAssests;
+use App\Models\Customer;
+use App\Enums\LoanApplicationStatus;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateFixedAssetsRequest;
 use App\Http\Requests\UpdateFixedAssetsRequest;
@@ -33,7 +35,7 @@ class FixedAssestsController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = FixedAssests::with(['customer']);
+            $query = FixedAssests::with(['customer:'.Customer::SUMMARY_COLUMNS]);
 
             if ($request->has('search')) {
                 $query->search($request->search);
@@ -45,6 +47,20 @@ class FixedAssestsController extends Controller implements HasMiddleware
 
             if ($request->has('is_active')) {
                 $query->where('is_active', $request->is_active);
+            }
+
+            if ($request->has('used_for_loan')) {
+                $terminalStatuses = [
+                    LoanApplicationStatus::Rejected->value,
+                    LoanApplicationStatus::Cancelled->value,
+                    LoanApplicationStatus::Closed->value,
+                ];
+
+                if ($request->boolean('used_for_loan')) {
+                    $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                } else {
+                    $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
+                }
             }
 
             $fixed_assests = $query->orderBy('created_at', 'desc')->paginate($perPage);
@@ -86,7 +102,7 @@ class FixedAssestsController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'success',
                 'message' => 'Fixed assets created successfully',
-                'data' => $fixed_assests->load('customer'),
+                'data' => $fixed_assests->load('customer:'.Customer::SUMMARY_COLUMNS),
             ], 201);
         } catch (\Throwable $th) {
             return response()->json([
@@ -100,7 +116,7 @@ class FixedAssestsController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $fixed_assests = FixedAssests::with(['customer'])->find($id);
+            $fixed_assests = FixedAssests::with(['customer:'.Customer::SUMMARY_COLUMNS])->find($id);
 
             if (!$fixed_assests) {
                 return response()->json([

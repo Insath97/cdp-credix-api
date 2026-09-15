@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Services\ReferenceNumberService;
 
 class Application extends Model
 {
@@ -17,48 +18,17 @@ class Application extends Model
 
         static::creating(function ($application) {
             if (empty($application->application_no)) {
-                $branchCode = 'COL'; // Default fallback
-
-                if (!empty($application->branch)) {
-                    if (is_numeric($application->branch)) {
-                        $branchModel = \App\Models\Branch::find($application->branch);
-                        if ($branchModel && !empty($branchModel->code)) {
-                            $branchCode = strtoupper($branchModel->code);
-                        }
-                    } else {
-                        $branchModel = \App\Models\Branch::where('code', $application->branch)
-                            ->orWhere('name', $application->branch)
-                            ->first();
-                        if ($branchModel && !empty($branchModel->code)) {
-                            $branchCode = strtoupper($branchModel->code);
-                        } else {
-                            $branchCode = strtoupper(substr($application->branch, 0, 3));
-                        }
-                    }
-                }
-
-                // Keep only alphabetic characters (e.g. COL001 -> COL)
-                $branchCode = preg_replace('/[^A-Za-z]/', '', $branchCode);
-                if (empty($branchCode)) {
-                    $branchCode = 'COL';
-                }
-
-                $currentYYMM = date('ym');
-                $prefix = 'APP-' . $branchCode . '-' . $currentYYMM;
-
-                // Find the last application number with this prefix
-                $lastApplication = self::where('application_no', 'like', $prefix . '%')
-                    ->orderBy('application_no', 'desc')
-                    ->first();
-
-                if ($lastApplication) {
-                    $lastSeq = substr($lastApplication->application_no, -4);
-                    $nextSeq = intval($lastSeq) + 1;
-                } else {
-                    $nextSeq = 1;
-                }
-
-                $application->application_no = $prefix . str_pad($nextSeq, 4, '0', STR_PAD_LEFT);
+                // APP-{BRANCH}-{yyyymmdd}{00000001}. The format and the branch
+                // code rules live in ReferenceNumberService, which also mints
+                // the approval reference, so the two cannot drift apart.
+                //
+                // Numbers issued before this format existed read
+                // APP-{BRANCH}-{yymm}{0001} and are deliberately left alone:
+                // they are printed on paper, quoted in SMS already sent, and
+                // referenced from payments. No prefix this generator builds can
+                // match them, so the new counter starts clean.
+                $application->application_no = app(ReferenceNumberService::class)
+                    ->forApplication($application->branch);
             }
         });
     }
@@ -73,6 +43,12 @@ class Application extends Model
         'repayment_period_months',
         'monthly_repayment_date',
         'status',
+    ];
+
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+        'deleted_at',
     ];
 
     protected $casts = [

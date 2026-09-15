@@ -3,6 +3,8 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+use App\Models\Setting;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
@@ -20,7 +22,7 @@ class CreateCustomerBankDetailRequest extends FormRequest
     {
         return [
             'customer_id'    => 'required|string|exists:customers,customer_id',
-            'bank_name'      => 'required|string|max:200',
+            'bank_name'      => ['required', 'string', Rule::in(Setting::get('customer_bank_list', []))],
             'branch_name'    => 'required|string|max:200',
             'account_number' => 'required|string|max:200',
             'payment_method' => 'required|in:cash,bank_transfer,cheque',
@@ -30,7 +32,6 @@ class CreateCustomerBankDetailRequest extends FormRequest
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
                 'field' => $field,
@@ -48,3 +49,6 @@ class CreateCustomerBankDetailRequest extends FormRequest
         ], 422));
     }
 }
+
+
+

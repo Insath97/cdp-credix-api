@@ -32,6 +32,7 @@ class UpdateProvinceRequest extends FormRequest
         ];
     }
 
+
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
@@ -41,12 +42,15 @@ class UpdateProvinceRequest extends FormRequest
                 'messages' => $messages,
             ];
         })->values();
+
         $message = $fieldErrors->count() > 1
             ? 'There are multiple validation errors. Please review the form and correct the issues.'
             : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.';
+
         throw new HttpResponseException(response()->json([
             'message' => $message,
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

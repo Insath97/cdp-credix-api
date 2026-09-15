@@ -2,11 +2,13 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Guarantor;
+use App\Services\GuarantorLoanLimitService;
+use App\Models\LoanApplication;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
-use Illuminate\Validation\Rule;
-
 class CreateLoanApplicationGuarantorRequest extends FormRequest
 {
     /**
@@ -31,6 +33,26 @@ class CreateLoanApplicationGuarantorRequest extends FormRequest
                 Rule::unique('loan_application_guarantors')->where(function ($query) {
                     return $query->where('loan_application_id', $this->loan_application_id);
                 }),
+                function ($attribute, $value, $fail) {
+                    $loanApplication = LoanApplication::find($this->loan_application_id);
+
+                    if (!$loanApplication) {
+                        return;
+                    }
+
+                    $guarantor = Guarantor::where('id', $value)
+                        ->where('customer_id', $loanApplication->customer_id)
+                        ->first();
+
+                    if (!$guarantor) {
+                        $fail('This guarantor does not belong to the customer on this loan application.');
+                        return;
+                    }
+
+                    if ($message = GuarantorLoanLimitService::refusalFor($guarantor, $this->loan_application_id)) {
+                        $fail($message);
+                    }
+                },
             ],
             'guarantor_type'      => 'nullable|string|max:255',
             'status'              => 'nullable|string|in:pending,approved,rejected',
@@ -41,10 +63,9 @@ class CreateLoanApplicationGuarantorRequest extends FormRequest
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
-                'field'    => $field,
+                'field' => $field,
                 'messages' => $messages,
             ];
         })->values();
@@ -55,7 +76,8 @@ class CreateLoanApplicationGuarantorRequest extends FormRequest
 
         throw new HttpResponseException(response()->json([
             'message' => $message,
-            'errors'  => $fieldErrors,
+            'errors' => $fieldErrors,
         ], 422));
     }
+
 }

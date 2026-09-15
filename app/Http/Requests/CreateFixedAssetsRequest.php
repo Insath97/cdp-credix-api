@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
-use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\Exceptions\HttpResponseException;   
 
 class CreateFixedAssetsRequest extends FormRequest
 {
@@ -34,10 +34,9 @@ class CreateFixedAssetsRequest extends FormRequest
         ];
     }
 
-     protected function failedValidation(Validator $validator)
+    protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
                 'field' => $field,
@@ -54,4 +53,5 @@ class CreateFixedAssetsRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

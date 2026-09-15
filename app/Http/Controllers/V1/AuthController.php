@@ -3,11 +3,15 @@
 namespace App\Http\Controllers\V1;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\SendSmsJob;
 use App\Models\LoginOtpVerification;
 use App\Models\User;
+use App\Models\Customer;
+use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use App\Traits\ActivityLogTrait;
 use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -16,6 +20,24 @@ use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
+    use ActivityLogTrait;
+
+    /**
+     * How long a login OTP stays valid, in seconds.
+     *
+     * The clock starts when the record is written, not when the SMS lands, so
+     * the gateway's own delivery delay is spent out of this window.
+     */
+    public const LOGIN_OTP_TTL_SECONDS = 60;
+
+    /**
+     * How long a login OTP stays valid, in seconds.
+     *
+     * The clock starts when the record is written, not when the SMS lands, so
+     * the gateway's own delivery delay is spent out of this window.
+     */
+    public const LOGIN_OTP_TTL_SECONDS = 60;
+
     /**
      * Admin / Customer Login
      * Customers get an OTP-required response on their first login instead of a JWT.
@@ -85,7 +107,7 @@ class AuthController extends Controller
             }
 
             if ($user->user_type === 'customer' && is_null($user->two_factor_verified_at)) {
-                $user->load('customer');
+                $user->load('customer:'.Customer::SUMMARY_COLUMNS);
                 $phone = $user->customer?->phone_primary;
 
                 if (empty($phone)) {
@@ -111,17 +133,26 @@ class AuthController extends Controller
                     'user_id' => $user->id,
                     'reference' => $reference,
                     'otp' => $otp,
-                    'expires_at' => now()->addMinutes(1),
+                    'expires_at' => now()->addSeconds(self::LOGIN_OTP_TTL_SECONDS),
                     'status' => 'approved',
                     'ip_address' => $request->ip(),
                 ]);
 
-                $message = config('app.name') . ": Your OTP for login is {$otp}. Valid for 1 minute.";
-                SendSmsJob::dispatch($phone, $message);
-                Log::info('First-time login OTP SMS queued', [
-                    'user_id' => $user->id,
-                    'phone' => $phone,
-                ]);
+                // The SMS quotes the same constant, so the text can never
+                // promise a window the record does not honour.
+                $message = config('app.name') . ": Your OTP for login is {$otp}. Valid for " . self::LOGIN_OTP_TTL_SECONDS . " seconds.";
+
+                // Never log the OTP or the destination number: the log would be a
+                // standing credential for any account that requests a login code.
+                Log::info('Login OTP issued', ['user_id' => $user->id]);
+
+                try {
+                    $smsService = app(SmsService::class);
+                    $smsSent = $smsService->sendSms($phone, $message);
+                    Log::info('OTP SMS send result', ['sent' => $smsSent, 'user_id' => $user->id]);
+                } catch (\Throwable $smsEx) {
+                    Log::error('OTP SMS send failed', ['error' => $smsEx->getMessage()]);
+                }
 
                 return response()->json([
                     'status' => 'success',
@@ -129,7 +160,7 @@ class AuthController extends Controller
                     'data' => [
                         'otp_required' => true,
                         'reference' => $reference,
-                        'expires_in' => 60,
+                        'expires_in' => 1800,
                     ]
                 ], 200);
             }
@@ -290,17 +321,116 @@ class AuthController extends Controller
     /**
      * Get authenticated admin user
      */
+    /**
+     * Update the signed-in user's own name and email.
+     *
+     * Separate from UserController::update, which is an administrator editing
+     * somebody else and can reach roles, branch posting and the active flag.
+     * This one reaches exactly two columns, because that is all the profile
+     * screen offers and all a user should be able to change about themselves.
+     */
+    public function updateProfile(Request $request)
+    {
+        try {
+            $user = auth('api')->user();
+
+            $data = $request->validate([
+                'name'  => ['sometimes', 'required', 'string', 'max:255'],
+                'email' => ['sometimes', 'nullable', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            ]);
+
+            $user->fill($data)->save();
+
+            $this->logActivity('UPDATE', 'User', "Updated own profile: {$user->username}", $data);
+
+            return $this->meResponse($user, 'Profile updated successfully');
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->validator->errors()->first(),
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to update profile',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * The user payload both me() and updateProfile() answer with.
+     *
+     * Kept in one place so a profile screen reading the update response sees
+     * exactly the shape it saw on load -- branch, zone, region and province
+     * included, which User::toArray() fills only from loaded relations.
+     */
+    private function meResponse(\App\Models\User $user, string $message)
+    {
+        $user->load([
+            'roles' => function ($query) {
+                $query->select('id', 'name')
+                    ->with(['permissions' => function ($query) {
+                        $query->select('id', 'name');
+                    }]);
+            },
+            'employee.branch',
+            'employee.branch.zonal',
+            'employee.branch.region',
+            'employee.branch.province',
+            'employee.zonal',
+            'employee.region',
+            'employee.province',
+            'employee.reportingManager.user',
+            'employee.subordinates.user',
+        ]);
+
+        if ($user->relationLoaded('roles')) {
+            $user->roles->each->makeHidden(['pivot']);
+            $user->roles->each(function ($role) {
+                if ($role->relationLoaded('permissions')) {
+                    $role->permissions->each->makeHidden(['pivot']);
+                }
+            });
+        }
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => $message,
+            'data'    => ['user' => $user],
+        ], 200);
+    }
+
     public function me()
     {
         try {
             $user = auth('api')->user();
 
-            $user->load(['roles' => function ($query) {
-                $query->select('id', 'name')
-                    ->with(['permissions' => function ($query) {
-                        $query->select('id', 'name');
-                    }]);
-            }]);
+            $user->load([
+                'roles' => function ($query) {
+                    $query->select('id', 'name')
+                        ->with(['permissions' => function ($query) {
+                            $query->select('id', 'name');
+                        }]);
+                },
+
+                // User::toArray() fills branch, zone, region, province, parent
+                // and children only from relations that are already loaded --
+                // it will not go to the database itself, so that serialising a
+                // list of users cannot fire four queries per row. Loading them
+                // here is therefore what decides whether the profile screen
+                // shows a posting or four dashes.
+                'employee.branch',
+                'employee.branch.zonal',
+                'employee.branch.region',
+                'employee.branch.province',
+                'employee.zonal',
+                'employee.region',
+                'employee.province',
+                'employee.reportingManager.user',
+                'employee.subordinates.user',
+            ]);
 
             if ($user->relationLoaded('roles')) {
                 $user->roles->each->makeHidden(['pivot']);

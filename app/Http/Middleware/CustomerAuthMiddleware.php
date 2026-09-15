@@ -2,7 +2,6 @@
 
 namespace App\Http\Middleware;
 
-use App\Enums\UserType;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,10 +23,14 @@ class CustomerAuthMiddleware
             ], 401);
         }
 
-        $user = Auth::guard('api')->user();
+        /** @var \PHPOpenSourceSaver\JWTAuth\JWTGuard $guard */
+        $guard = Auth::guard('api');
+
+        /** @var \App\Models\User $user */
+        $user = $guard->user();
 
         // CRITICAL: Verify user_type from token claims
-        $tokenUserType = Auth::guard('api')->payload()->get('user_type');
+        $tokenUserType = $guard->payload()->get('user_type');
 
         if ($tokenUserType !== 'customer') {
             return response()->json([

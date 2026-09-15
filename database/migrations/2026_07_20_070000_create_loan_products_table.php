@@ -16,8 +16,10 @@ return new class extends Migration
 
             $table->string('name');
             $table->string('code')->unique()->nullable();
+            $table->foreignId('loan_type_id')->nullable()->constrained('loan_types')->nullOnDelete();
+            $table->foreignId('loan_term_id')->nullable()->constrained('loan_terms')->nullOnDelete();
             $table->text('description')->nullable();
-            $table->decimal('interest_rate', 6, 3);
+            $table->decimal('interest_rate', 6, 3)->nullable();
             $table->string('interest_type')->nullable()->default('flat');
             $table->decimal('min_amount', 15, 2);
             $table->decimal('max_amount', 15, 2);
@@ -28,6 +30,8 @@ return new class extends Migration
             $table->decimal('penalty_value', 10, 2)->nullable();
             $table->unsignedInteger('grace_period_days')->default(0);
             $table->boolean('is_active')->default(true);
+            $table->boolean('is_islamic')->default(true);
+            $table->boolean('is_group_loan')->default(false);
             $table->softDeletes();
             $table->timestamps();
         });

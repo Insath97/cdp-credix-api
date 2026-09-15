@@ -16,27 +16,25 @@ class UpdateRecoveryCaseRequest extends FormRequest
         return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     */
+    
     public function rules(): array
     {
         return [
             'status'            => 'nullable|string|in:open,in_progress,resolved,escalated,closed',
+            'stage'             => 'nullable|string|in:internal,external',
             'overdue_amount'    => 'nullable|numeric|min:0',
-            'assigned_agent_id' => 'nullable|integer|exists:users,id',
             'remarks'           => 'nullable|string',
             'closed_at'         => 'nullable|date',
         ];
     }
 
+
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
-                'field'    => $field,
+                'field' => $field,
                 'messages' => $messages,
             ];
         })->values();
@@ -47,7 +45,8 @@ class UpdateRecoveryCaseRequest extends FormRequest
 
         throw new HttpResponseException(response()->json([
             'message' => $message,
-            'errors'  => $fieldErrors,
+            'errors' => $fieldErrors,
         ], 422));
     }
+
 }

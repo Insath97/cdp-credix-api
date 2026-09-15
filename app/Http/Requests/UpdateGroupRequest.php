@@ -33,10 +33,10 @@ class UpdateGroupRequest extends FormRequest
     /**
      * Handle failed validation and return a JSON error response.
      */
+
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
-
         $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
             return [
                 'field' => $field,
@@ -53,4 +53,5 @@ class UpdateGroupRequest extends FormRequest
             'errors' => $fieldErrors,
         ], 422));
     }
+
 }

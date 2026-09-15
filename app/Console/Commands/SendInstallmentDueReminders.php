@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Models\LoanApplication;
 use App\Models\LoanInstallment;
 use App\Services\NotificationService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 
 class SendInstallmentDueReminders extends Command
 {
@@ -24,33 +26,77 @@ class SendInstallmentDueReminders extends Command
 
         $installments = LoanInstallment::whereDate('due_date', $targetDate)
             ->whereIn('status', ['upcoming', 'partially_paid'])
-            ->with('loanApplication.customer')
+            ->with('customer', 'loanApplication.customer', 'loanApplication.loanApplicationCustomers.customer')
             ->get();
 
         $sent = 0;
 
         foreach ($installments as $installment) {
-            $customer = $installment->loanApplication?->customer;
+            $loanApplication = $installment->loanApplication;
 
-            if (!$customer || empty($customer->phone_primary)) {
+            if (!$loanApplication) {
                 continue;
             }
 
-            $notificationService->sendSms(
-                'installment_due_reminder',
-                $customer->phone_primary,
-                "Reminder: Your loan installment is due on {$installment->due_date->format('Y-m-d')}. Please make your payment on time.",
-                [
-                    'loan_application_id' => $installment->loan_application_id,
-                    'customer_id' => $customer->id,
-                ]
-            );
+            $isJoint = $loanApplication->isJointLoan();
+            $dueMessage = "Reminder: Your loan installment is due on {$installment->due_date->format('Y-m-d')}. Please make your payment on time.";
 
-            $sent++;
+            foreach ($this->recipientsFor($installment, $loanApplication) as $customer) {
+                if (empty($customer->phone_primary)) {
+                    continue;
+                }
+
+                $notificationService->sendSms(
+                    'installment_due_reminder',
+                    $customer->phone_primary,
+                    $dueMessage,
+                    [
+                        'loan_application_id' => $installment->loan_application_id,
+                        'customer_id' => $customer->id,
+                    ]
+                );
+
+                if ($isJoint && !empty($customer->email)) {
+                    $notificationService->sendEmail(
+                        'installment_due_reminder',
+                        $customer->email,
+                        'Installment Due Reminder',
+                        $dueMessage,
+                        [
+                            'loan_application_id' => $installment->loan_application_id,
+                            'customer_id' => $customer->id,
+                        ]
+                    );
+                }
+
+                $sent++;
+            }
         }
 
         $this->info("Installment due reminders sent: {$sent}");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Who should hear about this particular installment.
+     *
+     * A Group Loan gives every member their own row per period, so a reminder
+     * goes only to the member who actually owes it — otherwise a 5-member
+     * group would send 5 reminders to all 5 members for the same due date.
+     *
+     * Individual and Joint Loans keep notifying every attached customer. Note
+     * the branch keys off isGroupLoan() rather than the installment's
+     * customer_id: those loans now stamp their primary customer on the row
+     * too, so reading the column would silently stop notifying Joint Loan
+     * co-borrowers.
+     */
+    private function recipientsFor(LoanInstallment $installment, LoanApplication $loanApplication): Collection
+    {
+        if ($loanApplication->isGroupLoan() && $installment->customer_id) {
+            return collect([$installment->customer])->filter()->values();
+        }
+
+        return $loanApplication->notifiableCustomers();
     }
 }
