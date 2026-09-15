@@ -167,7 +167,12 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     Route::apiResource('groups', GroupController::class);
 
     // Customers
-    Route::apiResource('customers', CustomerController::class);
+    //
+    // The prefix group goes BEFORE the apiResource, the way every other module
+    // in this file does it. Registered the other way round, customers/{customer}
+    // matched first and 'list' was read as a customer id: the controller looked
+    // up a customer called "list", found none, and GET customers/list answered
+    // 404 for everyone.
     Route::prefix('customers')->group(function () {
         Route::get('list', [CustomerController::class, 'index']);
         Route::get('list/public/{customer_code?}', [CustomerController::class, 'getPublicDetails']);
@@ -175,6 +180,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::post('{id}/restore', [CustomerController::class, 'restore']);
         Route::delete('{id}/force-delete', [CustomerController::class, 'forceDelete']);
     });
+    Route::apiResource('customers', CustomerController::class);
 
     // Customer Bank Details
     Route::prefix('customer-bank-details')->group(function () {

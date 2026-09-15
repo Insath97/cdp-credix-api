@@ -19,13 +19,32 @@ class PermissionController extends Controller implements HasMiddleware
             new Middleware('permission:Permission Create', only: ['store']),
             new Middleware('permission:Permission Update', only: ['update']),
             new Middleware('permission:Permission Delete', only: ['destroy']),
+
+            // getPermissionList appeared in none of the lists above, so the
+            // whole permission catalogue was readable by any authenticated
+            // principal -- a customer's portal token included. It is not a
+            // secret worth much on its own, but it is a precise map of what
+            // this system can do and what each role could be given.
+            //
+            // Gated on alternatives rather than on Permission Index alone,
+            // because two screens legitimately read it: the Permissions list
+            // itself, and the checkbox tree on the role form, which is reached
+            // by someone holding a Role permission rather than a Permission one.
+            new Middleware(
+                'permission:Permission Index|Role Index|Role Create|Role Update',
+                only: ['getPermissionList'],
+            ),
         ];
     }
 
     public function index(Request $request)
     {
         try {
-            $perPage = $request->get('per_page', 15);
+            // Clamped: per_page=0 reaches LengthAwarePaginator, which divides
+            // by the page size, so the DivisionByZeroError surfaced through the
+            // catch-all below as an opaque 500. A huge value loaded all 200-odd
+            // rows at once.
+            $perPage = $this->perPage($request);
 
             $query = Permission::query();
 
@@ -39,13 +58,15 @@ class PermissionController extends Controller implements HasMiddleware
                 });
             }
 
-            // Filter by guard name
-            if ($request->has('guard_name')) {
+            // filled(), not has(): a cleared dropdown sends `?group_name=`, and
+            // has() is true for a present-but-empty parameter, so the query
+            // became `where group_name = ''` and the screen answered "no
+            // permissions found" for a filter the user had just reset.
+            if ($request->filled('guard_name')) {
                 $query->where('guard_name', $request->guard_name);
             }
 
-            // Filter by group name
-            if ($request->has('group_name')) {
+            if ($request->filled('group_name')) {
                 $query->where('group_name', $request->group_name);
             }
 
@@ -53,13 +74,13 @@ class PermissionController extends Controller implements HasMiddleware
 
             $permissions = $query->paginate($perPage);
 
-            if ($permissions->isEmpty()) {
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'No permissions found',
-                    'data' => []
-                ], 200);
-            }
+            // An empty page is still a page.
+            //
+            // This used to return a bare [] for an empty result and a paginator
+            // object otherwise, so `data` changed shape depending on the rows
+            // found. The client reads total and last_page off that object to
+            // draw its pager, and on the empty branch there was nothing to
+            // read.
 
             return response()->json([
                 'status' => 'success',
@@ -70,7 +91,7 @@ class PermissionController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to retrieve permissions',
-                'error' => $th->getMessage()
+                'error' => config('app.debug') ? $th->getMessage() : 'Internal server error'
             ], 500);
         }
     }
@@ -97,7 +118,7 @@ class PermissionController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create permission',
-                'error' => $th->getMessage()
+                'error' => config('app.debug') ? $th->getMessage() : 'Internal server error'
             ], 500);
         }
     }
@@ -124,7 +145,7 @@ class PermissionController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to retrieve permission',
-                'error' => $th->getMessage()
+                'error' => config('app.debug') ? $th->getMessage() : 'Internal server error'
             ], 500);
         }
     }
@@ -163,7 +184,7 @@ class PermissionController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to update permission',
-                'error' => $th->getMessage()
+                'error' => config('app.debug') ? $th->getMessage() : 'Internal server error'
             ], 500);
         }
     }
@@ -202,7 +223,7 @@ class PermissionController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to delete permission',
-                'error' => $th->getMessage()
+                'error' => config('app.debug') ? $th->getMessage() : 'Internal server error'
             ], 500);
         }
     }
@@ -223,7 +244,7 @@ class PermissionController extends Controller implements HasMiddleware
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to retrieve permissions',
-                'error' => $th->getMessage()
+                'error' => config('app.debug') ? $th->getMessage() : 'Internal server error'
             ], 500);
         }
     }

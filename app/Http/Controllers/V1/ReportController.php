@@ -18,6 +18,7 @@ use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class ReportController extends Controller implements HasMiddleware
 {
@@ -36,6 +37,19 @@ class ReportController extends Controller implements HasMiddleware
      */
     protected function resolveDateRange(Request $request): array
     {
+        // Validated before Carbon sees it.
+        //
+        // Carbon::parse() throws on anything it cannot read, and the throw
+        // landed in each report's catch-all, so a mistyped date came back as an
+        // opaque 500 "Failed to retrieve report" rather than a 422 naming the
+        // field. The ordering rule is here for the same reason: a window that
+        // ends before it starts is not an error anywhere downstream, it simply
+        // matches nothing, and the report then reads as a real zero.
+        $request->validate([
+            'start_date' => 'nullable|date',
+            'end_date'   => 'nullable|date|after_or_equal:start_date',
+        ]);
+
         $endDate = $request->filled('end_date') ? Carbon::parse($request->end_date)->endOfDay() : now()->endOfDay();
         $startDate = $request->filled('start_date') ? Carbon::parse($request->start_date)->startOfDay() : now()->startOfMonth();
 
@@ -88,7 +102,14 @@ class ReportController extends Controller implements HasMiddleware
             $perPage = $this->reportPerPage($request);
 
             $branches = $this->branchWiseBaseQuery($request)->paginate($perPage);
-            $branches->getCollection()->transform(fn ($branch) => $this->shapeBranchRow($branch, $startDate, $endDate));
+
+            $totals = $this->branchTotals(
+                $branches->getCollection()->pluck('id')->all(),
+                $startDate,
+                $endDate,
+            );
+
+            $branches->getCollection()->transform(fn ($branch) => $this->shapeBranchRow($branch, $totals));
 
             $this->logActivity('Index', 'Report', 'Branch-wise report viewed', ['user_id' => Auth::id()]);
 
@@ -99,6 +120,11 @@ class ReportController extends Controller implements HasMiddleware
                 'summary' => $this->branchWiseSummary($request, $startDate, $endDate),
             ], 200);
 
+        } catch (ValidationException $e) {
+            // A rejected input is a 422, not a server error. Raised inside
+            // the try below, it would otherwise be swallowed by the catch-all
+            // and reported as "Failed to retrieve ...".
+            throw $e;
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
@@ -141,20 +167,71 @@ class ReportController extends Controller implements HasMiddleware
         ];
     }
 
-    protected function shapeBranchRow(Branch $branch, Carbon $startDate, Carbon $endDate): array
+    /**
+     * The four branch figures, for a whole page of branches at once.
+     *
+     * Four queries for the page, not four per row. shapeBranchRow() used to run
+     * its own aggregates against a single branch id, so a hundred-row page cost
+     * four hundred round trips and the report got slower the more branches the
+     * company opened.
+     *
+     * The collections figure joins rather than using whereHas, so it has to
+     * exclude soft-deleted loans by hand: a join does not apply the model's
+     * global scope, and without the null check a deleted loan's payments would
+     * quietly start counting towards the branch total.
+     *
+     * @param  array<int, int>  $branchIds
+     * @return array<string, array<int, float|int>>
+     */
+    protected function branchTotals(array $branchIds, Carbon $startDate, Carbon $endDate): array
     {
-        $applications = LoanApplication::where('branch_id', $branch->id);
+        if (empty($branchIds)) {
+            return ['applications' => [], 'disbursed' => [], 'outstanding' => [], 'collected' => []];
+        }
 
+        $applications = fn () => LoanApplication::whereIn('branch_id', $branchIds)->groupBy('branch_id');
+
+        return [
+            'applications' => $applications()
+                ->whereBetween('applied_at', [$startDate, $endDate])
+                ->selectRaw('branch_id, COUNT(*) as aggregate')
+                ->pluck('aggregate', 'branch_id')
+                ->all(),
+
+            'disbursed' => $applications()
+                ->whereBetween('disbursed_at', [$startDate, $endDate])
+                ->selectRaw('branch_id, SUM(approved_amount) as aggregate')
+                ->pluck('aggregate', 'branch_id')
+                ->all(),
+
+            'outstanding' => $applications()
+                ->whereIn('status', [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue])
+                ->selectRaw('branch_id, SUM(outstanding_balance) as aggregate')
+                ->pluck('aggregate', 'branch_id')
+                ->all(),
+
+            'collected' => Payment::query()
+                ->join('loan_applications', 'payments.loan_application_id', '=', 'loan_applications.id')
+                ->whereNull('loan_applications.deleted_at')
+                ->whereIn('loan_applications.branch_id', $branchIds)
+                ->whereBetween('payments.paid_at', [$startDate, $endDate])
+                ->groupBy('loan_applications.branch_id')
+                ->selectRaw('loan_applications.branch_id as branch_id, SUM(payments.amount) as aggregate')
+                ->pluck('aggregate', 'branch_id')
+                ->all(),
+        ];
+    }
+
+    protected function shapeBranchRow(Branch $branch, array $totals): array
+    {
         return [
             'branch_id'             => $branch->id,
             'branch_code'           => $branch->code,
             'branch_name'           => $branch->name,
-            'applications_count'    => (clone $applications)->whereBetween('applied_at', [$startDate, $endDate])->count(),
-            'total_disbursed'       => (float) (clone $applications)->whereBetween('disbursed_at', [$startDate, $endDate])->sum('approved_amount'),
-            'outstanding_portfolio' => (float) (clone $applications)->whereIn('status', [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue])->sum('outstanding_balance'),
-            'total_collected'       => (float) Payment::whereHas('loanApplication', fn ($q) => $q->where('branch_id', $branch->id))
-                ->whereBetween('paid_at', [$startDate, $endDate])
-                ->sum('amount'),
+            'applications_count'    => (int) ($totals['applications'][$branch->id] ?? 0),
+            'total_disbursed'       => (float) ($totals['disbursed'][$branch->id] ?? 0),
+            'outstanding_portfolio' => (float) ($totals['outstanding'][$branch->id] ?? 0),
+            'total_collected'       => (float) ($totals['collected'][$branch->id] ?? 0),
         ];
     }
 
@@ -169,7 +246,13 @@ class ReportController extends Controller implements HasMiddleware
             $perPage = $this->reportPerPage($request);
 
             $customers = $this->customerWiseBaseQuery($request)->paginate($perPage);
-            $customers->getCollection()->transform(fn ($customer) => $this->shapeCustomerRow($customer, $startDate, $endDate));
+            $totals = $this->customerTotals(
+                $customers->getCollection()->pluck('id')->all(),
+                $startDate,
+                $endDate,
+            );
+
+            $customers->getCollection()->transform(fn ($customer) => $this->shapeCustomerRow($customer, $totals));
 
             $this->logActivity('Index', 'Report', 'Customer-wise report viewed', ['user_id' => Auth::id()]);
 
@@ -180,6 +263,11 @@ class ReportController extends Controller implements HasMiddleware
                 'summary' => $this->customerWiseSummary($request, $startDate, $endDate),
             ], 200);
 
+        } catch (ValidationException $e) {
+            // A rejected input is a 422, not a server error. Raised inside
+            // the try below, it would otherwise be swallowed by the catch-all
+            // and reported as "Failed to retrieve ...".
+            throw $e;
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
@@ -220,23 +308,78 @@ class ReportController extends Controller implements HasMiddleware
         ];
     }
 
-    protected function shapeCustomerRow(Customer $customer, Carbon $startDate, Carbon $endDate): array
+    /**
+     * The five customer figures, for a whole page of customers at once.
+     *
+     * The same change as branchTotals(), and it matters more here: there are
+     * far more customers than branches, so at the hundred-row cap this was five
+     * hundred queries for one screen.
+     *
+     * Both joins exclude soft-deleted loans explicitly, because a join does not
+     * apply the model's global scope the way whereHas did.
+     *
+     * @param  array<int, int>  $customerIds
+     * @return array<string, array<int, float|int>>
+     */
+    protected function customerTotals(array $customerIds, Carbon $startDate, Carbon $endDate): array
     {
-        $applications = LoanApplication::where('customer_id', $customer->id);
+        if (empty($customerIds)) {
+            return ['loans' => [], 'disbursed' => [], 'outstanding' => [], 'paid' => [], 'overdue' => []];
+        }
+
+        $applications = fn () => LoanApplication::whereIn('customer_id', $customerIds)->groupBy('customer_id');
 
         return [
-            'customer_id'        => $customer->id,
-            'customer_code'      => $customer->customer_code,
-            'full_name'          => $customer->full_name,
-            'total_loans'        => (clone $applications)->count(),
-            'total_disbursed'    => (float) (clone $applications)->whereBetween('disbursed_at', [$startDate, $endDate])->sum('approved_amount'),
-            'outstanding_balance' => (float) (clone $applications)->whereIn('status', [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue])->sum('outstanding_balance'),
-            'total_paid'         => (float) Payment::whereHas('loanApplication', fn ($q) => $q->where('customer_id', $customer->id))
-                ->whereBetween('paid_at', [$startDate, $endDate])
-                ->sum('amount'),
-            'overdue_amount'     => (float) LoanInstallment::where('status', 'overdue')
-                ->whereHas('loanApplication', fn ($q) => $q->where('customer_id', $customer->id))
-                ->sum('balance'),
+            'loans' => $applications()
+                ->selectRaw('customer_id, COUNT(*) as aggregate')
+                ->pluck('aggregate', 'customer_id')
+                ->all(),
+
+            'disbursed' => $applications()
+                ->whereBetween('disbursed_at', [$startDate, $endDate])
+                ->selectRaw('customer_id, SUM(approved_amount) as aggregate')
+                ->pluck('aggregate', 'customer_id')
+                ->all(),
+
+            'outstanding' => $applications()
+                ->whereIn('status', [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue])
+                ->selectRaw('customer_id, SUM(outstanding_balance) as aggregate')
+                ->pluck('aggregate', 'customer_id')
+                ->all(),
+
+            'paid' => Payment::query()
+                ->join('loan_applications', 'payments.loan_application_id', '=', 'loan_applications.id')
+                ->whereNull('loan_applications.deleted_at')
+                ->whereIn('loan_applications.customer_id', $customerIds)
+                ->whereBetween('payments.paid_at', [$startDate, $endDate])
+                ->groupBy('loan_applications.customer_id')
+                ->selectRaw('loan_applications.customer_id as customer_id, SUM(payments.amount) as aggregate')
+                ->pluck('aggregate', 'customer_id')
+                ->all(),
+
+            'overdue' => LoanInstallment::query()
+                ->join('loan_applications', 'loan_installments.loan_application_id', '=', 'loan_applications.id')
+                ->whereNull('loan_applications.deleted_at')
+                ->whereIn('loan_applications.customer_id', $customerIds)
+                ->where('loan_installments.status', 'overdue')
+                ->groupBy('loan_applications.customer_id')
+                ->selectRaw('loan_applications.customer_id as customer_id, SUM(loan_installments.balance) as aggregate')
+                ->pluck('aggregate', 'customer_id')
+                ->all(),
+        ];
+    }
+
+    protected function shapeCustomerRow(Customer $customer, array $totals): array
+    {
+        return [
+            'customer_id'         => $customer->id,
+            'customer_code'       => $customer->customer_code,
+            'full_name'           => $customer->full_name,
+            'total_loans'         => (int) ($totals['loans'][$customer->id] ?? 0),
+            'total_disbursed'     => (float) ($totals['disbursed'][$customer->id] ?? 0),
+            'outstanding_balance' => (float) ($totals['outstanding'][$customer->id] ?? 0),
+            'total_paid'          => (float) ($totals['paid'][$customer->id] ?? 0),
+            'overdue_amount'      => (float) ($totals['overdue'][$customer->id] ?? 0),
         ];
     }
 
@@ -261,6 +404,11 @@ class ReportController extends Controller implements HasMiddleware
                 'summary' => $this->loanPortfolioSummary($request),
             ], 200);
 
+        } catch (ValidationException $e) {
+            // A rejected input is a 422, not a server error. Raised inside
+            // the try below, it would otherwise be swallowed by the catch-all
+            // and reported as "Failed to retrieve ...".
+            throw $e;
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
@@ -344,6 +492,11 @@ class ReportController extends Controller implements HasMiddleware
                 'summary' => $this->recoverySummary($request, $startDate, $endDate),
             ], 200);
 
+        } catch (ValidationException $e) {
+            // A rejected input is a 422, not a server error. Raised inside
+            // the try below, it would otherwise be swallowed by the catch-all
+            // and reported as "Failed to retrieve ...".
+            throw $e;
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
@@ -357,7 +510,7 @@ class ReportController extends Controller implements HasMiddleware
      * Full detail for a single recovery case row, including its activity
      * timeline -- backs the report's "expand row" drill-down.
      */
-    public function recoveryShow(string $id)
+    public function recoveryShow(Request $request, string $id)
     {
         try {
             $case = RecoveryCase::with([
@@ -367,9 +520,23 @@ class ReportController extends Controller implements HasMiddleware
                 'assignedAgent:'.User::SUMMARY_COLUMNS,
                 'externalAgent',
                 'activities.performedBy:'.User::SUMMARY_COLUMNS,
-            ])->find($id);
+            ])
+                // Confined the same way recovery() confines its listing.
+                //
+                // This was a bare find($id). An officer could not LIST another
+                // branch's cases, but could open any one of them by id, and the
+                // drill-down carries more than the row does: the customer, the
+                // overdue amount and every agent note on the timeline. A filter
+                // that the detail view does not honour is not a confinement.
+                ->when(
+                    $this->reportBranchId($request),
+                    fn ($q, $bid) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $bid)),
+                )
+                ->find($id);
 
             if (!$case) {
+                // 404 rather than 403 on a case that exists but is not theirs,
+                // so the endpoint cannot be walked to learn which ids are real.
                 return response()->json([
                     'status'  => 'error',
                     'message' => 'Recovery case not found',
@@ -395,6 +562,11 @@ class ReportController extends Controller implements HasMiddleware
                 'data'    => $data,
             ], 200);
 
+        } catch (ValidationException $e) {
+            // A rejected input is a 422, not a server error. Raised inside
+            // the try below, it would otherwise be swallowed by the catch-all
+            // and reported as "Failed to retrieve ...".
+            throw $e;
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',

@@ -142,7 +142,11 @@ return new class extends Migration
             [
                 'key' => 'group_loan_service_charge_percentage',
                 'value' => '10',
-                'type' => 'string',
+                // 'decimal', not 'string'. The type is what UpdateSettingRequest
+                // validates against, and it had no case for 'string', so this
+                // percentage accepted any text at all -- then reached
+                // GroupLoanController as (float), where 'ten percent' is 0.0.
+                'type' => 'decimal',
                 'group' => 'group_loan',
                 'description' => 'Service charge percentage applied to a Group Loan\'s principal in place of interest, snapshotted onto the application at submission time.',
                 'created_at' => now(),

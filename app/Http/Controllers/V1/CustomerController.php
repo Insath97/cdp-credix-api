@@ -366,17 +366,23 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function update(UpdateCustomerRequest $request, string $id)
     {
+        // The lookup happens BEFORE the transaction opens.
+        //
+        // Opening it first meant the not-found branch returned its 404 without
+        // ever rolling back, leaving an open transaction -- and its locks --
+        // held for the rest of the request. Nothing here needs a transaction in
+        // order to decide whether the row exists.
+        $customer = Customer::find($id);
+
+        if (!$customer) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Customer not found'
+            ], 404);
+        }
+
         DB::beginTransaction();
         try {
-            $customer = Customer::find($id);
-
-            if (!$customer) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Customer not found'
-                ], 404);
-            }
-
             $data = $request->validated();
             $customer->update($data);
 

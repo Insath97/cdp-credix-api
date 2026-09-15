@@ -39,8 +39,11 @@ class MarkOverdueLoanApplications extends Command
             ->get();
 
         foreach ($activeApplications as $loanApplication) {
-            $graceDays = $loanApplication->loanProduct?->grace_period_days
-                ?: Setting::get('installment_due_period_days', 30);
+            // Asked through the model rather than resolved inline, so this job
+            // and everything else that reasons about arrears cannot drift apart.
+            // Same answer as the expression it replaces; see gracePeriodDays()
+            // for the zero-grace limitation both of them share.
+            $graceDays = $loanApplication->gracePeriodDays();
             $penaltyValue = $loanApplication->loanProduct?->penalty_value;
 
             foreach ($loanApplication->installments as $installment) {

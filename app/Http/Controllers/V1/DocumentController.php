@@ -26,7 +26,12 @@ class DocumentController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Document Index', only: ['index', 'show']),
+            // 'applications' was in none of these lists, so the feed behind the
+            // document upload screen -- every loan application, with the
+            // customer's name, phone, email, product, branch and status --
+            // answered any authenticated principal, a customer's portal token
+            // included.
+            new Middleware('permission:Document Index', only: ['index', 'show', 'applications']),
             new Middleware('permission:Document Create', only: ['store']),
             new Middleware('permission:Document Update', only: ['update']),
             new Middleware('permission:Document Delete', only: ['destroy']),
@@ -294,7 +299,14 @@ class DocumentController extends Controller implements HasMiddleware
                 'guarantor:id,customer_id,full_name,id_number,employment_status,employer_name',
                 'loanApplication.application:id,application_no',
                 'uploader:'.User::SUMMARY_COLUMNS,
-            ])->find($id);
+            ]);
+
+            // Confined the same way index() is. A bare find($id) meant the
+            // branch filter stopped at the listing, and any document was one
+            // guessed id away from any officer.
+            $this->scopeToUserBranchVia($document, ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id']);
+
+            $document = $document->find($id);
 
             if (!$document) {
                 return response()->json([
@@ -323,7 +335,13 @@ class DocumentController extends Controller implements HasMiddleware
     public function update(UpdateDocumentRequest $request, string $id)
     {
         try {
-            $document = Document::find($id);
+            // Confined the same way index() is, so the branch rule is an
+            // access rule rather than a listing filter. A bare find($id)
+            // left every document one guessed id away from any officer.
+            $document = $this->scopeToUserBranchVia(
+                Document::query(),
+                ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id'],
+            )->find($id);
 
             if (!$document) {
                 return response()->json([
@@ -380,7 +398,13 @@ class DocumentController extends Controller implements HasMiddleware
     public function destroy(string $id)
     {
         try {
-            $document = Document::find($id);
+            // Confined the same way index() is, so the branch rule is an
+            // access rule rather than a listing filter. A bare find($id)
+            // left every document one guessed id away from any officer.
+            $document = $this->scopeToUserBranchVia(
+                Document::query(),
+                ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id'],
+            )->find($id);
 
             if (!$document) {
                 return response()->json([
@@ -393,10 +417,9 @@ class DocumentController extends Controller implements HasMiddleware
                 return $frozen;
             }
 
-            if ($document->file_path) {
-                $this->deleteFile($document->file_path);
-            }
-
+            // The file stays. The row soft-deletes, so it can be restored,
+            // and destroying the bytes here left every restored document
+            // pointing at nothing. Only a force-delete should remove them.
             $document->delete();
 
             $this->logActivity('DELETE', 'Document', "Deleted document: {$document->document_name}", [

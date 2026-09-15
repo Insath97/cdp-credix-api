@@ -44,10 +44,65 @@ trait FileUploadTrait
         $fileName = $this->buildFileName($file, $prefix);
         $directory = "uploads/{$module}";
 
-        $this->createDirectory($directory);
-        $file->move(public_path($directory), $fileName);
+        // Written to private storage, NOT public_path().
+        //
+        // These are identity cards, bank statements and pay slips. public/ is
+        // served straight off disk by the web server, so every file written
+        // there was downloadable by anyone who knew or guessed the name -- no
+        // token, no session, no permission, and no trace in the activity log.
+        //
+        // The returned string keeps exactly the shape the database already
+        // holds, so existing rows and new rows stay indistinguishable to every
+        // caller; resolveStoredFile() below is what knows where the bytes
+        // actually are.
+        $file->storeAs($directory, $fileName, 'local');
 
         return "{$directory}/{$fileName}";
+    }
+
+    /**
+     * Turn a stored path into an absolute readable one, or null.
+     *
+     * Looks in private storage first, then falls back to the legacy public
+     * location so documents uploaded before the move still open.
+     *
+     * Both candidates are resolved and checked to be inside their own base
+     * directory. That containment check is the thing standing between a stored
+     * path and an arbitrary file read: a path of "../.env" resolves cleanly and
+     * exists, and without this it would be streamed to whoever asked.
+     */
+    public function resolveStoredFile(?string $storedPath): ?string
+    {
+        if (!$storedPath) {
+            return null;
+        }
+
+        $candidates = [
+            storage_path('app/private'),
+            storage_path('app'),
+            public_path(),
+        ];
+
+        foreach ($candidates as $base) {
+            $real = realpath($base . DIRECTORY_SEPARATOR . $storedPath);
+            $realBase = realpath($base);
+
+            if ($real === false || $realBase === false) {
+                continue;
+            }
+
+            if (!str_starts_with($real, $realBase . DIRECTORY_SEPARATOR)) {
+                // Escaped its base. Not an error to report back to the caller,
+                // because saying so confirms what is out there.
+                continue;
+            }
+
+            if (is_file($real)) {
+                return $real;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -137,8 +192,14 @@ trait FileUploadTrait
      */
     public function deleteFile(?string $path): void
     {
-        if ($path && File::exists(public_path($path))) {
-            File::delete(public_path($path));
+        // Resolved and contained first, for the same reason reads are: this
+        // used to be File::delete(public_path($path)) on a path the client
+        // could choose, which is an arbitrary file DELETE rather than merely an
+        // arbitrary read.
+        $absolute = $this->resolveStoredFile($path);
+
+        if ($absolute !== null) {
+            File::delete($absolute);
         }
     }
 

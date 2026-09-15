@@ -38,6 +38,12 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         'email',
         'password',
         'password_changed_at',
+        // Absent from this list until now, while AuthController::verifyOtp()
+        // set it through a mass-assigning update(). The write was silently
+        // dropped every time, so no customer was ever recorded as having
+        // cleared two-factor and login() re-sent a fresh OTP on every single
+        // sign-in, forever.
+        'two_factor_verified_at',
         'user_type',
         'employee_id',
         'customer_id',

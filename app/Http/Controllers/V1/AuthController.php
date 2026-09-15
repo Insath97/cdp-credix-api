@@ -152,7 +152,12 @@ class AuthController extends Controller
                     'data' => [
                         'otp_required' => true,
                         'reference' => $reference,
-                        'expires_in' => 1800,
+                        // The constant the record and the SMS both use. This
+                        // answered a hard-coded 1800 while the OTP expired
+                        // after 60 seconds, so the on-screen countdown kept
+                        // inviting a code the server had already rejected for
+                        // twenty-nine minutes.
+                        'expires_in' => self::LOGIN_OTP_TTL_SECONDS,
                     ]
                 ], 200);
             }
