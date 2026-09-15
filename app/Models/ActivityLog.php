@@ -25,12 +25,6 @@ class ActivityLog extends Model
         'method',
     ];
 
-    protected $hidden = [
-        'created_at',
-        'updated_at',
-        'deleted_at',
-    ];
-
     /**
      * created_at is deliberately NOT hidden.
      *

@@ -17,9 +17,9 @@ return new class extends Migration
         Schema::create('legal_documents', function (Blueprint $table) {
             $table->id();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamp('created_at')->nullable();
+            $table->timestamp('legal_created_at')->nullable();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamp('updated_at')->nullable();
+            $table->timestamp('legal_updated_at')->nullable();
 
             $table->foreignId('loan_application_id')->constrained('loan_applications')->cascadeOnDelete();
 
@@ -35,7 +35,6 @@ return new class extends Migration
             // Stamped when the status first reaches Created, not on every save,
             // so "when was this drawn up" survives later edits.
             $table->timestamp('legal_document_created_date')->nullable();
-            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
 
             // What the officer typed that the loan record cannot supply:
             // agreement place and date, investment and surrendered-certificate
