@@ -13,6 +13,7 @@ use App\Models\LoanApplicationCustomer;
 use App\Models\LoanProduct;
 use App\Models\Customer;
 use App\Models\Document;
+use App\Models\Employee;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use App\Traits\ScopesToUserBranch;
@@ -196,6 +197,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
         try {
             $data = $request->validated();
 
+            // The recommender snapshot columns are filled from the chosen
+            // employee whenever the client only sent the employee id.
+            $data = Employee::mergeRecommenderSnapshot($data);
+
             if (empty($data['application_id'])) {
                 $branchName = !empty($data['branch_id'])
                     ? Branch::find($data['branch_id'])?->name
@@ -367,6 +372,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
             }
 
             $data = $request->validated();
+
+            // Keep the recommender snapshot in lock-step with the chosen
+            // employee (see Employee::mergeRecommenderSnapshot).
+            $data = Employee::mergeRecommenderSnapshot($data);
 
             $loanApplication->update($data);
 

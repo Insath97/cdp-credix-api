@@ -13,6 +13,7 @@ use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\Application;
 use App\Models\Customer;
 use App\Models\Document;
+use App\Models\Employee;
 use App\Models\LoanApplication;
 use App\Models\User;
 use App\Enums\LoanApplicationStatus;
@@ -96,6 +97,11 @@ class CustomerController extends Controller implements HasMiddleware
         try {
             $currentUser = Auth::guard('api')->user();
             $data = $request->validated();
+
+            // The recommender snapshot columns are filled from the chosen
+            // employee whenever the client sent only the employee id (or left
+            // part of the snapshot blank).
+            $data = Employee::mergeRecommenderSnapshot($data);
 
             $customer = Customer::create($data);
 
@@ -384,6 +390,11 @@ class CustomerController extends Controller implements HasMiddleware
         DB::beginTransaction();
         try {
             $data = $request->validated();
+
+            // Keep the recommender snapshot in lock-step with the chosen
+            // employee (see Employee::mergeRecommenderSnapshot).
+            $data = Employee::mergeRecommenderSnapshot($data);
+
             $customer->update($data);
 
             if (array_filter($data, fn ($key) => in_array($key, ['gn_division', 'ds_division', 'district', 'province']) && !empty($data[$key]), ARRAY_FILTER_USE_KEY)) {

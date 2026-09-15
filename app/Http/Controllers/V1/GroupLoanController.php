@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Models\Application;
 use App\Models\Branch;
+use App\Models\Employee;
 use App\Models\GroupLoan;
 use App\Models\Guarantor;
 use App\Models\LoanApplication;
@@ -220,6 +221,10 @@ class GroupLoanController extends Controller implements HasMiddleware
     {
         try {
             $data = $request->validated();
+
+            // The recommender snapshot columns are filled from the chosen
+            // employee whenever the client only sent the employee id.
+            $data = Employee::mergeRecommenderSnapshot($data);
 
             $groupLoan = DB::transaction(function () use ($data) {
                 $items = collect($data['items'])->map(function ($item) {
