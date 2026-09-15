@@ -27,7 +27,10 @@ class CustomerLoanController extends Controller
     {
         try {
             $customerId = $this->myCustomerId();
-            $perPage = $request->get('per_page', 15);
+            // Clamped through the base controller: an unclamped per_page lets any
+            // caller force a 500. A negative value is truthy, so nothing replaced
+            // it, and the query kept the OFFSET while dropping the LIMIT.
+            $perPage = $this->perPage($request);
 
             $query = LoanApplication::forCustomer($customerId)
                 ->with(['application', 'loanProduct']);
@@ -105,7 +108,10 @@ class CustomerLoanController extends Controller
     {
         try {
             $customerId = $this->myCustomerId();
-            $perPage = $request->get('per_page', 15);
+            // Clamped through the base controller: an unclamped per_page lets any
+            // caller force a 500. A negative value is truthy, so nothing replaced
+            // it, and the query kept the OFFSET while dropping the LIMIT.
+            $perPage = $this->perPage($request);
 
             $loans = LoanApplication::forCustomer($customerId)
                 ->whereIn('status', [

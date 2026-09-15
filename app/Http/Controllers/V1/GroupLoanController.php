@@ -138,7 +138,13 @@ class GroupLoanController extends Controller implements HasMiddleware
     public function statusCounts()
     {
         try {
-            $counts = GroupLoan::query()
+            // Confined to the officer's branch, exactly as index() is.
+            //
+            // These are the tab badges above the list. Counting unscoped meant
+            // a branch officer saw a badge reading 3 above a tab containing 1,
+            // and the difference told them how much lending was happening at
+            // branches they cannot otherwise see.
+            $counts = $this->scopeToUserBranch(GroupLoan::query())
                 ->selectRaw('status, COUNT(*) as total')
                 ->groupBy('status')
                 ->pluck('total', 'status');
@@ -426,6 +432,27 @@ class GroupLoanController extends Controller implements HasMiddleware
             $data = $request->validated();
 
             $groupLoan->update($data);
+
+            // Mirror the header onto the application underneath it.
+            //
+            // A group loan is a header plus exactly one loan application, and
+            // the two carry the same amount and term. This wrote only the
+            // header, so an edit left the application stale, and the two are
+            // read by different steps: approve() divides by the GROUP's term
+            // while InstallmentScheduleService::generate() reads the
+            // APPLICATION's. Editing 12 months down to 6 therefore approved a
+            // monthly figure for six months and then wrote a schedule of
+            // twelve rows against it.
+            //
+            // The arithmetic that came out of that was worse than the row
+            // count: each member's total is spread over the stale term, and the
+            // final row absorbs whatever is left, so it went NEGATIVE. The
+            // grand total still added up, which is exactly why nothing
+            // downstream noticed.
+            //
+            // syncAmounts() is the method that exists for this; the item and
+            // member endpoints already call it after every change they make.
+            $this->workflowService->syncAmounts($groupLoan->refresh());
 
             $this->logActivity('UPDATE', 'GroupLoan', "Updated group loan ID: {$groupLoan->id}", $data);
 
@@ -1058,6 +1085,28 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Group loan not found',
                 ], 404);
+            }
+
+            // Refused once the group loan is past the point of no return.
+            //
+            // There was no status guard at all, so a disbursed group loan --
+            // money paid out, a schedule written for every member -- deleted
+            // with a 200. Its loan application survives and stays live, still
+            // pointing at a group_loan_id that now resolves to nothing, which
+            // is what the schedule generator, isGroupLoan() and the whole
+            // recovery module read through. The loan becomes unreachable from
+            // the group endpoints and unmanageable from the individual ones.
+            //
+            // Cancelling is the way to stop a live group loan, and it exists.
+            if (!in_array($groupLoan->status, [GroupLoanStatus::Available, GroupLoanStatus::Cancelled, GroupLoanStatus::Rejected], true)) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "This group loan is {$groupLoan->status->value} and can no longer be deleted. Cancel it instead.",
+                    'errors'  => [
+                        'group_loan_id' => $groupLoan->id,
+                        'status'        => $groupLoan->status->value,
+                    ],
+                ], 422);
             }
 
             $groupLoan->delete();

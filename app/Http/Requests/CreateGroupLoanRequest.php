@@ -57,7 +57,12 @@ class CreateGroupLoanRequest extends FormRequest
                     // picking the scheme's own product. Requiring the
                     // Development Fund loan type still keeps Standard
                     // Borrowing products out.
+                    // whereNull('deleted_at') because Rule::exists queries the
+                    // table directly and never applies the model's SoftDeletes
+                    // scope. Deactivating a product stopped it being selectable;
+                    // deleting one did not, so a withdrawn product still lent.
                     $query->where('is_active', true)
+                        ->whereNull('deleted_at')
                         ->whereIn('loan_type_id', function ($sub) {
                             $sub->select('id')->from('loan_types')->where('code', 'DEVELOPMENT_FUND');
                         });

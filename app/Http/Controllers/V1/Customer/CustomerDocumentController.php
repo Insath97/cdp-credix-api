@@ -5,13 +5,18 @@ namespace App\Http\Controllers\V1\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\Document;
 use App\Traits\ActivityLogTrait;
+use App\Traits\FileUploadTrait;
 use App\Traits\ResolvesAuthenticatedCustomerTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class CustomerDocumentController extends Controller
 {
-    use ActivityLogTrait, ResolvesAuthenticatedCustomerTrait;
+    // FileUploadTrait is what provides resolveStoredFile(), which download()
+    // uses to turn a stored path into a readable one. It was referenced
+    // without being used here, so every download died on an undefined method
+    // and the blanket catch reported it as a 500.
+    use ActivityLogTrait, FileUploadTrait, ResolvesAuthenticatedCustomerTrait;
 
     /**
      * List the customer's own uploaded documents.
@@ -20,7 +25,10 @@ class CustomerDocumentController extends Controller
     {
         try {
             $customerId = $this->myCustomerId();
-            $perPage = $request->get('per_page', 15);
+            // Clamped through the base controller: an unclamped per_page lets any
+            // caller force a 500. A negative value is truthy, so nothing replaced
+            // it, and the query kept the OFFSET while dropping the LIMIT.
+            $perPage = $this->perPage($request);
 
             $query = Document::where('customer_id', $customerId)->active();
 
