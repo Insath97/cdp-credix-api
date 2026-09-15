@@ -106,6 +106,34 @@ class CreateGroupLoanRequest extends FormRequest
 
             'members'               => ['required', 'array', new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
             'members.*.customer_id' => 'required|integer|distinct|exists:customers,id',
+
+            // Guarantors ride along on the same submission instead of a second
+            // round of API calls. An individual Development Fund loan carries
+            // its two guarantors here; a group tier submits none. The blocks
+            // mirror CreateGuarantorRequest so a guarantor proves income the
+            // same way whether it is typed here or on the dedicated endpoint.
+            'guarantors' => 'sometimes|array|max:2',
+            'guarantors.*.full_name' => 'required|string|max:255',
+            'guarantors.*.type' => 'required|string|in:guarantor_1,guarantor_2',
+            'guarantors.*.id_type' => 'required|string|max:100',
+            'guarantors.*.id_number' => 'required|string|max:100',
+            'guarantors.*.id_image' => 'nullable|string|max:500',
+            'guarantors.*.date_of_birth' => 'nullable|date|before:today',
+            'guarantors.*.phone_primary' => 'nullable|string|max:20',
+            'guarantors.*.employment_status' => 'required|string|in:Employed,Self-Employed,Unemployed',
+            'guarantors.*.occupation' => 'required_if:guarantors.*.employment_status,Employed|nullable|string|max:255',
+            'guarantors.*.employer_name' => 'required_if:guarantors.*.employment_status,Employed|nullable|string|max:255',
+            'guarantors.*.business_name' => 'required_if:guarantors.*.employment_status,Self-Employed|nullable|string|max:255',
+            'guarantors.*.business_registration_number' => 'required_if:guarantors.*.employment_status,Self-Employed|nullable|string|max:255',
+            'guarantors.*.business_phone' => 'required_if:guarantors.*.employment_status,Self-Employed|nullable|string|max:20',
+            'guarantors.*.date_joined' => 'nullable|date',
+            'guarantors.*.salary' => 'required_if:guarantors.*.employment_status,Employed|nullable|numeric|min:0',
+            'guarantors.*.allowance' => 'nullable|numeric|min:0',
+            'guarantors.*.other_income' => 'nullable|numeric|min:0',
+            'guarantors.*.liabilities' => 'nullable|numeric|min:0',
+            'guarantors.*.bank_name_of_guarantor' => 'nullable|string|max:255',
+            'guarantors.*.bank_account_no_of_guarantor' => 'nullable|string|max:255',
+            'guarantors.*.bank_branch_of_guarantor' => 'nullable|string|max:255',
         ];
     }
 

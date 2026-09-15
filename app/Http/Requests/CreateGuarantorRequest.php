@@ -36,8 +36,9 @@ class CreateGuarantorRequest extends FormRequest
             // A guarantor is asked to prove income one of two ways, and the
             // status decides which block is mandatory. Neither block is
             // accepted half-filled: a salary with no employer, or a business
-            // name with no registration, is not evidence of anything.
-            'employment_status' => 'required|string|in:Employed,Self-Employed',
+            // name with no registration, is not evidence of anything. An
+            // Unemployed guarantor has no income block to prove.
+            'employment_status' => 'required|string|in:Employed,Self-Employed,Unemployed',
             'occupation' => 'required_if:employment_status,Employed|nullable|string|max:255',
             'employer_name' => 'required_if:employment_status,Employed|nullable|string|max:255',
             'business_name' => 'required_if:employment_status,Self-Employed|nullable|string|max:255',
