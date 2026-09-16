@@ -57,6 +57,13 @@ class UpdateLoanApplicationCustomerDetailsRequest extends FormRequest
             'ds_division' => 'sometimes|nullable|string|max:255',
             'district'    => 'sometimes|nullable|string|max:255',
             'province'    => 'sometimes|nullable|string|max:255',
+
+            // Group loan member snapshot (per-group copy, never the shared
+            // customer record). Sent by the group loan form for existing members.
+            'member_name'   => 'sometimes|nullable|string|max:500',
+            'nic'           => 'sometimes|nullable|string|max:100',
+            'address'       => 'sometimes|nullable|string|max:500',
+            'phone_number'  => 'sometimes|nullable|string|max:20',
         ];
     }
 

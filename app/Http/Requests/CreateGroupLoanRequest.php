@@ -101,11 +101,21 @@ class CreateGroupLoanRequest extends FormRequest
 
             'items'              => 'required|array|min:1',
             'items.*.item_name'  => 'required|string|max:255',
-            'items.*.quantity'   => 'required|numeric|min:0.01',
+            'items.*.quantity'   => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
 
             'members'               => ['required', 'array', new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
-            'members.*.customer_id' => 'required|integer|distinct|exists:customers,id',
+            // A member is either an existing customer picked from the search (a
+            // customer_id arrives) or someone the officer typed straight in — in
+            // which case the detail fields below are required and the server
+            // creates the customer record from them.
+            'members.*.customer_id' => 'nullable|integer|exists:customers,id',
+            'members.*.member_name' => 'required|string|max:255',
+            'members.*.nic'         => 'required|string|max:100',
+            'members.*.address'     => 'required|string|max:500',
+            'members.*.phone_number' => 'required|string|max:20',
+            'members.*.gn_division' => 'required|string|max:255',
+            'members.*.ds_division' => 'required|string|max:255',
 
             // Guarantors ride along on the same submission instead of a second
             // round of API calls. An individual Development Fund loan carries
@@ -135,6 +145,29 @@ class CreateGroupLoanRequest extends FormRequest
             'guarantors.*.bank_account_no_of_guarantor' => 'nullable|string|max:255',
             'guarantors.*.bank_branch_of_guarantor' => 'nullable|string|max:255',
         ];
+    }
+
+    protected function withValidator(Validator $validator)
+    {
+        $validator->after(function ($validator) {
+            $members = $this->input('members');
+            if (!is_array($members)) {
+                return;
+            }
+
+            // Same customer picked for two rows is always a mistake — that is
+            // one person standing in twice, and the member count would claim
+            // more borrowers than there are. Nulls (typed-in members) are
+            // ignored; duplicates only count actual ids.
+            $ids = array_values(array_filter(array_map(
+                fn ($m) => isset($m['customer_id']) ? (int) $m['customer_id'] : null,
+                $members
+            )));
+
+            if (count($ids) !== count(array_unique($ids))) {
+                $validator->errors()->add('members', 'The same customer cannot be added as a member more than once.');
+            }
+        });
     }
 
     protected function failedValidation(Validator $validator)

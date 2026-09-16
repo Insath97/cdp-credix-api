@@ -247,10 +247,36 @@ class GroupLoanController extends Controller implements HasMiddleware
                 // override, and no interest rate is involved at any point.
                 $serviceChargePercentage = (float) Setting::get('group_loan_service_charge_percentage', 0);
 
-                $memberCustomerIds = collect($data['members'])
+                // Resolve each member to a customer id. An existing customer
+                // is used directly; a typed-in member (no customer_id) gets a
+                // new Customer record created from the snapshot fields the
+                // officer supplied so the member always points at a real record.
+                $resolvedMembers = collect($data['members'])->map(function ($member) use ($data) {
+                    if (!empty($member['customer_id'])) {
+                        $member['customer_id'] = (int) $member['customer_id'];
+                        return $member;
+                    }
+
+                    $customer = Customer::create([
+                        'full_name'      => $member['member_name'] ?? null,
+                        'id_type'        => 'NIC',
+                        'id_number'      => $member['nic'] ?? null,
+                        'address_line_1' => $member['address'] ?? null,
+                        'phone_primary'  => $member['phone_number'] ?? null,
+                        'branch_id'      => $data['branch_id'] ?? null,
+                    ]);
+
+                    $customer->customerDetail()->create([
+                        'gn_division' => $member['gn_division'] ?? null,
+                        'ds_division' => $member['ds_division'] ?? null,
+                    ]);
+
+                    $member['customer_id'] = $customer->id;
+                    return $member;
+                });
+
+                $memberCustomerIds = $resolvedMembers
                     ->pluck('customer_id')
-                    ->filter()
-                    ->unique()
                     ->values();
 
                 $groupLoan = GroupLoan::create([
@@ -309,9 +335,14 @@ class GroupLoanController extends Controller implements HasMiddleware
                 ]);
 
                 foreach ($memberCustomerIds as $customerId) {
-                    $loanApplication->loanApplicationCustomers()->create([
+                    // Each pivot carries a per-member snapshot of the customer's
+                    // details, so later edits from the loan never touch the
+                    // shared record and stay allowed for members on other loans.
+                    $pivot = $loanApplication->loanApplicationCustomers()->create([
                         'customer_id' => $customerId,
                     ]);
+                    $pivot->setRelation('customer', Customer::find($customerId));
+                    $pivot->snapshotFromCustomer();
                 }
 
                 foreach ($data['guarantors'] ?? [] as $guarantorData) {

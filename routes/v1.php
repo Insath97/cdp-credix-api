@@ -298,7 +298,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     Route::apiResource('group-loans', GroupLoanController::class);
 
     // Group Loan Items
-    Route::apiResource('group-loan-items', GroupLoanItemController::class)->only(['index', 'store', 'show', 'destroy']);
+    Route::apiResource('group-loan-items', GroupLoanItemController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
 
     // Loan Application Guarantors
     Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);

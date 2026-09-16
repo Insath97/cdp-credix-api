@@ -218,6 +218,14 @@ class GroupLoan extends Model
                 'customer_id'           => $member->customer_id,
                 'customer'              => $member->customer,
                 'member_no'             => $index + 1,
+                // Per-group member snapshot — preferred by the review page
+                // over the shared customer record when set.
+                'member_name'           => $member->member_name,
+                'nic'                   => $member->nic,
+                'address'               => $member->address,
+                'phone_number'          => $member->phone_number,
+                'gn_division'           => $member->gn_division,
+                'ds_division'           => $member->ds_division,
                 'principal_share'       => $principalShares[$index],
                 'service_charge_share'  => $chargeShares[$index],
                 'total_repayment_share' => $totalShares[$index],

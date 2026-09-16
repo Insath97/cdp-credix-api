@@ -26,7 +26,7 @@ class GroupLoanItem extends Model
 
     protected $casts = [
         'group_loan_id' => 'integer',
-        'quantity'      => 'decimal:2',
+        'quantity'      => 'integer',
         'unit_price'    => 'decimal:2',
         'line_total'    => 'decimal:2',
     ];
