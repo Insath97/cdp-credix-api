@@ -33,7 +33,9 @@ function userTestStaffUser(string $marker, array $userAttributes = []): User
         'name_with_initials' => 'N. Perera',
         'employee_code'      => 'EMP-' . $marker,
         'id_number'          => 'NIC-' . $marker,
-        'phone_primary'      => '0771234567',
+        'phone_primary'      => '0744125923',
+        'phone_secondary'    => '0744125923',
+        'whatsapp_number'    => '0744125923',
         'is_active'          => true,
     ]);
 
@@ -192,7 +194,9 @@ it('creates a staff user with every field the form sends', function () {
         'role'                 => 'Credit Officer',
         'employee_code'        => 'EMP-0001',
         'id_number'            => '199012345678',
-        'phone'                => '0771234567',
+        'phone'                => '0744125923',
+        'phone_secondary'      => '0744125923',
+        'whatsapp_number'      => '0744125923',
         'branch_id'            => $org['branch']->id,
         'zonal_id'             => $org['zonal']->id,
         'region_id'            => $org['region']->id,
@@ -414,7 +418,7 @@ it('updates a staff user', function () {
         'name'     => 'Renamed Officer',
         'username' => 'renamed-officer',
         'email'    => 'renamed@example.com',
-        'phone'    => '0719999999',
+        'phone'    => '0744125923',
     ]);
 
     $response->assertStatus(200);
@@ -429,7 +433,7 @@ it('updates a staff user', function () {
     // The staff branch of update() writes the employee row as well.
     $this->assertDatabaseHas('employees', [
         'id'    => $target->employee_id,
-        'phone' => '0719999999',
+        'phone' => '0744125923',
     ]);
 });
 

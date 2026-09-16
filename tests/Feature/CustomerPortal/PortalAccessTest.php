@@ -137,7 +137,7 @@ function portalCustomer(string $label, array $attributes = []): Customer
         'city'               => 'Colombo',
         'country'            => 'Sri Lanka',
         'date_of_birth'      => '1990-01-01',
-        'phone_primary'      => '0770000000',
+        'phone_primary'      => '0744125923',
         'email'              => strtolower($label) . fake()->unique()->numerify('####') . '@example.test',
         'have_whatsapp'      => false,
         'preferred_language' => 'en',
@@ -300,7 +300,7 @@ function portalFinancials(Customer $customer, string $tag): array
         'type'          => 'guarantor_1',
         'id_type'       => 'nic',
         'id_number'     => 'GRT' . fake()->unique()->numerify('#########'),
-        'phone_primary' => '0761111111',
+        'phone_primary' => '0744125923',
     ]);
 
     $fixed = FixedAssests::create([

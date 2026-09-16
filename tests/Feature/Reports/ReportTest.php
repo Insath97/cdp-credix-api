@@ -77,7 +77,9 @@ function loanFor(Branch $branch, array $overrides = []): LoanApplication
         'address_line_1'     => '1 Test Lane',
         'country'            => 'Sri Lanka',
         'date_of_birth'      => '1990-01-01',
-        'phone_primary'      => '0770000000',
+        'phone_primary'      => '0744125923',
+        'phone_secondary'    => '0744125923',
+        'whatsapp_number'    => '0744125923',
         'have_whatsapp'      => false,
         'preferred_language' => 'en',
         'branch_id'          => $branch->id,
@@ -243,7 +245,8 @@ it('ignores a branch_id an officer sends for someone else branch', function () {
     $other = Branch::create([
         'name' => 'Kandy', 'code' => 'KDY-001', 'address_line1' => '2 Hill St', 'city' => 'Kandy',
         'zone_id' => $chain['zonal']->id, 'region_id' => $chain['region']->id,
-        'province_id' => $chain['province']->id, 'phone_primary' => '0812222222',
+        'province_id' => $chain['province']->id, 'phone_primary' => '0744125923',
+        'phone_secondary' => '0744125923', 'whatsapp_number' => '0744125923',
         'opening_date' => '2021-01-01', 'branch_type' => 'city', 'is_active' => true,
     ]);
 
@@ -369,7 +372,7 @@ it('does not let an officer open another branch recovery case', function () {
     $other = Branch::create([
         'name' => 'Kandy', 'code' => 'KDY-001', 'address_line1' => '2 Hill St', 'city' => 'Kandy',
         'zone_id' => $chain['zonal']->id, 'region_id' => $chain['region']->id,
-        'province_id' => $chain['province']->id, 'phone_primary' => '0812222222',
+        'province_id' => $chain['province']->id, 'phone_primary' => '0744125923', 'phone_secondary' => '0744125923', 'whatsapp_number' => '0744125923',
         'opening_date' => '2021-01-01', 'branch_type' => 'city', 'is_active' => true,
     ]);
 
@@ -398,7 +401,7 @@ it('keeps another branch cases out of the recovery listing', function () {
     $other = Branch::create([
         'name' => 'Kandy', 'code' => 'KDY-001', 'address_line1' => '2 Hill St', 'city' => 'Kandy',
         'zone_id' => $chain['zonal']->id, 'region_id' => $chain['region']->id,
-        'province_id' => $chain['province']->id, 'phone_primary' => '0812222222',
+        'province_id' => $chain['province']->id, 'phone_primary' => '0744125923', 'phone_secondary' => '0744125923', 'whatsapp_number' => '0744125923',
         'opening_date' => '2021-01-01', 'branch_type' => 'city', 'is_active' => true,
     ]);
 

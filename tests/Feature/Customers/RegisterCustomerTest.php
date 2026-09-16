@@ -32,7 +32,7 @@ function customerPayload(int $branchId, array $overrides = []): array
         'address_line_1'     => '42 Galle Road',
         'country'            => 'Sri Lanka',
         'date_of_birth'      => '1990-05-20',
-        'phone_primary'      => '0771234567',
+        'phone_primary'      => '0744125923',
         'have_whatsapp'      => false,
         'preferred_language' => 'en',
         'branch_id'          => $branchId,
@@ -75,7 +75,7 @@ it('registers a customer from the minimum the form requires', function () {
     $this->assertDatabaseHas('customers', [
         'full_name'     => 'Nimal Perera',
         'id_number'     => '199012345678',
-        'phone_primary' => '0771234567',
+        'phone_primary' => '0744125923',
         'branch_id'     => $chain['branch']->id,
     ]);
 });

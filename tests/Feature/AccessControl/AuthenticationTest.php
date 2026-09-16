@@ -155,7 +155,7 @@ it('sends an OTP instead of a token on a customer first login', function () {
 
     $customer = Customer::create([
         'full_name'     => 'Sunil Fernando',
-        'phone_primary' => '0771234567',
+        'phone_primary' => '0744125923',
     ]);
 
     $user = $this->customerUser([
@@ -190,7 +190,7 @@ it('tells the caller how long the login OTP really lasts', function () {
 
     $customer = Customer::create([
         'full_name'     => 'Sunil Fernando',
-        'phone_primary' => '0771234567',
+        'phone_primary' => '0744125923',
     ]);
 
     $user = $this->customerUser([
@@ -214,7 +214,7 @@ it('exchanges a valid login OTP for a token', function () {
 
     $customer = Customer::create([
         'full_name'     => 'Sunil Fernando',
-        'phone_primary' => '0771234567',
+        'phone_primary' => '0744125923',
     ]);
 
     $user = $this->customerUser([
@@ -249,7 +249,7 @@ it('remembers that a customer has passed two-factor', function () {
 
     $customer = Customer::create([
         'full_name'     => 'Sunil Fernando',
-        'phone_primary' => '0771234567',
+        'phone_primary' => '0744125923',
     ]);
 
     $user = $this->customerUser([
@@ -292,7 +292,7 @@ it('refuses a login OTP that does not match', function () {
 
     $customer = Customer::create([
         'full_name'     => 'Sunil Fernando',
-        'phone_primary' => '0771234567',
+        'phone_primary' => '0744125923',
     ]);
 
     $user = $this->customerUser([
@@ -322,7 +322,7 @@ it('refuses a login OTP that has expired', function () {
 
     $customer = Customer::create([
         'full_name'     => 'Sunil Fernando',
-        'phone_primary' => '0771234567',
+        'phone_primary' => '0744125923',
     ]);
 
     $user = $this->customerUser([

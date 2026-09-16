@@ -33,7 +33,7 @@ function groupLoanOtherBranch(array $chain): Branch
         'zone_id'       => $chain['zonal']->id,
         'region_id'     => $chain['region']->id,
         'province_id'   => $chain['province']->id,
-        'phone_primary' => '0812345678',
+        'phone_primary' => '0744125923',
         'opening_date'  => '2021-01-01',
         'branch_type'   => 'city',
         'is_active'     => true,

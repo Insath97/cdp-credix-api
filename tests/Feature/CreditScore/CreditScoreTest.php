@@ -62,7 +62,7 @@ function creditLoan(array $loanOverrides = []): array
         'full_name' => 'Score Borrower', 'name_with_initials' => 'S. Borrower',
         'id_type' => 'nic', 'id_number' => 'CS' . fake()->unique()->numerify('##########'),
         'address_line_1' => '1 Test Lane', 'country' => 'Sri Lanka',
-        'date_of_birth' => '1990-01-01', 'phone_primary' => '0770000000',
+        'date_of_birth' => '1990-01-01', 'phone_primary' => '0744125923',
         'have_whatsapp' => false, 'preferred_language' => 'en',
     ]);
 

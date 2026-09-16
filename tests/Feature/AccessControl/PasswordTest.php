@@ -38,7 +38,7 @@ function passwordTestStaffUser(string $marker, array $userAttributes = []): User
         'name_with_initials' => 'N. Perera',
         'employee_code'      => 'EMP-' . $marker,
         'id_number'          => 'NIC-' . $marker,
-        'phone_primary'      => '0771234567',
+        'phone_primary'      => '0744125923',
         'is_active'          => true,
     ]);
 
@@ -457,7 +457,7 @@ it('sends a customer change OTP to the customer phone, not an employee one', fun
 
     $customer = Customer::create([
         'full_name'     => 'Sunil Fernando',
-        'phone_primary' => '0779876543',
+        'phone_primary' => '0744125923',
     ]);
 
     $user = $this->customerUser(['customer_id' => $customer->id]);
@@ -467,6 +467,6 @@ it('sends a customer change OTP to the customer phone, not an employee one', fun
     $this->postJson($this->api('/password/request-change'))->assertStatus(200);
 
     Queue::assertPushed(SendSmsJob::class, function (SendSmsJob $job) {
-        return $job->numbers === '0779876543';
+        return $job->numbers === '0744125923';
     });
 });

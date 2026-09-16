@@ -46,7 +46,7 @@ function externalAgency(array $overrides = []): ExternalRecoveryAgent
 {
     return ExternalRecoveryAgent::create(array_merge([
         'name'      => 'Swift Recoveries',
-        'phone'     => '0712223344',
+        'phone'     => '0744125923',
         'is_active' => true,
     ], $overrides));
 }
@@ -89,7 +89,7 @@ it('texts the internal officer the case was handed to', function () {
     $case = RecoveryCase::where('loan_application_id', $loan->id)->firstOrFail();
 
     $chain = $this->organisationChain();
-    $officer = registerAsAgent($this->officerAtBranch($chain['branch'], []), '0759998888');
+    $officer = registerAsAgent($this->officerAtBranch($chain['branch'], []), '0744125923');
 
     $this->actingAsApi($this->userWithPermissions(['Recovery Case Update']));
 
@@ -98,7 +98,7 @@ it('texts the internal officer the case was handed to', function () {
     ])->assertStatus(200);
 
     // The officer is reached through their employee record, not the user row.
-    $sent = Notification::where('recipient', '0759998888')->get();
+    $sent = Notification::where('recipient', '0744125923')->get();
 
     expect($sent)->not->toBeEmpty();
     expect($sent->first()->message)->toContain($case->case_no);
@@ -202,7 +202,7 @@ it('texts the external agency the case was handed to', function () {
     $this->artisan('recovery:escalate-external')->assertSuccessful();
 
     $case = RecoveryCase::where('loan_application_id', $loan->id)->where('stage', 'external')->firstOrFail();
-    $agency = externalAgency(['phone' => '0776665544']);
+    $agency = externalAgency(['phone' => '0744125923']);
 
     $this->actingAsApi($this->userWithPermissions(['Recovery Case Update']));
 
@@ -214,7 +214,7 @@ it('texts the external agency the case was handed to', function () {
 
     // An external case is reached on the agency's own number, not through an
     // employee record.
-    $sent = \App\Models\Notification::where('recipient', '0776665544')->get();
+    $sent = \App\Models\Notification::where('recipient', '0744125923')->get();
 
     expect($sent)->not->toBeEmpty();
     expect($sent->first()->message)->toContain($case->case_no);
@@ -232,7 +232,7 @@ it('carries the overdue amount and the customer into the agency message', functi
     $this->artisan('recovery:escalate-external')->assertSuccessful();
 
     $case = RecoveryCase::where('loan_application_id', $loan->id)->where('stage', 'external')->firstOrFail();
-    $agency = externalAgency(['phone' => '0770001111']);
+    $agency = externalAgency(['phone' => '0744125923']);
 
     $this->actingAsApi($this->userWithPermissions(['Recovery Case Update']));
 
@@ -240,7 +240,7 @@ it('carries the overdue amount and the customer into the agency message', functi
         'external_agent_id' => $agency->id,
     ])->assertStatus(200);
 
-    $message = \App\Models\Notification::where('recipient', '0770001111')->value('message');
+    $message = \App\Models\Notification::where('recipient', '0744125923')->value('message');
 
     expect($message)->toContain('10,000.00');
     expect($message)->toContain($loan->customer->full_name);

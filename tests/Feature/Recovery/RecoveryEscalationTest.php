@@ -60,7 +60,8 @@ function overdueLoan(int $dueDaysAgo, int $graceDays = 30): LoanApplication
         'full_name' => 'Late Payer', 'name_with_initials' => 'L. Payer',
         'id_type' => 'nic', 'id_number' => 'RC' . fake()->unique()->numerify('##########'),
         'address_line_1' => '1 Test Lane', 'country' => 'Sri Lanka',
-        'date_of_birth' => '1990-01-01', 'phone_primary' => '0770000000',
+        'date_of_birth' => '1990-01-01', 'phone_primary' => '0744125923',
+        'phone_secondary' => '0744125923', 'whatsapp_number' => '0744125923',
         'have_whatsapp' => false, 'preferred_language' => 'en',
     ]);
 

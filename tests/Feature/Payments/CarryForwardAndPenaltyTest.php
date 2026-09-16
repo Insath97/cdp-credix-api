@@ -57,7 +57,8 @@ function payableLoan(int $months = 3, int $penalty = 500, int $graceDays = 30): 
         'full_name' => 'Paying Borrower', 'name_with_initials' => 'P. Borrower',
         'id_type' => 'nic', 'id_number' => 'PM' . fake()->unique()->numerify('##########'),
         'address_line_1' => '1 Test Lane', 'country' => 'Sri Lanka',
-        'date_of_birth' => '1990-01-01', 'phone_primary' => '0770000000',
+        'date_of_birth' => '1990-01-01', 'phone_primary' => '0744125923',
+        'phone_secondary' => '0744125923', 'whatsapp_number' => '0744125923',
         'have_whatsapp' => false, 'preferred_language' => 'en',
     ]);
 

@@ -342,8 +342,8 @@ it('updates the contact details the profile form allows', function () {
     $this->actingAsApi($this->customerUser(['customer_id' => $world['alice']['customer']->id]));
 
     $this->patchJson($this->api('/my/profile'), [
-        'phone_primary'   => '0759999999',
-        'phone_secondary' => '0758888888',
+        'phone_primary'   => '0744125923',
+        'phone_secondary' => '0744125923',
         'email'           => 'alice.moved@example.test',
         'address_line_1'  => '42 New Road',
         'address_line_2'  => 'Apartment 7',
@@ -352,13 +352,13 @@ it('updates the contact details the profile form allows', function () {
         'state'           => 'Central',
         'postal_code'     => '20000',
         'have_whatsapp'   => true,
-        'whatsapp_number' => '0759999999',
+        'whatsapp_number' => '0744125923',
     ])->assertStatus(200);
 
     $customer = $world['alice']['customer']->fresh();
 
-    expect($customer->phone_primary)->toBe('0759999999');
-    expect($customer->phone_secondary)->toBe('0758888888');
+    expect($customer->phone_primary)->toBe('0744125923');
+    expect($customer->phone_secondary)->toBe('0744125923');
     expect($customer->email)->toBe('alice.moved@example.test');
     expect($customer->address_line_1)->toBe('42 New Road');
     expect($customer->city)->toBe('Kandy');
@@ -411,7 +411,7 @@ it('does not let the customer edit anything that is not a contact detail', funct
         'id_number'     => 'FORGED123456',
         // A legitimate field alongside them, so the request is one the endpoint
         // accepts rather than one it throws out wholesale.
-        'phone_primary' => '0751111111',
+        'phone_primary' => '0744125923',
     ])->assertStatus(200);
 
     $after = Customer::findOrFail($customer->id);
@@ -424,7 +424,7 @@ it('does not let the customer edit anything that is not a contact detail', funct
 
     // And the contact field in the same request did land, which is what proves
     // the update ran at all rather than being rejected as a whole.
-    expect($after->phone_primary)->toBe('0751111111');
+    expect($after->phone_primary)->toBe('0744125923');
 });
 
 it('does not let one customer profile update touch another customer', function () {
@@ -435,9 +435,9 @@ it('does not let one customer profile update touch another customer', function (
     $this->patchJson($this->api('/my/profile'), [
         'id'             => $world['bob']['customer']->id,
         'customer_id'    => $world['bob']['customer']->customer_id,
-        'phone_primary'  => '0757777777',
+        'phone_primary'  => '0744125923',
     ])->assertStatus(200);
 
-    expect($world['bob']['customer']->fresh()->phone_primary)->toBe('0770000000');
-    expect($world['alice']['customer']->fresh()->phone_primary)->toBe('0757777777');
+    expect($world['bob']['customer']->fresh()->phone_primary)->toBe('0744125923');
+    expect($world['alice']['customer']->fresh()->phone_primary)->toBe('0744125923');
 });

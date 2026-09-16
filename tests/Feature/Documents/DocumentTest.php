@@ -28,7 +28,7 @@ function documentCustomer(?Branch $branch = null): Customer
         'full_name' => 'Doc Owner', 'name_with_initials' => 'D. Owner',
         'id_type' => 'nic', 'id_number' => 'DOC' . fake()->unique()->numerify('##########'),
         'address_line_1' => '1 Test Lane', 'country' => 'Sri Lanka',
-        'date_of_birth' => '1990-01-01', 'phone_primary' => '0770000000',
+        'date_of_birth' => '1990-01-01', 'phone_primary' => '0744125923',
         'have_whatsapp' => false, 'preferred_language' => 'en',
         'branch_id' => $branch?->id,
     ]);
