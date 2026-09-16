@@ -13,56 +13,29 @@ return new class extends Migration
     {
         Schema::create('documents', function (Blueprint $table) {
             $table->id();
-            
-            // A plain string rather than an enum. The set grows (the loan
-            // application checklist added division certificates and two
-            // confirmation letters), and every addition to a MySQL enum is an
-            // ALTER on a table that only gets bigger. The allowed values live
-            // in Document::TYPES, which is what the FormRequests validate
-            // against -- one list, in PHP, greppable.
             $table->string('document_type', 60)->index();
-            
+
             $table->boolean('is_mandatory')->default(false);
             $table->string('document_name');
             $table->string('file_path');
-            
+
             $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
 
-            // What this document was uploaded against.
-            //
-            // A customer's NIC copy belongs to the customer and follows them
-            // across loans; the pay slips backing one application belong to
-            // that application, because the next loan needs fresh ones. A
-            // guarantor's papers belong to the guarantor. All three are
-            // nullable and independent: a row can name a customer AND the loan
-            // application it was collected for.
-            //
-            // The column only -- its foreign key is added by
-            // 2026_07_20_080100_add_document_loan_application_foreign_key,
-            // because loan_applications is created four days later in
-            // migration order and a constraint declared here fails on a fresh
-            // database with "1824 Failed to open the referenced table".
+
             $table->foreignId('loan_application_id')->nullable()->index();
             $table->foreignId('guarantor_id')->nullable()->constrained('guarantors')->cascadeOnDelete();
-            
+
             $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('uploaded_at')->useCurrent();
 
-            // Who ticked this document off at each workflow gate.
-            //
-            // The reviewer and the verifier each confirm, document by
-            // document, what they actually looked at. Kept per document rather
-            // than as a count on the application: "reviewed 4 of 6" does not
-            // say which two were skipped, and that is the only thing anyone
-            // asks afterwards.
             $table->foreignId('reviewed_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('reviewed_at')->nullable();
             $table->foreignId('verified_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('verified_at')->nullable();
-            
+
             $table->enum('status', ['active', 'rejected', 'expired'])->default('active');
             $table->text('remarks')->nullable();
-            
+
             $table->boolean('is_active')->default(true);
             $table->softDeletes();
             $table->timestamps();

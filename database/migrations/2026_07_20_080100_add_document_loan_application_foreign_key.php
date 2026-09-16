@@ -55,21 +55,12 @@ return new class extends Migration
         });
     }
 
-    /**
-     * SQLite has no ALTER TABLE ... ADD CONSTRAINT, so a foreign key can only
-     * be declared when the table is created.
-     */
     private function connectionCannotAlterForeignKeys(): bool
     {
         return Schema::getConnection()->getDriverName() === 'sqlite';
     }
 
-    /**
-     * Asked through Laravel's own schema introspection rather than a raw
-     * information_schema query: that table only exists on MySQL, so the raw
-     * form made this migration -- and therefore the whole test suite -- fail
-     * on every other driver.
-     */
+
     private function constraintExists(): bool
     {
         foreach (Schema::getForeignKeys('documents') as $foreignKey) {

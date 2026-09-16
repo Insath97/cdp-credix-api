@@ -23,9 +23,7 @@ return new class extends Migration
             $table->decimal('requested_amount', 15, 2);
             $table->decimal('approved_amount', 15, 2)->nullable();
 
-            // Nullable because a Group Loan has no interest rate at all — its
-            // repayment is derived purely from the group's service charge
-            // percentage (group_loans.service_charge_percentage).
+          
             $table->decimal('interest_rate', 6, 3)->nullable();
             $table->string('interest_type')->nullable()->default('flat');
 

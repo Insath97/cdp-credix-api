@@ -6,19 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * The per-installment credit score ledger.
-     *
-     * One row per installment that has been judged: '+n' for a month settled
-     * on time, '-n' for one settled late or already past its grace period with
-     * money still owed. Installments that are still inside their window, or
-     * that were waived or superseded by a revision, produce no row at all.
-     *
-     * The ledger is DERIVED, never incremented: CreditScoreService recomputes
-     * a (loan, customer) pair from the installment rows and replaces its events
-     * wholesale. That is what makes a deleted payment, a waived penalty or a
-     * loan revision correct themselves instead of leaving the score poisoned.
-     */
+    
     public function up(): void
     {
         Schema::create('credit_score_events', function (Blueprint $table) {

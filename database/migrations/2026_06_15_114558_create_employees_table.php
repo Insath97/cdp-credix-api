@@ -20,14 +20,13 @@ return new class extends Migration
             $table->string('employee_code')->unique()->nullable();
             $table->foreignId('reporting_manager_id')->nullable()->constrained('employees')->nullOnDelete();
 
-            // Org and Territory connections
             $table->foreignId('province_id')->nullable()->constrained('provinces')->nullOnDelete();
             $table->foreignId('region_id')->nullable()->constrained('regions')->nullOnDelete();
             $table->foreignId('zonal_id')->nullable()->constrained('zonals')->nullOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained('branches')->nullOnDelete();
             $table->foreignId('department_id')->nullable()->constrained('departments')->nullOnDelete();
             $table->foreignId('designation_id')->nullable()->constrained('designations')->nullOnDelete();
-            
+
             $table->enum('employee_type', ['permanent', 'contract', 'internship', 'probation'])->nullable();
             $table->enum('id_type', ['nic', 'passport', 'driving_license', 'other'])->nullable();
             $table->string('id_number')->unique();
@@ -49,7 +48,6 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Resolve circular dependency for Department Head
         Schema::table('departments', function (Blueprint $table) {
             $table->foreign('head_id')->references('id')->on('employees')->nullOnDelete();
         });
