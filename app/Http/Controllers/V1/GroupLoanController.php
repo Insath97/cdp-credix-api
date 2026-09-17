@@ -52,7 +52,8 @@ class GroupLoanController extends Controller implements HasMiddleware
             new Middleware('permission:Group Loan Delete', only: ['destroy']),
             new Middleware('permission:Group Loan Review', only: ['review', 'reviewFail']),
             new Middleware('permission:Group Loan Resubmit', only: ['resubmit']),
-            new Middleware('permission:Group Loan Verify', only: ['verify']),
+            new Middleware('permission:Group Loan Verify', only: ['verify', 'verifyFail']),
+            new Middleware('permission:Group Loan Reverify', only: ['reverify']),
             new Middleware('permission:Group Loan Approve', only: ['approve']),
             new Middleware('permission:Group Loan Reject', only: ['reject']),
             new Middleware('permission:Group Loan Offer Response', only: ['holdOffer', 'acceptOffer', 'declineOffer']),
@@ -321,7 +322,6 @@ class GroupLoanController extends Controller implements HasMiddleware
 
                 LoanApplicationStatusHistory::record(
                     $loanApplication,
-                    null,
                     LoanApplicationStatus::Submitted,
                     Auth::id(),
                     'Group loan application submitted'
@@ -618,8 +618,33 @@ class GroupLoanController extends Controller implements HasMiddleware
 
     /**
      * Verify a group loan after review and cascade to every member.
+     *
+     * Only from Reviewed. A group loan that already failed verification is
+     * sitting in Reverify and belongs to reverify() instead — see the same
+     * split in LoanApplicationController.
      */
     public function verify(Request $request, string $id)
+    {
+        return $this->runVerification($request, $id, false);
+    }
+
+    /**
+     * Verify a group loan that was sent back for a second look.
+     *
+     * The clearing of the old failure reason and the bump of reverify_count
+     * happen in GroupLoanWorkflowService::verify(), so the group and
+     * individual paths cannot drift apart.
+     */
+    public function reverify(Request $request, string $id)
+    {
+        return $this->runVerification($request, $id, true);
+    }
+
+    /**
+     * The body behind verify() and reverify(). One implementation because it
+     * is one check; only the starting status and the wording differ.
+     */
+    private function runVerification(Request $request, string $id, bool $isReverification)
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -643,6 +668,25 @@ class GroupLoanController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            // The stage lives on the group's single application, not on the
+            // header — the header stays Available right through review and
+            // verification — so that is what decides which route applies.
+            $awaitingReverification = $groupLoan->loanApplication?->status === LoanApplicationStatus::Reverify;
+
+            if ($isReverification && !$awaitingReverification) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This group loan is not awaiting re-verification. Use the verify action instead.',
+                ], 422);
+            }
+
+            if (!$isReverification && $awaitingReverification) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This group loan failed verification and is awaiting re-verification. Use the re-verify action instead.',
+                ], 422);
+            }
+
             $extra = [
                 'verified_by' => Auth::id(),
                 'verified_at' => now(),
@@ -656,13 +700,17 @@ class GroupLoanController extends Controller implements HasMiddleware
 
             $groupLoan = $this->workflowService->verify($groupLoan, Auth::id(), $request->input('remarks'), $extra);
 
-            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} verified", [
+            $verb = $isReverification ? 're-verified' : 'verified';
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} {$verb}", [
                 'group_loan_id' => $groupLoan->id,
             ]);
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Group loan verified successfully',
+                'message' => $isReverification
+                    ? 'Group loan re-verified successfully'
+                    : 'Group loan verified successfully',
                 'data'    => $groupLoan,
             ], 200);
 
@@ -674,7 +722,9 @@ class GroupLoanController extends Controller implements HasMiddleware
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Failed to verify group loan',
+                'message' => $isReverification
+                    ? 'Failed to re-verify group loan'
+                    : 'Failed to verify group loan',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
@@ -741,6 +791,85 @@ class GroupLoanController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to review group loan',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Fail the verification of a reviewed group loan.
+     *
+     * The mirror of LoanApplicationController::verifyFail, for the loan a
+     * group borrows as one. Not a rejection — the file lands in Reverify for a
+     * second look, every member is told why by SMS, and verification runs
+     * again.
+     */
+    public function verifyFail(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+
+                'reason' => 'required|string|min:5|max:1000',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $groupLoan = GroupLoan::find($id);
+
+            if (!$groupLoan) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan not found',
+                ], 404);
+            }
+
+            $reason = $request->input('reason');
+
+            $groupLoan = $this->workflowService->verifyFail($groupLoan, Auth::id(), $reason, [
+                'verify_failure_reason' => $reason,
+                'verify_failed_at'      => now(),
+            ]);
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} failed verification", [
+                'group_loan_id' => $groupLoan->id,
+            ]);
+
+            $application = $groupLoan->loanApplication;
+
+            foreach ($application?->notifiableCustomers() ?? collect() as $customer) {
+                $message = "Your group loan application verification is failed.\nReason: {$reason}";
+                $context = ['loan_application_id' => $application->id, 'customer_id' => $customer->id];
+
+                if (!empty($customer->phone_primary)) {
+                    $this->notificationService->sendSms('group_loan_verify_failed', $customer->phone_primary, $message, $context);
+                }
+
+                if (!empty($customer->email)) {
+                    $this->notificationService->sendEmail('group_loan_verify_failed', $customer->email, 'Group Loan Verification Failed', $message, $context);
+                }
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Group loan verification failed. It is now awaiting re-verification and the members have been notified.',
+                'data'    => $groupLoan,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to fail the verification of this group loan',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }

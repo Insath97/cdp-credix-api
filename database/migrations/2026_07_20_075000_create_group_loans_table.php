@@ -49,6 +49,11 @@ return new class extends Migration
             $table->timestamp('resubmitted_at')->nullable();
             $table->unsignedInteger('resubmission_count')->default(0);
 
+
+            $table->text('verify_failure_reason')->nullable();
+            $table->timestamp('verify_failed_at')->nullable();
+            $table->unsignedInteger('reverify_count')->default(0);
+
             $table->timestamp('applied_at')->useCurrent();
             $table->timestamp('reviewed_at')->nullable();
             $table->timestamp('verified_at')->nullable();

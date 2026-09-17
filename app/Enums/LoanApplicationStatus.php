@@ -27,6 +27,22 @@ enum LoanApplicationStatus: string
      */
     case ReviewFailed = 'review_failed';
     case Verified = 'verified';
+
+    /**
+     * Verification could not pass the file on, so it is waiting to be
+     * verified again.
+     *
+     * The stage after review splits two ways: verification either passes the
+     * file to approval, or it fails and the file lands here. Named for what
+     * has to happen next rather than for what went wrong -- a file sitting in
+     * Reverify is a file on the verification desk's queue for a second look,
+     * which is what an officer scanning the list needs to know.
+     *
+     * The customer is told why by SMS. Like ReviewFailed this is deliberately
+     * not terminal and not a rejection: rejection is the lender's answer to
+     * the request, this is a checking step that has not finished yet.
+     */
+    case Reverify = 'reverify';
     case Approved = 'approved';
 
     /**
@@ -66,8 +82,19 @@ enum LoanApplicationStatus: string
             // review to look at again. Rejected stays available for the case
             // where review already knows the answer is no.
             self::ReviewFailed => [self::Submitted, self::Rejected, self::Cancelled],
-            self::Reviewed => [self::Verified, self::Rejected, self::Cancelled],
+            // Review splits two ways. Passing verification sends the file
+            // to approval; failing it drops the file into Reverify rather than
+            // ending it, because "we could not confirm this" is not the same
+            // answer as "no".
+            self::Reviewed => [self::Verified, self::Reverify, self::Rejected, self::Cancelled],
+
             self::Verified => [self::Approved, self::Rejected, self::Cancelled],
+
+            // A second look, with the same three ways out that Reviewed has.
+            // It cannot go back to Reviewed: review already happened and its
+            // result still stands -- what failed was verification, and
+            // verification is what runs again.
+            self::Reverify => [self::Verified, self::Rejected, self::Cancelled],
 
             // Money moves only after the borrower has said yes. On Hold is a
             // parking place for "give me a few days", not a decision, so it
@@ -148,10 +175,15 @@ enum LoanApplicationStatus: string
     {
         return match ($this) {
             self::Submitted, self::Reviewed, self::Verified => self::CUSTOMER_PROCESSING,
-            // The one internal stage the customer must see: nothing moves
-            // until they reupload, so hiding it behind 'processing' would
-            // leave them waiting for a file that is waiting for them.
+            // The two internal stages the customer must see. For
+            // ReviewFailed nothing moves until they reupload, so hiding it
+            // behind 'processing' would leave them waiting for a file that is
+            // waiting for them. For Reverify they have just been sent an SMS
+            // saying verification failed, and a portal still reading
+            // 'Processing' next to that message is worse than telling them
+            // nothing.
             self::ReviewFailed => self::ReviewFailed->value,
+            self::Reverify => self::Reverify->value,
             default => $this->value,
         };
     }
@@ -168,7 +200,8 @@ enum LoanApplicationStatus: string
     public function toApplicationStatus(): string
     {
         return match ($this) {
-            self::Submitted, self::Reviewed, self::Verified, self::ReviewFailed => 'in_progress',
+            self::Submitted, self::Reviewed, self::Verified,
+            self::ReviewFailed, self::Reverify => 'in_progress',
             // The coarse column tracks broad progress: an offer awaiting the
             // borrower's answer is still an approved file. A declined one is
             // on its way to cancelled and never comes back.

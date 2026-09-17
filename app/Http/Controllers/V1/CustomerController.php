@@ -261,7 +261,6 @@ class CustomerController extends Controller implements HasMiddleware
 
                 LoanApplicationStatusHistory::record(
                     $loanApplication,
-                    null,
                     LoanApplicationStatus::Submitted,
                     Auth::id(),
                     'Loan application submitted at customer registration'

@@ -36,9 +36,9 @@ class LoanApplicationStatusHistoryController extends Controller implements HasMi
     /**
      * List status changes, newest first.
      *
-     * Filters: loan_application_id, application_id, status (the status moved
-     * TO, one or comma-separated), from_status, changed_by, and a
-     * date_from/date_to range over change_date.
+     * Filters: loan_application_id, application_id, status (one or
+     * comma-separated), changed_by, and a date_from/date_to range over
+     * change_date.
      */
     public function index(Request $request)
     {
@@ -60,17 +60,11 @@ class LoanApplicationStatusHistoryController extends Controller implements HasMi
                 $query->where('application_id', $request->application_id);
             }
 
-            // 'status' means the status the file moved TO: that is what a
-            // reader means by "show me everything that got rejected".
             if ($request->filled('status')) {
-                $query->whereIn('to_status', array_filter(array_map(
+                $query->whereIn('loan_application_status', array_filter(array_map(
                     'trim',
                     explode(',', (string) $request->status)
                 )));
-            }
-
-            if ($request->filled('from_status')) {
-                $query->where('from_status', $request->from_status);
             }
 
             if ($request->filled('changed_by')) {
@@ -104,7 +98,7 @@ class LoanApplicationStatusHistoryController extends Controller implements HasMi
             $this->logActivity('Index', 'LoanApplicationStatusHistory', 'Loan application status history accessed', [
                 'user_id' => Auth::id(),
                 'filters' => $request->only([
-                    'loan_application_id', 'application_id', 'status', 'from_status',
+                    'loan_application_id', 'application_id', 'status',
                     'changed_by', 'date_from', 'date_to',
                 ]),
                 'count'   => $history->count(),
@@ -158,7 +152,7 @@ class LoanApplicationStatusHistoryController extends Controller implements HasMi
                 'message' => 'Loan application status history retrieved successfully',
                 'data'    => [
                     'loan_application_id' => (int) $loanApplicationId,
-                    'current_status'      => $history->last()->to_status?->value,
+                    'current_status'      => $history->last()->loan_application_status?->value,
                     'total_changes'       => $history->count(),
                     'history'             => $history,
                 ],

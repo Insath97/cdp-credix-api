@@ -49,7 +49,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
             new Middleware('permission:Loan Application Delete', only: ['destroy']),
             new Middleware('permission:Loan Application Review', only: ['review', 'reviewFail']),
             new Middleware('permission:Loan Application Resubmit', only: ['resubmit']),
-            new Middleware('permission:Loan Application Verify', only: ['verify']),
+            new Middleware('permission:Loan Application Verify', only: ['verify', 'verifyFail']),
+            new Middleware('permission:Loan Application Reverify', only: ['reverify']),
             new Middleware('permission:Loan Application Approve', only: ['approve']),
             new Middleware('permission:Loan Application Reject', only: ['reject']),
             new Middleware('permission:Loan Application Offer Response', only: ['holdOffer', 'acceptOffer', 'declineOffer']),
@@ -225,7 +226,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
             // first review, and the audit trail would start in the middle.
             LoanApplicationStatusHistory::record(
                 $loanApplication,
-                null,
                 LoanApplicationStatus::Submitted,
                 Auth::id(),
                 'Loan application submitted'
@@ -594,7 +594,45 @@ class LoanApplicationController extends Controller implements HasMiddleware
         }
     }
 
+    /**
+     * Verify a reviewed loan application — the second of the three hands.
+     *
+     * Only from Reviewed. A file that already failed verification is sitting
+     * in Reverify and belongs to reverify() instead: the two are the same
+     * check, but they are not the same event, and keeping one route per event
+     * is what lets the activity log, the response message and the permission
+     * differ without any of them having to re-derive which case this was.
+     */
     public function verify(Request $request, string $id)
+    {
+        return $this->runVerification($request, $id, false);
+    }
+
+    /**
+     * Verify a loan application that was sent back for a second look.
+     *
+     * The same check verify() runs, on a file already in Reverify. It clears
+     * the reason the file was sent back — that described what could not be
+     * confirmed last time, and leaving it would sit on screen beside a file
+     * that has now passed — and bumps the count of how many looks it has
+     * taken, because a file on its third is worth noticing. The failure itself
+     * stays readable in loan_application_status_history.
+     */
+    public function reverify(Request $request, string $id)
+    {
+        return $this->runVerification($request, $id, true);
+    }
+
+    /**
+     * The body behind verify() and reverify().
+     *
+     * One implementation because it is one check: the only real differences
+     * are which status the file must be in to start, and the words used to
+     * describe what happened afterwards. Splitting these into two copies would
+     * let the actual verification logic drift apart between a first and a
+     * second look, which is the one thing that must never happen.
+     */
+    private function runVerification(Request $request, string $id, bool $isReverification)
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -622,10 +660,33 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 return $guard;
             }
 
+            $awaitingReverification = $loanApplication->status === LoanApplicationStatus::Reverify;
+
+            if ($isReverification && !$awaitingReverification) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This loan application is not awaiting re-verification. Use the verify action instead.',
+                ], 422);
+            }
+
+            if (!$isReverification && $awaitingReverification) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This loan application failed verification and is awaiting re-verification. Use the re-verify action instead.',
+                ], 422);
+            }
+
             $extra = [
                 'verified_by' => Auth::id(),
                 'verified_at' => now(),
             ];
+
+            if ($awaitingReverification) {
+                $extra['verify_failure_reason'] = null;
+                $extra['verify_failed_at']      = null;
+                $extra['reverify_count']        = (int) $loanApplication->reverify_count + 1;
+            }
+
             if ($request->filled('remarks')) {
                 $extra['verified_remarks'] = $request->input('remarks');
             }
@@ -648,13 +709,17 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'verified_at'
             );
 
-            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} verified", [
+            $verb = $isReverification ? 're-verified' : 'verified';
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} {$verb}", [
                 'loan_application_id' => $loanApplication->id,
             ]);
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Loan application verified successfully',
+                'message' => $isReverification
+                    ? 'Loan application re-verified successfully'
+                    : 'Loan application verified successfully',
                 'data'    => $loanApplication,
             ], 200);
 
@@ -666,17 +731,118 @@ class LoanApplicationController extends Controller implements HasMiddleware
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Failed to verify loan application',
+                'message' => $isReverification
+                    ? 'Failed to re-verify loan application'
+                    : 'Failed to verify loan application',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
     }
 
     /**
-     * Review a submitted loan application — the first of the three hands the
-     * file passes through. Records who reviewed it, then hands it on for
-     * verification by someone else.
+     * Fail the verification of a reviewed loan application.
+     *
+     * Verification is the fork in the flow: from here a file either passes to
+     * approval, or it lands in Reverify for a second look. This is the second
+     * branch. It is not a rejection — rejection is the lender's answer to the
+     * request, this is "we could not confirm what we were given" — so the file
+     * stays open, the customer is told why by SMS, and verification runs again.
+     *
+     * No verified_by is stamped: the file has not passed verification, so the
+     * maker-checker chain has not advanced. The reviewer is still barred from
+     * doing this (see assertSegregationOfDuties) — failing a verification is
+     * an act of verification, and letting the reviewer do it would hand one
+     * person two of the three hands.
      */
+    public function verifyFail(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'reason' => 'required|string|min:5|max:1000',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
+            $reason = $request->input('reason');
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Reverify,
+                Auth::id(),
+                $reason,
+                [
+                    'verify_failure_reason' => $reason,
+                    'verify_failed_at'      => now(),
+                ]
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} failed verification", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                $message = "Your loan application verification is failed.\nReason: {$reason}";
+
+                if (!empty($notifyCustomer->phone_primary)) {
+                    $this->notificationService->sendSms(
+                        'application_verify_failed',
+                        $notifyCustomer->phone_primary,
+                        $message,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+
+                if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                    $this->notificationService->sendEmail(
+                        'application_verify_failed',
+                        $notifyCustomer->email,
+                        'Loan Application Verification Failed',
+                        $message,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application verification failed. It is now awaiting re-verification and the customer has been notified.',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to fail the verification of this loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    
     public function review(Request $request, string $id)
     {
         try {

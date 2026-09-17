@@ -61,6 +61,11 @@ class LoanApplication extends Model
         'review_failed_at',
         'resubmitted_at',
         'resubmission_count',
+        // Set when verification sends the file back for a second look.
+        'verify_failure_reason',
+        'verify_failed_at',
+        'reverify_count',
+        
         'applied_at',
         'reviewed_at',
         'verified_at',
@@ -112,6 +117,8 @@ class LoanApplication extends Model
         'review_failed_at'    => 'datetime',
         'resubmitted_at'      => 'datetime',
         'resubmission_count'  => 'integer',
+        'verify_failed_at'    => 'datetime',
+        'reverify_count'      => 'integer',
         'applied_at'          => 'datetime',
         'reviewed_at'         => 'datetime',
         'verified_at'         => 'datetime',

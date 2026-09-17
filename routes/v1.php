@@ -251,6 +251,8 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/review-fail', [LoanApplicationController::class, 'reviewFail']);
         Route::patch('{id}/resubmit', [LoanApplicationController::class, 'resubmit']);
         Route::patch('{id}/verify', [LoanApplicationController::class, 'verify']);
+        Route::patch('{id}/verify-fail', [LoanApplicationController::class, 'verifyFail']);
+        Route::patch('{id}/reverify', [LoanApplicationController::class, 'reverify']);
         Route::patch('{id}/approve', [LoanApplicationController::class, 'approve']);
         Route::patch('{id}/reject', [LoanApplicationController::class, 'reject']);
         Route::patch('{id}/hold-offer', [LoanApplicationController::class, 'holdOffer']);
@@ -259,9 +261,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });
-    // Loan Application Status History — read only. Rows are written by
-    // LoanApplicationStatusHistory::record() wherever a status actually
-    // changes, never over HTTP.
+    
     Route::prefix('loan-application-status-history')->group(function () {
         Route::get('statuses', [LoanApplicationStatusHistoryController::class, 'statuses']);
         Route::get('/', [LoanApplicationStatusHistoryController::class, 'index']);
@@ -301,6 +301,8 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/review-fail', [GroupLoanController::class, 'reviewFail']);
         Route::patch('{id}/resubmit', [GroupLoanController::class, 'resubmit']);
         Route::patch('{id}/verify', [GroupLoanController::class, 'verify']);
+        Route::patch('{id}/verify-fail', [GroupLoanController::class, 'verifyFail']);
+        Route::patch('{id}/reverify', [GroupLoanController::class, 'reverify']);
         Route::patch('{id}/approve', [GroupLoanController::class, 'approve']);
         Route::patch('{id}/reject', [GroupLoanController::class, 'reject']);
         Route::patch('{id}/hold-offer', [GroupLoanController::class, 'holdOffer']);

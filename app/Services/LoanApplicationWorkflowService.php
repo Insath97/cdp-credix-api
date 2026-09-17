@@ -80,7 +80,6 @@ class LoanApplicationWorkflowService
 
             LoanApplicationStatusHistory::record(
                 $loanApplication,
-                $from,
                 $to,
                 $actorId,
                 $remarks
@@ -142,7 +141,13 @@ class LoanApplicationWorkflowService
         }
 
         $conflicts = match ($to) {
-            LoanApplicationStatus::Verified => ['reviewed_by' => 'reviewed'],
+            // Reverify is checked alongside Verified because failing a
+            // verification is still an act of verification. Without it the
+            // reviewer could pick their own file back up and fail it, covering
+            // two of the three hands -- the exact thing this rule exists to
+            // stop.
+            LoanApplicationStatus::Verified,
+            LoanApplicationStatus::Reverify => ['reviewed_by' => 'reviewed'],
             LoanApplicationStatus::Approved => ['reviewed_by' => 'reviewed', 'verified_by' => 'verified'],
             default => [],
         };
@@ -152,7 +157,10 @@ class LoanApplicationWorkflowService
                 continue;
             }
 
-            $action = $to === LoanApplicationStatus::Verified ? 'verify' : 'approve';
+            $action = in_array($to, [
+                LoanApplicationStatus::Verified,
+                LoanApplicationStatus::Reverify,
+            ], true) ? 'verify' : 'approve';
 
             throw new InvalidLoanApplicationTransitionException(
                 "You already {$stage} this loan application, so you cannot also {$action} it. "

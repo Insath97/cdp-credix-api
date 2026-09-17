@@ -5,9 +5,25 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use App\Traits\GuardsLoanWorkflowFields;
 
 class UpdateLoanApplicationRequest extends FormRequest
 {
+    use GuardsLoanWorkflowFields;
+
+    /**
+     * Refused on update but legitimately accepted on create.
+     *
+     * A loan is born inactive-or-active and at a status, so the create request
+     * takes both. Changing either afterwards is a different act with its own
+     * endpoint and its own guard, and letting a generic edit do it would walk
+     * past that guard -- so they are refused here rather than quietly dropped.
+     */
+    private const REFUSED_ON_UPDATE = [
+        'is_active' => 'the activate, deactivate and toggle-status actions',
+        'status'    => 'the workflow actions (review, verify, approve, reject, ...)',
+    ];
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -21,7 +37,7 @@ class UpdateLoanApplicationRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
+        return array_merge($this->workflowOwnedRules(self::REFUSED_ON_UPDATE), [
             'application_id'         => 'nullable|integer|exists:applications,id',
             'customer_id'            => 'nullable|integer|exists:customers,id',
             'loan_product_id'        => 'nullable|integer|exists:loan_products,id',
@@ -46,14 +62,33 @@ class UpdateLoanApplicationRequest extends FormRequest
             'recommender_nic'            => 'nullable|string|max:255',
             'recommender_phone'          => 'nullable|string|max:255',
 
+            // See the note on the create request: an assignment, not a
+            // record of something that already happened.
+            'assigned_reviewer_id'   => 'nullable|integer|exists:users,id',
+
             // is_active is deliberately not accepted here: it has its own
             // activate/deactivate/toggle-status endpoints, which refuse to
             // reactivate a cancelled, rejected or closed loan. Allowing it
             // through a generic update would bypass that guard and let a
             // finished loan display as "Active" again.
-        ];
+            //
+            // status is not accepted either, for the same reason and a
+            // stronger one: every status change belongs to a workflow endpoint
+            // that guards the transition, checks segregation of duties and
+            // writes the audit row. Setting it here would move a loan with
+            // none of that happening.
+        ]);
     }
 
+
+    /**
+     * Custom messages for the workflow-owned fields, so a caller that sends
+     * one is told which endpoint to use instead of just "is prohibited".
+     */
+    public function messages(): array
+    {
+        return $this->workflowOwnedMessages(self::REFUSED_ON_UPDATE);
+    }
 
     protected function failedValidation(Validator $validator)
     {
