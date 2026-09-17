@@ -14,6 +14,18 @@ enum LoanApplicationStatus: string
 
     case Submitted = 'submitted';
     case Reviewed = 'reviewed';
+
+    /**
+     * Review looked at the file and could not pass it on.
+     *
+     * Not the same as Rejected. Rejection is a lending decision and is final;
+     * this is "what you sent us is not good enough to check" -- an unreadable
+     * NIC scan, a missing salary slip, a pay slip for the wrong month. The
+     * customer is told by SMS, fixes the documents and resubmits, and the file
+     * goes back to Submitted for review to look at again. So it is deliberately
+     * NOT terminal.
+     */
+    case ReviewFailed = 'review_failed';
     case Verified = 'verified';
     case Approved = 'approved';
 
@@ -47,7 +59,13 @@ enum LoanApplicationStatus: string
             // Three separate hands before money moves: review, then verify,
             // then approve. Each stage records its own actor, and the workflow
             // service refuses to let one person cover two of them.
-            self::Submitted => [self::Reviewed, self::Cancelled],
+            self::Submitted => [self::Reviewed, self::ReviewFailed, self::Cancelled],
+
+            // A failed review is a round trip, not an end: the customer
+            // resubmits the documents and the file returns to Submitted for
+            // review to look at again. Rejected stays available for the case
+            // where review already knows the answer is no.
+            self::ReviewFailed => [self::Submitted, self::Rejected, self::Cancelled],
             self::Reviewed => [self::Verified, self::Rejected, self::Cancelled],
             self::Verified => [self::Approved, self::Rejected, self::Cancelled],
 
@@ -130,6 +148,10 @@ enum LoanApplicationStatus: string
     {
         return match ($this) {
             self::Submitted, self::Reviewed, self::Verified => self::CUSTOMER_PROCESSING,
+            // The one internal stage the customer must see: nothing moves
+            // until they reupload, so hiding it behind 'processing' would
+            // leave them waiting for a file that is waiting for them.
+            self::ReviewFailed => self::ReviewFailed->value,
             default => $this->value,
         };
     }
@@ -146,7 +168,7 @@ enum LoanApplicationStatus: string
     public function toApplicationStatus(): string
     {
         return match ($this) {
-            self::Submitted, self::Reviewed, self::Verified => 'in_progress',
+            self::Submitted, self::Reviewed, self::Verified, self::ReviewFailed => 'in_progress',
             // The coarse column tracks broad progress: an offer awaiting the
             // borrower's answer is still an approved file. A declined one is
             // on its way to cancelled and never comes back.

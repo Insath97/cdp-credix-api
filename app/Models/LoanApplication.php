@@ -55,6 +55,12 @@ class LoanApplication extends Model
         'verified_remarks',
         'approval_remarks',
         'rejection_reason',
+        // Set when review sends the file back to the customer for better
+        // documents, cleared when they resubmit.
+        'review_failure_reason',
+        'review_failed_at',
+        'resubmitted_at',
+        'resubmission_count',
         'applied_at',
         'reviewed_at',
         'verified_at',
@@ -103,6 +109,9 @@ class LoanApplication extends Model
         'reviewed_by'         => 'integer',
         'verified_by'         => 'integer',
         'approved_by'         => 'integer',
+        'review_failed_at'    => 'datetime',
+        'resubmitted_at'      => 'datetime',
+        'resubmission_count'  => 'integer',
         'applied_at'          => 'datetime',
         'reviewed_at'         => 'datetime',
         'verified_at'         => 'datetime',
@@ -466,7 +475,7 @@ class LoanApplication extends Model
      */
     public function statusHistory(): HasMany
     {
-        return $this->hasMany(LoanApplicationStatusHistory::class)->orderBy('created_at');
+        return $this->hasMany(LoanApplicationStatusHistory::class)->orderBy('changed_at')->orderBy('id');
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationStatusHistory;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -77,12 +78,13 @@ class LoanApplicationWorkflowService
                 'status' => $to->toApplicationStatus(),
             ]);
 
-            $loanApplication->statusHistory()->create([
-                'from_status' => $from->value,
-                'to_status'   => $to->value,
-                'changed_by'  => $actorId,
-                'remarks'     => $remarks,
-            ]);
+            LoanApplicationStatusHistory::record(
+                $loanApplication,
+                $from,
+                $to,
+                $actorId,
+                $remarks
+            );
 
             if ($to === LoanApplicationStatus::Disbursed) {
                 $this->installmentScheduleService->generate($loanApplication);

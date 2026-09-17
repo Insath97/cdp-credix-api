@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
@@ -32,6 +33,16 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
      *
      * @var list<string>
      */
+    /**
+     * The username of the account that automated work is attributed to.
+     *
+     * The nightly schedulers move loan applications with nobody signed in.
+     * Their audit rows still have to name someone, so they name this account:
+     * it cannot log in and belongs to no person, which is exactly the point --
+     * "the system did this" rather than a real officer who did not.
+     */
+    public const SYSTEM_USERNAME = 'system';
+
     protected $fillable = [
         'name',
         'username',
@@ -124,6 +135,45 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
      * hasRole('Super Admin') is false -- a mismatch that silently locks the
      * Super Admin out of the very checks written to let them through.
      */
+    /**
+     * The id of the System account, creating it if it is not there yet.
+     *
+     * Audit rows may not be left unattributed now that changed_by is required,
+     * and the nightly schedulers have no signed-in user to name. This resolves
+     * that: a real row in users, so the foreign key holds, but one that cannot
+     * log in and has no password anyone could use.
+     *
+     * firstOrCreate rather than a plain lookup because this is reached from an
+     * audit write at 2am. A database that has not been seeded, or was seeded
+     * before this account existed, must not take the nightly job down -- it
+     * heals itself instead.
+     *
+     * Memoised per process: the schedulers call this once per loan application
+     * they move, and the answer cannot change while the process is running.
+     */
+    public static function systemUserId(): int
+    {
+        static $id = null;
+
+        if ($id !== null) {
+            return $id;
+        }
+
+        return $id = static::firstOrCreate(
+            ['username' => self::SYSTEM_USERNAME],
+            [
+                'name'      => 'System',
+                'email'     => null,
+                // Random and thrown away. The account is never signed in to;
+                // this exists only because the column is NOT NULL.
+                'password'  => bcrypt(Str::random(40)),
+                'user_type' => 'admin',
+                'is_active' => false,
+                'can_login' => false,
+            ]
+        )->id;
+    }
+
     public function isSuperAdmin(): bool
     {
         return $this->roles->contains(

@@ -15,6 +15,7 @@ use App\Models\Customer;
 use App\Models\Document;
 use App\Models\Employee;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationStatusHistory;
 use App\Models\User;
 use App\Enums\LoanApplicationStatus;
 use App\Services\NotificationService;
@@ -242,7 +243,7 @@ class CustomerController extends Controller implements HasMiddleware
                     'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
                 ]);
 
-                LoanApplication::create([
+                $loanApplication = LoanApplication::create([
                     'application_id' => $application->id,
                     'customer_id' => $customer->id,
                     'loan_product_id' => $data['loan_product_id'],
@@ -257,6 +258,14 @@ class CustomerController extends Controller implements HasMiddleware
                     'status' => LoanApplicationStatus::Submitted->value,
                     'is_active' => true,
                 ]);
+
+                LoanApplicationStatusHistory::record(
+                    $loanApplication,
+                    null,
+                    LoanApplicationStatus::Submitted,
+                    Auth::id(),
+                    'Loan application submitted at customer registration'
+                );
             }
 
             DB::commit();

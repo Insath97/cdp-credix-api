@@ -23,7 +23,7 @@ return new class extends Migration
             $table->decimal('requested_amount', 15, 2);
             $table->decimal('approved_amount', 15, 2)->nullable();
 
-          
+
             $table->decimal('interest_rate', 6, 3)->nullable();
             $table->string('interest_type')->nullable()->default('flat');
 
@@ -43,6 +43,11 @@ return new class extends Migration
             $table->text('verified_remarks')->nullable();
             $table->text('approval_remarks')->nullable();
             $table->text('rejection_reason')->nullable();
+
+            $table->text('review_failure_reason')->nullable();
+            $table->timestamp('review_failed_at')->nullable();
+            $table->timestamp('resubmitted_at')->nullable();
+            $table->unsignedInteger('resubmission_count')->default(0);
 
             $table->timestamp('applied_at')->useCurrent();
             $table->timestamp('reviewed_at')->nullable();

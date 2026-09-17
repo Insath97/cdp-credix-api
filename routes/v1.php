@@ -29,6 +29,7 @@ use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LegalDocumentController;
 use App\Http\Controllers\V1\LegalDocumentTemplateController;
 use App\Http\Controllers\V1\LoanApplicationController;
+use App\Http\Controllers\V1\LoanApplicationStatusHistoryController;
 use App\Http\Controllers\V1\GroupLoanController;
 use App\Http\Controllers\V1\GroupLoanItemController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
@@ -247,6 +248,8 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/activate', [LoanApplicationController::class, 'activate']);
         Route::patch('{id}/deactivate', [LoanApplicationController::class, 'deactivate']);
         Route::patch('{id}/review', [LoanApplicationController::class, 'review']);
+        Route::patch('{id}/review-fail', [LoanApplicationController::class, 'reviewFail']);
+        Route::patch('{id}/resubmit', [LoanApplicationController::class, 'resubmit']);
         Route::patch('{id}/verify', [LoanApplicationController::class, 'verify']);
         Route::patch('{id}/approve', [LoanApplicationController::class, 'approve']);
         Route::patch('{id}/reject', [LoanApplicationController::class, 'reject']);
@@ -256,6 +259,15 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });
+    // Loan Application Status History — read only. Rows are written by
+    // LoanApplicationStatusHistory::record() wherever a status actually
+    // changes, never over HTTP.
+    Route::prefix('loan-application-status-history')->group(function () {
+        Route::get('statuses', [LoanApplicationStatusHistoryController::class, 'statuses']);
+        Route::get('/', [LoanApplicationStatusHistoryController::class, 'index']);
+        Route::get('{loanApplicationId}', [LoanApplicationStatusHistoryController::class, 'show']);
+    });
+
     Route::apiResource('loan-applications', LoanApplicationController::class);
 
     /*
@@ -286,6 +298,8 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/activate', [GroupLoanController::class, 'activate']);
         Route::patch('{id}/deactivate', [GroupLoanController::class, 'deactivate']);
         Route::patch('{id}/review', [GroupLoanController::class, 'review']);
+        Route::patch('{id}/review-fail', [GroupLoanController::class, 'reviewFail']);
+        Route::patch('{id}/resubmit', [GroupLoanController::class, 'resubmit']);
         Route::patch('{id}/verify', [GroupLoanController::class, 'verify']);
         Route::patch('{id}/approve', [GroupLoanController::class, 'approve']);
         Route::patch('{id}/reject', [GroupLoanController::class, 'reject']);
