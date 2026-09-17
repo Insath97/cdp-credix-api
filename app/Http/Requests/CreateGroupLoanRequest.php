@@ -6,6 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use App\Models\Setting;
 use App\Rules\GroupLoanMemberCountMatches;
+use App\Services\GroupLoanWorkflowService;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
@@ -70,17 +71,14 @@ class CreateGroupLoanRequest extends FormRequest
             ],
             'branch_id'         => 'nullable|integer|exists:branches,id',
             'group_name'        => 'nullable|string|max:255',
-            // One, because a Development Fund loan is submitted through this
-            // endpoint for a single borrower as well as for a group -- the
-            // scheme is item-based either way, and the wizard sends one member
-            // for the individual tier. A floor of two here rejected every
-            // individual Development Fund loan outright.
+            // A group is at least two people. Every submission through this
+            // endpoint is the group tier, so the floor is unconditional: the
+            // declared headcount may never be one.
             //
-            // The group rule is not weakened by this: member removal refuses to
-            // take a loan below GroupLoanWorkflowService::MIN_MEMBERS, so a
-            // group that starts with two or more still cannot drop to one, and
-            // a single-borrower loan cannot lose its only member either.
-            'number_of_members' => 'required|integer|min:1',
+            // Member removal refuses to take a loan below the same
+            // GroupLoanWorkflowService::MIN_MEMBERS, so a group can neither
+            // start below two nor be dragged below two afterwards.
+            'number_of_members' => 'required|integer|min:' . GroupLoanWorkflowService::MIN_MEMBERS,
             'competency'        => ['required', 'string', function ($attribute, $value, $fail) {
                 $allowed = Setting::get('group_loan_competency', []);
                 $normalized = array_map(fn ($c) => trim(mb_strtolower($c)), $allowed);
@@ -104,7 +102,11 @@ class CreateGroupLoanRequest extends FormRequest
             'items.*.quantity'   => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
 
-            'members'               => ['required', 'array', new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
+            // The floor as well as the count-match rule: the two guard
+            // different mistakes. Count-match only says the array agrees with
+            // the declared headcount, so a one-member submission that also
+            // declares one would satisfy it; the floor is what refuses it.
+            'members'               => ['required', 'array', 'min:' . GroupLoanWorkflowService::MIN_MEMBERS, new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
             // A member is either an existing customer picked from the search (a
             // customer_id arrives) or someone the officer typed straight in — in
             // which case the detail fields below are required and the server

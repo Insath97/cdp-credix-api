@@ -15,6 +15,7 @@ use App\Traits\ActivityLogTrait;
 use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -29,6 +30,33 @@ class AuthController extends Controller
      * the gateway's own delivery delay is spent out of this window.
      */
     public const LOGIN_OTP_TTL_SECONDS = 60;
+
+    /**
+     * How many failed sign-in attempts one account may collect from one
+     * address before it is made to wait, and how long that wait is.
+     *
+     * Counted per account, not per address, because a branch office reaches
+     * the API from a single NAT address: a per-address count would let one
+     * officer's fat-fingered morning lock out the whole branch. The address
+     * is still part of the key so that an attacker elsewhere cannot lock a
+     * real user out of their own account by failing on purpose.
+     */
+    public const LOGIN_MAX_ATTEMPTS = 5;
+
+    public const LOGIN_DECAY_SECONDS = 900;
+
+    /**
+     * The throttle key for one account seen from one address.
+     *
+     * Lower-cased so that `Admin` and `admin` share a counter instead of
+     * handing an attacker a fresh allowance per capitalisation.
+     */
+    private function loginThrottleKey(Request $request): string
+    {
+        $login = (string) ($request->input('login') ?? $request->input('email') ?? '');
+
+        return 'login:' . mb_strtolower(trim($login)) . '|' . $request->ip();
+    }
 
     /**
      * Admin / Customer Login
@@ -54,6 +82,28 @@ class AuthController extends Controller
                 ], 422);
             }
 
+            // Everything below this point is cheap to ask for and answers in
+            // constant wording, which is exactly what makes it worth guessing
+            // against. Refuse before touching the database, so a locked-out
+            // key costs an attacker a query as well as a wait.
+            $throttleKey = $this->loginThrottleKey($request);
+
+            if (RateLimiter::tooManyAttempts($throttleKey, self::LOGIN_MAX_ATTEMPTS)) {
+                $retryAfter = RateLimiter::availableIn($throttleKey);
+
+                Log::warning('Login throttled', [
+                    'ip' => $request->ip(),
+                    'retry_after' => $retryAfter,
+                ]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Too many failed login attempts. Please try again in '
+                        . ceil($retryAfter / 60) . ' minute(s).',
+                    'retry_after' => $retryAfter,
+                ], 429)->header('Retry-After', $retryAfter);
+            }
+
             $loginVal = $request->input('login');
             $passwordVal = $request->input('password');
 
@@ -71,11 +121,19 @@ class AuthController extends Controller
             }
 
             if (!$user || !Hash::check($passwordVal, $user->password)) {
+                RateLimiter::hit($throttleKey, self::LOGIN_DECAY_SECONDS);
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Invalid credentials'
                 ], 401);
             }
+
+            // The password was right. Everything that can still refuse this
+            // request below -- deactivated account, no role, missing phone --
+            // is a fact about the account, not a guess at it, so none of them
+            // should burn an attempt or leave the counter standing.
+            RateLimiter::clear($throttleKey);
 
             /** @var \PHPOpenSourceSaver\JWTAuth\JWTGuard $guard */
             $guard = Auth::guard('api');

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Setting;
+use App\Services\GroupLoanWorkflowService;
 use Illuminate\Validation\Rule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
@@ -81,12 +82,10 @@ class UpdateGroupLoanRequest extends FormRequest
                     $fail('The competency must be one of the configured options: ' . implode(', ', $allowed) . '.');
                 }
             }],
-            // Declared headcount, floored at one to match creation: a
-            // Development Fund loan for a single borrower comes through the
-            // same endpoint and would otherwise be uneditable. Dropping a
-            // group below two members is still refused by the member removal
-            // endpoint, which is where that rule belongs.
-            'number_of_members' => 'nullable|integer|min:1',
+            // Declared headcount, floored at two to match creation. An edit
+            // must not be a way round the floor the create request enforces;
+            // member removal refuses the same drop.
+            'number_of_members' => 'nullable|integer|min:' . GroupLoanWorkflowService::MIN_MEMBERS,
 
             // is_active is deliberately not accepted here: it has its own
             // activate/deactivate/toggle-status endpoints, which refuse to

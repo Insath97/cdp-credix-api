@@ -47,6 +47,30 @@ return [
         'username' => env('DIALOG_SMS_USERNAME'),
         'password' => env('DIALOG_SMS_PASSWORD'),
         'mask' => env('DIALOG_SMS_MASK', 'CDP EMPIRE'),
+
+        // The only handsets this system is allowed to text, as a comma
+        // separated list in SMS_ALLOWED_NUMBERS.
+        //
+        // While the system is tested against real customer records, an overdue
+        // reminder or a recovery escalation aimed at a borrower's own number
+        // would reach that borrower. This list is the stop: anything addressed
+        // elsewhere is redirected to these handsets with its intended
+        // recipient written into the message, so the text can still be read
+        // and checked.
+        //
+        // No numbers are named here on purpose -- which handsets are in use is
+        // an environment matter, not a committed one, and a list baked into
+        // this file would follow the code onto the live server. Empty, as it
+        // is on production, means no restriction at all.
+        'allowed_numbers' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('SMS_ALLOWED_NUMBERS', ''))
+        ))),
+    ],
+    
+    'giam' => [
+    'base_url' => env('GIAM_BASE_URL'),
+    'api_key' => env('GIAM_API_KEY'),
     ],
 
 ];
