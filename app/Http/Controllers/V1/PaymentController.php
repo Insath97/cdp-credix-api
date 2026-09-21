@@ -110,6 +110,34 @@ class PaymentController extends Controller implements HasMiddleware
     }
 
     /**
+     * Who hears about this payment.
+     *
+     * A Group Loan's members each owe their own share and pay it separately,
+     * so a receipt belongs to the one member who paid -- the same per-member
+     * rule arrearsGroups(), SendInstallmentDueReminders::recipientsFor() and
+     * the per-member recovery cases already follow. Texting the whole group
+     * meant a five-member loan sent every member five identical "Payment
+     * received" messages a cycle, one for each sibling's instalment.
+     *
+     * Individual and Joint Loans fall through to every attached customer:
+     * there the loan itself is the debtor and co-borrowers are jointly liable,
+     * so all of them are entitled to the receipt.
+     */
+    protected function paymentRecipients(Payment $payment, LoanApplication $loanApplication): \Illuminate\Support\Collection
+    {
+        if ($loanApplication->isGroupLoan() && $payment->customer_id) {
+            $payer = $loanApplication->notifiableCustomers()
+                ->firstWhere('id', $payment->customer_id);
+
+            if ($payer) {
+                return collect([$payer]);
+            }
+        }
+
+        return $loanApplication->notifiableCustomers();
+    }
+
+    /**
      * Store a newly created payment and apply it to the installment/loan balance.
      */
     /**
@@ -135,7 +163,7 @@ class PaymentController extends Controller implements HasMiddleware
             : '';
 
         $message = sprintf(
-            'CDP Credix: Payment %s received. %s paid %s on %s against loan %s.%s',
+            'CDP Capital: Payment %s received. %s paid %s on %s against loan %s.%s',
             $payment->receipt_no,
             $payer,
             number_format((float) $payment->amount, 2),
@@ -369,7 +397,7 @@ class PaymentController extends Controller implements HasMiddleware
 
                 $isJoint = $loanApplication->isJointLoan();
 
-                foreach ($notify ? $loanApplication->notifiableCustomers() : collect() as $notifyCustomer) {
+                foreach ($notify ? $this->paymentRecipients($payment, $loanApplication) : collect() as $notifyCustomer) {
                     $receivedMessage = "Payment received successfully.\nAmount: {$payment->amount}\nThank you for your payment.";
 
                     if (!empty($notifyCustomer->phone_primary)) {
@@ -396,7 +424,7 @@ class PaymentController extends Controller implements HasMiddleware
                     // stage -- has to be told it is over too. Without this the
                     // last word they ever hear on it is the escalation SMS.
                     if ($casesResolved > 0) {
-                        $recoveryClosedMessage = "CDP Credix: Thank you. Your overdue amount has been settled and the recovery action on your loan account ({$loanApplication->reference()}) is now closed.";
+                        $recoveryClosedMessage = "Thank you. Your overdue amount has been settled and the recovery action on your loan account ({$loanApplication->reference()}) is now closed.";
 
                         if (!empty($notifyCustomer->phone_primary)) {
                             $this->notificationService->sendSms(

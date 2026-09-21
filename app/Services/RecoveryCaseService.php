@@ -282,7 +282,7 @@ class RecoveryCaseService
         $customer = $case->customer ?? $loanApplication?->customer;
 
         $summary = sprintf(
-            'CDP Credix: Recovery case %s is now %s and no longer needs follow-up. Loan %s%s. %s',
+            'CDP Capital: Recovery case %s is now %s and no longer needs follow-up. Loan %s%s. %s',
             $case->case_no,
             $status === 'closed' ? 'closed -- the loan is fully repaid' : 'resolved',
             $loanApplication?->reference() ?? '-',
@@ -339,7 +339,7 @@ class RecoveryCaseService
         }
 
         $customerName = $loanApplication->customer?->full_name ?? 'a customer';
-        $message = "CDP Credix: {$case->case_no} opened for {$stageLabel} ({$loanApplication->reference()}, {$customerName}). Please assign an agent.";
+        $message = "CDP Capital: {$case->case_no} opened for {$stageLabel} ({$loanApplication->reference()}, {$customerName}). Please assign an agent.";
 
         foreach ($staffRole->users as $staffUser) {
             $staffPhone = $staffUser->employee?->phone_primary;
@@ -371,7 +371,7 @@ class RecoveryCaseService
         $customer = $loanApplication?->customer;
 
         $summary = sprintf(
-            'CDP Credix: Recovery case %s has been assigned to you. Loan %s, overdue %s.%s',
+            'CDP Capital: Recovery case %s has been assigned to you. Loan %s, overdue %s.%s',
             $case->case_no,
             $loanApplication?->reference() ?? '-',
             number_format((float) $case->overdue_amount, 2),

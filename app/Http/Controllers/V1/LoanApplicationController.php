@@ -252,7 +252,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                         $this->notificationService->sendSms(
                             'application_submitted',
                             $staffPhone,
-                            'CDP Credix: New loan application pending for review.',
+                            'CDP Capital: New loan application pending for review.',
                             ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
                         );
                     }

@@ -23,7 +23,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -139,45 +138,38 @@ class CustomerController extends Controller implements HasMiddleware
                 }
             }
 
-            if (!empty($data['create_user_account']) && !empty($data['user_username'])) {
-                $plainPassword = $data['user_password'] ?? Str::random(10);
-                $user = User::create([
-                    'name' => $customer->full_name,
-                    'username' => $data['user_username'],
-                    'email' => $customer->email,
-                    'password' => Hash::make($plainPassword),
-                    // Stamped at creation: the password was chosen for this
-                    // account on purpose, not defaulted to something guessable.
-                    // EnsurePasswordChanged holds accounts whose password
-                    // nobody deliberately picked -- and the customer portal has
-                    // no change-password screen, so leaving this null would
-                    // lock every new customer out of it with no way back.
-                    'password_changed_at' => now(),
-                    'user_type' => 'customer',
-                    'customer_id' => $customer->id,
-                    'is_active' => true,
-                    'can_login' => true,
-                ]);
-            } else {
-                $plainPassword = Str::random(10);
-                $user = User::create([
-                    'name' => $customer->full_name,
-                    'username' => $customer->customer_code,
-                    'email' => $customer->email,
-                    'password' => Hash::make($plainPassword),
-                    // Stamped at creation: the password was chosen for this
-                    // account on purpose, not defaulted to something guessable.
-                    // EnsurePasswordChanged holds accounts whose password
-                    // nobody deliberately picked -- and the customer portal has
-                    // no change-password screen, so leaving this null would
-                    // lock every new customer out of it with no way back.
-                    'password_changed_at' => now(),
-                    'user_type' => 'customer',
-                    'customer_id' => $customer->id,
-                    'is_active' => true,
-                    'can_login' => true,
-                ]);
-            }
+            // The password is the one the operator typed on the registration
+            // form. It is never generated here: a generated password is a
+            // credential nobody chose, texted in clear to the customer, and
+            // regenerated on every resubmission -- which is how one customer
+            // came to receive four welcome messages carrying four different
+            // passwords for the same CUS0001 account. CreateCustomerRequest
+            // makes user_password required, so a frontend that stops sending
+            // it fails loudly instead of silently inventing one.
+            //
+            // Username follows the same shape it always did: the one the form
+            // supplied, falling back to the customer code.
+            $plainPassword = $data['user_password'];
+            $user = User::create([
+                'name' => $customer->full_name,
+                'username' => !empty($data['create_user_account']) && !empty($data['user_username'])
+                    ? $data['user_username']
+                    : $customer->customer_code,
+                'email' => $customer->email,
+                'password' => Hash::make($plainPassword),
+                // Stamped at creation: the password was chosen for this
+                // account on purpose, not defaulted to something guessable.
+                // EnsurePasswordChanged holds accounts whose password
+                // nobody deliberately picked -- and the customer portal has
+                // no change-password screen, so leaving this null would
+                // lock every new customer out of it with no way back.
+                'password_changed_at' => now(),
+                'user_type' => 'customer',
+                'customer_id' => $customer->id,
+                'is_active' => true,
+                'can_login' => true,
+            ]);
+
             if (!empty($data['guarantors'])) {
                 foreach ($data['guarantors'] as $guarantorData) {
                     // Documents ride in on the guarantor payload but belong to
@@ -271,13 +263,13 @@ class CustomerController extends Controller implements HasMiddleware
 
             $customer->load(['customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
 
-            $credentialsMessage = "Welcome! Your CDP Credix account has been created.\nUsername: {$user->username}\nPassword: {$plainPassword}\nPlease keep this information secure and change your password after logging in.";
+            $credentialsMessage = "Welcome! Your account has been created.\nUsername: {$user->username}\nPassword: {$plainPassword}\nPlease keep this information secure and change your password after logging in.";
 
             if (!empty($customer->email)) {
                 $emailNotification = $this->notificationService->sendEmail(
                     'customer_registration_credentials',
                     $customer->email,
-                    'Your CDP Credix Account Credentials',
+                    'Your CDP Capital Account Credentials',
                     $credentialsMessage,
                     ['customer_id' => $customer->id, 'user_id' => $user->id],
                     'Login credentials email sent to customer.'

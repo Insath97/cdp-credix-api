@@ -21,10 +21,14 @@ return new class extends Migration
             $table->string('recipient');
             $table->string('subject')->nullable();
             $table->text('message');
+
+            $table->char('message_hash', 64)->nullable();
             $table->enum('status', ['pending', 'sent', 'failed'])->default('pending')->index();
             $table->text('error')->nullable();
             $table->timestamp('sent_at')->nullable();
             $table->timestamps();
+
+            $table->index(['type', 'channel', 'message_hash', 'created_at'], 'notifications_dedupe_index');
         });
     }
 

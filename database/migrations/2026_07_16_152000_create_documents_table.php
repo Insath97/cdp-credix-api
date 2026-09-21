@@ -28,10 +28,10 @@ return new class extends Migration
             $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('uploaded_at')->useCurrent();
 
-            $table->foreignId('reviewed_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamp('reviewed_at')->nullable();
-            $table->foreignId('verified_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->timestamp('verified_at')->nullable();
+            // No reviewed_by / verified_by here. A customer's document is
+            // shared by every loan they take, so a single stamp on this row
+            // cannot say who checked it on which application -- see
+            // create_loan_documents_table, which owns that per-application fact.
 
             $table->enum('status', ['active', 'rejected', 'expired'])->default('active');
             $table->text('remarks')->nullable();

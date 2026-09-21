@@ -8,7 +8,9 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('installments:send-due-reminders')->daily();
+// withoutOverlapping() like every other job in the nightly chain: this one
+// texts real borrowers, so a second overlapping run is a second SMS.
+Schedule::command('installments:send-due-reminders')->dailyAt('00:15')->withoutOverlapping();
 
 Schedule::command('loans:mark-overdue')->dailyAt('00:30')->withoutOverlapping();
 Schedule::command('installments:send-overdue-sms')->dailyAt('01:00')->withoutOverlapping();
