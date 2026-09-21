@@ -4,6 +4,7 @@ namespace App\Http\Controllers\V1;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -37,7 +38,7 @@ class DocumentController extends Controller implements HasMiddleware
             // customer's name, phone, email, product, branch and status --
             // answered any authenticated principal, a customer's portal token
             // included.
-            new Middleware('permission:Document Index', only: ['index', 'show', 'applications']),
+            new Middleware('permission:Document Index', only: ['index', 'show', 'applications', 'file']),
             new Middleware('permission:Document Create', only: ['store']),
             new Middleware('permission:Document Update', only: ['update']),
             new Middleware('permission:Document Delete', only: ['destroy']),
@@ -56,9 +57,10 @@ class DocumentController extends Controller implements HasMiddleware
      * Documents that hang off no loan application at all (the customer
      * registration form uploads those) are never frozen.
      *
-     * Returns a 422 response when the change must be refused, or null.
+     * @param int|string|null $loanApplicationId
+     * @return \Illuminate\Http\JsonResponse|null Returns a 422 response when the change must be refused, or null.
      */
-    private function frozenApplicationResponse($loanApplicationId)
+    private function frozenApplicationResponse(int|string|null $loanApplicationId): ?JsonResponse
     {
         if (empty($loanApplicationId)) {
             return null;
@@ -99,11 +101,6 @@ class DocumentController extends Controller implements HasMiddleware
                 'guarantor:id,customer_id,full_name,id_number,employment_status,employer_name',
                 'loanApplication.application:id,application_no',
                 'uploader:'.User::SUMMARY_COLUMNS,
-                // Who stamped this paper off during review and then again
-                // during verification — so each document card can print a real
-                // name ("Reviewed by Alice · 12 Jan") instead of two bare ids.
-                'reviewer:'.User::SUMMARY_COLUMNS,
-                'verifier:'.User::SUMMARY_COLUMNS,
             ]);
 
             if ($request->has('search')) {
@@ -455,6 +452,51 @@ class DocumentController extends Controller implements HasMiddleware
                 'status' => 'error',
                 'message' => 'Failed to update document',
                 'error' => config('app.debug') ? $th->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Stream a stored document file for viewing.
+     *
+     * Files are written to private storage (see FileUploadTrait::storeUploadedFile),
+     * so a public path like /uploads/documents/... finds nothing on disk. This is
+     * the authenticated route that turns the stored path into readable bytes. The
+     * caller's path is resolved and containment-checked, exactly like the
+     * customer-portal download, so a row pointing at something outside its base
+     * directory is refused rather than streamed.
+     */
+    public function file(Request $request)
+    {
+        try {
+            $path = $request->query('path');
+
+            if (!is_string($path) || trim($path) === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'File path is required',
+                ], 422);
+            }
+
+            $absolutePath = $this->resolveStoredFile($path);
+
+            if ($absolutePath === null) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Document file is missing',
+                ], 404);
+            }
+
+            $this->logActivity('Show', 'Document', "Document file opened: {$path}", [
+                'user_id' => Auth::id(),
+            ]);
+
+            return response()->file($absolutePath);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to open document',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
     }

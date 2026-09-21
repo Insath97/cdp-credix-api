@@ -215,8 +215,9 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     //
     // 'documents/applications' is registered BEFORE the apiResource, or
     // documents/{document} swallows it and Laravel tries to look up a document
-    // with the id "applications".
+    // with the id "applications". The same ordering protects 'file'.
     Route::get('documents/applications', [DocumentController::class, 'applications']);
+    Route::get('documents/file', [DocumentController::class, 'file']);
     Route::apiResource('documents', DocumentController::class);
 
     // Loan Terms
