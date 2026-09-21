@@ -93,6 +93,11 @@ class DocumentController extends Controller implements HasMiddleware
                 'guarantor:id,customer_id,full_name,id_number,employment_status,employer_name',
                 'loanApplication.application:id,application_no',
                 'uploader:'.User::SUMMARY_COLUMNS,
+                // Who stamped this paper off during review and then again
+                // during verification — so each document card can print a real
+                // name ("Reviewed by Alice · 12 Jan") instead of two bare ids.
+                'reviewer:'.User::SUMMARY_COLUMNS,
+                'verifier:'.User::SUMMARY_COLUMNS,
             ]);
 
             if ($request->has('search')) {

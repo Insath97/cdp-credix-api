@@ -37,5 +37,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('otp-verify', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());
         });
+
+        // Login form/auth endpoint throttle so attackers cannot spray the
+        // password without tripping a block. Keyed on email (when present) so a
+        // distributed attack on one account hits a shared, per-minute cap.
+        RateLimiter::for('login', function (Request $request) {
+            return Limit::perMinute(5)->by($request->input('username', $request->ip()));
+        });
     }
 }
