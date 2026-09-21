@@ -36,7 +36,7 @@ class UpdateLoanInstallmentRequest extends FormRequest
                 })->ignore($id),
             ],
             'due_date'               => 'nullable|date',
-            'amount_due'             => 'nullable|numeric|min:0',
+            'amount_due'             => 'sometimes|required|numeric|min:0',
             'amount_paid'            => 'nullable|numeric|min:0',
             'penalty_amount'         => 'nullable|numeric|min:0',
             'penalty_waived_by'      => 'nullable|integer|exists:users,id',

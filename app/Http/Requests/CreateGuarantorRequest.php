@@ -31,7 +31,7 @@ class CreateGuarantorRequest extends FormRequest
             'id_number' => 'required|string|max:100',
             'id_image' => 'nullable|string|max:500',
             'date_of_birth' => 'nullable|date|before:today',
-            'phone_primary' => 'nullable|string|max:20',
+            'phone_primary' => 'required|string|max:20',
 
             // A guarantor is asked to prove income one of two ways, and the
             // status decides which block is mandatory. Neither block is

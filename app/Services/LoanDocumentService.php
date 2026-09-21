@@ -46,12 +46,42 @@ class LoanDocumentService
                 ->unique()
                 ->all();
 
+            // Only the guarantors standing on THIS application.
+            //
+            // A guarantor belongs to a customer (guarantors.customer_id), and
+            // their papers are stamped with that customer's id as well as
+            // their own. Selecting by customer alone therefore dragged every
+            // guarantor the customer had ever named onto every later loan:
+            // Kumar's second loan arrived carrying Rifkey's and Inshtha's
+            // documents although Ifham and Sulani were the ones guaranteeing
+            // it. The guarantor relationship is the loan's, not the
+            // customer's, so it is read off the loan's own pivot.
+            $guarantorIds = $loanApplication->loanApplicationGuarantors()
+                ->pluck('guarantor_id')
+                ->filter()
+                ->unique()
+                ->all();
+
             $documentIds = Document::query()
-                ->where(function ($query) use ($loanApplication, $customerIds) {
+                ->where(function ($query) use ($loanApplication, $customerIds, $guarantorIds) {
+                    // Uploaded for this application itself.
                     $query->where('loan_application_id', $loanApplication->id);
 
+                    // The borrowers' own papers -- and only their own. The
+                    // guarantor_id guard is what keeps this branch to the
+                    // customer's file, since a guarantor's document carries
+                    // the customer's id too.
                     if (!empty($customerIds)) {
-                        $query->orWhereIn('customer_id', $customerIds);
+                        $query->orWhere(function ($q) use ($customerIds) {
+                            $q->whereIn('customer_id', $customerIds)
+                              ->whereNull('guarantor_id');
+                        });
+                    }
+
+                    // This loan's guarantors' papers, by the loan's own
+                    // guarantor relationship and nothing else.
+                    if (!empty($guarantorIds)) {
+                        $query->orWhereIn('guarantor_id', $guarantorIds);
                     }
                 })
                 ->pluck('id');
@@ -131,6 +161,45 @@ class LoanDocumentService
                 'column'              => $byColumn,
                 'error'               => $th->getMessage(),
             ]);
+        }
+    }
+
+    /**
+     * A guarantor has been taken off the application: drop the links to their
+     * documents, but only the ones nobody has checked yet.
+     *
+     * The link says "this paper is part of this file". Once the guarantor is
+     * gone their papers are not, so an untouched link goes with them. A link
+     * carrying a review or verify stamp stays: it records that an officer
+     * looked at that document on this application, and removing a guarantor
+     * afterwards must not erase what was seen.
+     *
+     * @return int how many links were removed
+     */
+    public function detachGuarantorDocuments(LoanApplication $loanApplication, int $guarantorId): int
+    {
+        try {
+            $documentIds = Document::withTrashed()
+                ->where('guarantor_id', $guarantorId)
+                ->pluck('id');
+
+            if ($documentIds->isEmpty()) {
+                return 0;
+            }
+
+            return LoanDocument::where('loan_application_id', $loanApplication->id)
+                ->whereIn('document_id', $documentIds)
+                ->whereNull('reviewed_by')
+                ->whereNull('verified_by')
+                ->delete();
+        } catch (\Throwable $th) {
+            Log::warning('Failed to detach guarantor documents', [
+                'loan_application_id' => $loanApplication->id,
+                'guarantor_id'        => $guarantorId,
+                'error'               => $th->getMessage(),
+            ]);
+
+            return 0;
         }
     }
 }

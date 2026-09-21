@@ -45,7 +45,7 @@ class UpdateGroupLoanRequest extends FormRequest
     {
         return [
             'branch_id'      => 'nullable|integer|exists:branches,id',
-            'group_name'     => 'nullable|string|max:255',
+            'group_name'     => 'sometimes|required|string|max:255',
             'term_months'    => 'nullable|integer|min:1',
 
             // The same three fields the create form collects, so the edit form

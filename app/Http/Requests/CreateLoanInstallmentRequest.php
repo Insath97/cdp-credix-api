@@ -88,6 +88,9 @@ class CreateLoanInstallmentRequest extends FormRequest
                 }),
             ],
             'due_date'               => 'required|date',
+        // Absent entirely before this. The form has always required it; an
+        // installment with no amount is a row that can never be repaid.
+        'amount_due'             => 'required|numeric|min:0',
             'amount_paid'            => 'nullable|numeric|min:0',
             'penalty_amount'         => 'nullable|numeric|min:0',
             'penalty_waived_by'      => 'nullable|integer|exists:users,id',

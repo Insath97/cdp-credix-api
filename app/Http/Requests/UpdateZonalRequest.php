@@ -25,9 +25,9 @@ class UpdateZonalRequest extends FormRequest
     {
         $id = $this->route('zonal');
         return [
-            'name' => 'sometimes|string|max:255',
-            'code' => 'sometimes|string|max:10|unique:zonals,code,' . $id,
-            'province_id' => 'sometimes|exists:provinces,id',
+            'name' => 'sometimes|required|string|max:255',
+            'code' => 'sometimes|required|string|max:10|unique:zonals,code,' . $id,
+            'province_id' => 'sometimes|required|exists:provinces,id',
             'is_active' => 'sometimes|boolean',
         ];
     }

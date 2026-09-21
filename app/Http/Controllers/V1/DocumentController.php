@@ -122,30 +122,17 @@ class DocumentController extends Controller implements HasMiddleware
             if ($request->filled('loan_application_id')) {
                 $loanApplicationId = $request->loan_application_id;
 
-                // A document can name a customer only -- the customer
-                // registration form and the New Loan customer step both attach
-                // files before the application exists -- and a customer's
-                // papers are meant to follow them across loans. The document
-                // view for one application must still surface those rows, or
-                // "what did the customer hand in" silently drops everything
-                // they uploaded without a loan_application_id.
-                $customerIds = LoanApplication::where('id', $loanApplicationId)
-                    ->with(['loanApplicationCustomers' => fn ($query) => $query->select('loan_application_id', 'customer_id')])
-                    ->get(['id', 'customer_id'])
-                    ->flatMap(fn ($application) => array_merge(
-                        [$application->customer_id],
-                        $application->loanApplicationCustomers->pluck('customer_id')->all(),
-                    ))
-                    ->filter()
-                    ->unique()
-                    ->values()
-                    ->all();
-
-                $query->where(function ($query) use ($loanApplicationId, $customerIds) {
-                    $query->where('loan_application_id', $loanApplicationId);
-                    if (!empty($customerIds)) {
-                        $query->orWhereIn('customer_id', $customerIds);
-                    }
+                // What belongs to this file is exactly what loan_documents
+                // says it is: the papers uploaded for the application, the
+                // borrowers' own, and those of the guarantors standing on THIS
+                // loan. The old customer_id OR-filter is gone -- a guarantor's
+                // document carries the customer's id too, so it surfaced every
+                // guarantor the customer ever had on every one of their loans.
+                // loan_application_id is kept as a belt-and-braces for a row
+                // written before it was indexed.
+                $query->where(function ($query) use ($loanApplicationId) {
+                    $query->whereHas('loanDocuments', fn ($q) => $q->where('loan_application_id', $loanApplicationId))
+                        ->orWhere('loan_application_id', $loanApplicationId);
                 });
 
                 // Narrow the stamps to the application being looked at, so
@@ -274,6 +261,18 @@ class DocumentController extends Controller implements HasMiddleware
 
         if ($document->loan_application_id) {
             $applications = LoanApplication::where('id', $document->loan_application_id)->get();
+        } elseif ($document->guarantor_id) {
+            // A guarantor's paper joins the file of every application that
+            // guarantor is standing on -- and only those. It carries the
+            // customer's id as well, so this branch must come before the
+            // customer one or it would fall through to every loan the
+            // customer holds.
+            $applications = LoanApplication::whereHas(
+                'loanApplicationGuarantors',
+                fn ($q) => $q->where('guarantor_id', $document->guarantor_id)
+            )->get()->filter(
+                fn (LoanApplication $application) => $application->status->allowsDocumentChanges()
+            );
         } elseif ($document->customer_id) {
             // Only files still open to change. A disbursed or closed loan's
             // paperwork is settled, and LoanApplicationStatus::allowsDocumentChanges()

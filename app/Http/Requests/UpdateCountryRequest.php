@@ -25,8 +25,8 @@ class UpdateCountryRequest extends FormRequest
     {
         $id = $this->route('country');
         return [
-            'name' => 'sometimes|string|max:255',
-            'code' => 'sometimes|string|max:10|unique:countries,code,' . $id,
+            'name' => 'sometimes|required|string|max:255',
+            'code' => 'sometimes|required|string|max:10|unique:countries,code,' . $id,
             'description' => 'nullable|string|max:1000',
             'is_active' => 'sometimes|boolean',
         ];

@@ -44,18 +44,22 @@ trait FileUploadTrait
         $fileName = $this->buildFileName($file, $prefix);
         $directory = "uploads/{$module}";
 
-        // Written to private storage, NOT public_path().
+        // Written under public/, by explicit instruction.
         //
-        // These are identity cards, bank statements and pay slips. public/ is
-        // served straight off disk by the web server, so every file written
-        // there was downloadable by anyone who knew or guessed the name -- no
-        // token, no session, no permission, and no trace in the activity log.
+        // KNOWN EXPOSURE, accepted deliberately. These are identity cards,
+        // bank statements and pay slips. public/ is served straight off disk
+        // by the web server, so anything here is downloadable by anyone who
+        // has the URL -- no token, no session, no permission check, and no
+        // entry in the activity log. The 8-character token buildFileName()
+        // appends makes a name hard to guess; it does not make it private, and
+        // a URL once shared or leaked cannot be revoked.
         //
-        // The returned string keeps exactly the shape the database already
-        // holds, so existing rows and new rows stay indistinguishable to every
-        // caller; resolveStoredFile() below is what knows where the bytes
-        // actually are.
-        $file->storeAs($directory, $fileName, 'local');
+        // If that is ever reconsidered, the change is one line here plus
+        // moving the files: everything else already works either way, because
+        // the returned string is a path relative to the serving root and
+        // resolveStoredFile() searches both locations.
+        $this->createDirectory($directory);
+        $file->move(public_path($directory), $fileName);
 
         return "{$directory}/{$fileName}";
     }
@@ -63,8 +67,9 @@ trait FileUploadTrait
     /**
      * Turn a stored path into an absolute readable one, or null.
      *
-     * Looks in private storage first, then falls back to the legacy public
-     * location so documents uploaded before the move still open.
+     * Looks under public/ first, where uploads are written, then falls back to
+     * private storage so anything uploaded while that was the target still
+     * opens. Both are searched on every call, so the two eras coexist.
      *
      * Both candidates are resolved and checked to be inside their own base
      * directory. That containment check is the thing standing between a stored
@@ -78,9 +83,9 @@ trait FileUploadTrait
         }
 
         $candidates = [
+            public_path(),
             storage_path('app/private'),
             storage_path('app'),
-            public_path(),
         ];
 
         foreach ($candidates as $base) {

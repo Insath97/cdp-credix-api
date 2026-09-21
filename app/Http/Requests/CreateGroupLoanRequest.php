@@ -70,7 +70,7 @@ class CreateGroupLoanRequest extends FormRequest
                 }),
             ],
             'branch_id'         => 'nullable|integer|exists:branches,id',
-            'group_name'        => 'nullable|string|max:255',
+            'group_name'        => 'required|string|max:255',
             // A group is at least two people. Every submission through this
             // endpoint is the group tier, so the floor is unconditional: the
             // declared headcount may never be one.

@@ -25,9 +25,9 @@ class UpdateRegionRequest extends FormRequest
     {
         $id = $this->route('region');
         return [
-            'name' => 'sometimes|string|max:255',
-            'code' => 'sometimes|string|max:10|unique:regions,code,' . $id,
-            'zonal_id' => 'sometimes|exists:zonals,id',
+            'name' => 'sometimes|required|string|max:255',
+            'code' => 'sometimes|required|string|max:10|unique:regions,code,' . $id,
+            'zonal_id' => 'sometimes|required|exists:zonals,id',
             'is_active' => 'sometimes|boolean',
         ];
     }

@@ -81,7 +81,7 @@ class CreatePaymentRequest extends FormRequest
                 },
             ],
             'amount'               => 'required|numeric|min:0.01',
-            'payment_method'       => 'nullable|string|in:cash,bank_transfer,cheque,online',
+            'payment_method'       => 'required|string|in:cash,bank_transfer,cheque,online',
             'remarks'              => 'nullable|string',
             'paid_at'              => 'nullable|date',
         ];

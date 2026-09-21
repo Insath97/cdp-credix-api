@@ -998,6 +998,18 @@ class GroupLoanController extends Controller implements HasMiddleware
     public function resubmit(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $groupLoan = GroupLoan::find($id);
 
             if (!$groupLoan) {
@@ -1026,7 +1038,10 @@ class GroupLoanController extends Controller implements HasMiddleware
             $groupLoan = $this->workflowService->resubmit(
                 $groupLoan,
                 Auth::id(),
-                $request->input('remarks') ?: 'Documents resubmitted by the group',
+                // No fallback wording any more: remarks are required, so the
+                // trail records what the group actually said rather than a
+                // sentence the server made up on their behalf.
+                $request->input('remarks'),
                 [
                     'review_failure_reason' => null,
                     'review_failed_at'      => null,
@@ -1081,6 +1096,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'min:0.01',
                     'max:' . (float) $groupLoan->requested_amount,
                 ],
+                'remarks'         => 'required|string|min:3',
             ], [
                 'approved_amount.max' => 'The approved amount cannot be more than the requested amount of '
                     . number_format((float) $groupLoan->requested_amount, 2)
@@ -1354,6 +1370,18 @@ class GroupLoanController extends Controller implements HasMiddleware
     public function cancel(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $groupLoan = GroupLoan::find($id);
 
             if (!$groupLoan) {

@@ -1029,6 +1029,18 @@ class LoanApplicationController extends Controller implements HasMiddleware
     public function resubmit(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $loanApplication = LoanApplication::find($id);
 
             if (!$loanApplication) {
@@ -1053,7 +1065,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 $loanApplication,
                 LoanApplicationStatus::Submitted,
                 Auth::id(),
-                $request->input('remarks') ?: 'Documents resubmitted by the customer',
+                // No fallback wording any more: remarks are required, so the
+                // trail records what the customer actually said rather than a
+                // sentence the server made up on their behalf.
+                $request->input('remarks'),
                 [
                     'review_failure_reason' => null,
                     'review_failed_at'      => null,
@@ -1115,6 +1130,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 ],
 
                 'processing_fee'  => 'nullable|numeric|min:0',
+                'remarks'         => 'required|string|min:3',
             ], [
                 'approved_amount.max' => 'The approved amount cannot be more than the requested amount of '
                     . number_format((float) $loanApplication->requested_amount, 2)
@@ -1139,9 +1155,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'approved_at' => now(),
                 'approved_amount' => $approvedAmount,
             ];
-            if ($request->filled('remarks')) {
-                $extra['approval_remarks'] = $request->input('remarks');
-            }
+            $extra['approval_remarks'] = $request->input('remarks');
 
             $interest = round($approvedAmount * $loanApplication->interest_rate / 100, 2);
             $totalRepayment = round($approvedAmount + $interest, 2);
@@ -1475,6 +1489,18 @@ class LoanApplicationController extends Controller implements HasMiddleware
     public function cancel(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $loanApplication = LoanApplication::find($id);
 
             if (!$loanApplication) {
