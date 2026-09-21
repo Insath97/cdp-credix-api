@@ -436,6 +436,13 @@ class DocumentController extends Controller implements HasMiddleware
 
             $document->update($data);
 
+            // Moving a document to another application, or onto a customer,
+            // changes which files it belongs to. Re-index so the checklist it
+            // has just joined can tick it. The link it is leaving is deliberately
+            // left alone: an officer's stamp is a record of what they saw, and
+            // the audit trail should not quietly lose it.
+            $this->indexNewDocument($document->fresh());
+
             $this->logActivity('UPDATE', 'Document', "Updated document: {$document->document_name}", $data);
 
             return response()->json([
