@@ -28,6 +28,7 @@ use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Services\GroupLoanWorkflowService;
+use App\Services\LoanDocumentService;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Validator;
 use Spatie\Permission\Models\Role;
@@ -39,6 +40,7 @@ class GroupLoanController extends Controller implements HasMiddleware
     public function __construct(
         protected GroupLoanWorkflowService $workflowService,
         protected NotificationService $notificationService,
+        protected LoanDocumentService $loanDocumentService,
     ) {
     }
 
@@ -349,6 +351,13 @@ class GroupLoanController extends Controller implements HasMiddleware
 
                 return $groupLoan;
             });
+
+            // Index the file's documents, the same as an individual loan.
+            // Every member's own papers count towards the group's file, and
+            // they are attached by now.
+            if ($application = $groupLoan->loanApplication) {
+                $this->loanDocumentService->syncForApplication($application);
+            }
 
             $this->logActivity('CREATE', 'GroupLoan', "Created group loan ID: {$groupLoan->id}", $data);
 
@@ -700,6 +709,13 @@ class GroupLoanController extends Controller implements HasMiddleware
 
             $groupLoan = $this->workflowService->verify($groupLoan, Auth::id(), $request->input('remarks'), $extra);
 
+            $this->markCheckedDocuments(
+                $groupLoan,
+                $request->has('verified_document_ids') ? (array) $request->input('verified_document_ids', []) : null,
+                'verified_by',
+                'verified_at'
+            );
+
             $verb = $isReverification ? 're-verified' : 'verified';
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} {$verb}", [
@@ -735,6 +751,23 @@ class GroupLoanController extends Controller implements HasMiddleware
      * approval. Records who reviewed it and cascades the stage to the group's
      * single loan application; the header itself stays Available.
      */
+    /**
+     * Record which of the group's documents an officer ticked off.
+     *
+     * A group loan's paperwork hangs off its loan application, exactly like an
+     * individual one's, so the stamp lands in loan_documents against that
+     * application. Members' own documents are shared with any other loan they
+     * hold, which is precisely why the stamp cannot live on the document row.
+     */
+    private function markCheckedDocuments(GroupLoan $groupLoan, ?array $documentIds, string $byColumn, string $atColumn): void
+    {
+        if (!$application = $groupLoan->loanApplication) {
+            return;
+        }
+
+        $this->loanDocumentService->markChecked($application, $documentIds, $byColumn, $atColumn);
+    }
+
     public function review(Request $request, string $id)
     {
         try {
@@ -771,6 +804,13 @@ class GroupLoanController extends Controller implements HasMiddleware
             }
 
             $groupLoan = $this->workflowService->review($groupLoan, Auth::id(), $request->input('remarks'), $extra);
+
+            $this->markCheckedDocuments(
+                $groupLoan,
+                $request->has('reviewed_document_ids') ? (array) $request->input('reviewed_document_ids', []) : null,
+                'reviewed_by',
+                'reviewed_at'
+            );
 
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} reviewed", [
                 'group_loan_id' => $groupLoan->id,

@@ -25,6 +25,7 @@ use Illuminate\Routing\Controllers\Middleware;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Services\LoanApplicationWorkflowService;
+use App\Services\LoanDocumentService;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Validator;
 use Spatie\Permission\Models\Role;
@@ -36,6 +37,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
     public function __construct(
         protected LoanApplicationWorkflowService $workflowService,
         protected NotificationService $notificationService,
+        protected LoanDocumentService $loanDocumentService,
     ) {
     }
 
@@ -241,6 +243,12 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     ]);
                 }
             }
+
+            // Index the file's documents now, so an existing customer's papers
+            // belong to this application from the moment it is submitted. Runs
+            // after the co-borrowers are attached, because their documents
+            // count towards the file too.
+            $this->loanDocumentService->syncForApplication($loanApplication);
 
             $this->logActivity('CREATE', 'LoanApplication', "Created loan application ID: {$loanApplication->id}", $data);
 
@@ -569,29 +577,11 @@ class LoanApplicationController extends Controller implements HasMiddleware
      */
     private function markCheckedDocuments(LoanApplication $loanApplication, ?array $documentIds, string $byColumn, string $atColumn): void
     {
-        if ($documentIds === null) {
-            return;
-        }
-
-        try {
-            $ids = array_values(array_unique(array_filter(array_map('intval', $documentIds))));
-
-            $scope = Document::where('loan_application_id', $loanApplication->id);
-
-            (clone $scope)->whereNotIn('id', $ids ?: [0])
-                ->update([$byColumn => null, $atColumn => null]);
-
-            if ($ids) {
-                (clone $scope)->whereIn('id', $ids)
-                    ->update([$byColumn => Auth::id(), $atColumn => now()]);
-            }
-        } catch (\Throwable $th) {
-            Log::warning('Failed to mark checked documents', [
-                'loan_application_id' => $loanApplication->id,
-                'column' => $byColumn,
-                'error' => $th->getMessage(),
-            ]);
-        }
+        // Writes loan_documents, not documents. The stamp records this
+        // application's look at the file; the borrower's own papers are shared
+        // with every other loan they hold, so stamping the document row kept
+        // only the most recent loan's verdict and erased the previous one's.
+        $this->loanDocumentService->markChecked($loanApplication, $documentIds, $byColumn, $atColumn);
     }
 
     /**

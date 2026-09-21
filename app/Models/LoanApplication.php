@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Enums\LoanApplicationStatus;
 use App\Enums\LoanRevisionStatus;
 
@@ -458,9 +459,34 @@ class LoanApplication extends Model
         return $this->hasMany(LegalDocument::class);
     }
 
+    /**
+     * Documents uploaded against this application specifically. Does NOT
+     * include the borrower's own papers, which carry only a customer_id --
+     * use loanDocuments()/checklistDocuments() for the application's whole file.
+     */
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
+    }
+
+    /** The document links for this application, carrying its review stamps. */
+    public function loanDocuments(): HasMany
+    {
+        return $this->hasMany(LoanDocument::class);
+    }
+
+    /**
+     * Every document that forms part of this application's file -- the ones
+     * uploaded for it and the borrower's own -- each carrying the review and
+     * verify stamp this application recorded against it.
+     *
+     * LoanDocumentService::syncForApplication() is what populates the link.
+     */
+    public function checklistDocuments(): BelongsToMany
+    {
+        return $this->belongsToMany(Document::class, 'loan_documents')
+            ->withPivot(['reviewed_by', 'reviewed_at', 'verified_by', 'verified_at'])
+            ->withTimestamps();
     }
 
     /**

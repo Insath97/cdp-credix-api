@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 
 class Document extends Model
@@ -41,10 +43,6 @@ class Document extends Model
         'guarantor_id',
         'uploaded_by',
         'uploaded_at',
-        'reviewed_by',
-        'reviewed_at',
-        'verified_by',
-        'verified_at',
         'status',
         'remarks',
         'is_active',
@@ -63,8 +61,6 @@ class Document extends Model
         'is_mandatory' => 'boolean',
         'is_active' => 'boolean',
         'uploaded_at' => 'datetime',
-        'reviewed_at' => 'datetime',
-        'verified_at' => 'datetime',
     ];
 
     /**
@@ -102,16 +98,25 @@ class Document extends Model
         return $this->belongsTo(User::class, 'uploaded_by');
     }
 
-    /** The officer who ticked this document off during review. */
-    public function reviewer(): BelongsTo
+    /**
+     * The applications this document forms part of, with the review and verify
+     * stamps each of them recorded against it.
+     *
+     * A customer's papers follow them across every loan they take, so "who
+     * checked this" is a fact about the pair, not about the file. Reading it
+     * off the document row -- which is what the dropped reviewed_by column
+     * did -- could only ever answer for whichever loan looked at it last.
+     */
+    public function loanDocuments(): HasMany
     {
-        return $this->belongsTo(User::class, 'reviewed_by');
+        return $this->hasMany(LoanDocument::class);
     }
 
-    /** The officer who ticked it off again during verification. */
-    public function verifier(): BelongsTo
+    public function loanApplications(): BelongsToMany
     {
-        return $this->belongsTo(User::class, 'verified_by');
+        return $this->belongsToMany(LoanApplication::class, 'loan_documents')
+            ->withPivot(['reviewed_by', 'reviewed_at', 'verified_by', 'verified_at'])
+            ->withTimestamps();
     }
 
     /**

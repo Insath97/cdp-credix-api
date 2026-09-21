@@ -11,6 +11,7 @@ use App\Models\Customer;
 use App\Models\Document;
 use App\Models\LoanApplication;
 use App\Models\User;
+use App\Services\LoanDocumentService;
 use App\Traits\ActivityLogTrait;
 use App\Traits\ScopesToUserBranch;
 use App\Traits\FileUploadTrait;
@@ -22,6 +23,11 @@ use Illuminate\Routing\Controllers\Middleware;
 class DocumentController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait, FileUploadTrait, ScopesToUserBranch;
+
+    public function __construct(
+        protected LoanDocumentService $loanDocumentService,
+    ) {
+    }
 
     public static function middleware(): array
     {
@@ -144,6 +150,15 @@ class DocumentController extends Controller implements HasMiddleware
                         $query->orWhereIn('customer_id', $customerIds);
                     }
                 });
+
+                // Who checked each document ON THIS APPLICATION. The stamps
+                // used to sit on the document row, which meant a customer's
+                // shared NIC copy showed whichever loan had looked at it last.
+                // Scoped to the one application asked for, so the checklist
+                // reads its own verdicts and nobody else's.
+                $query->with(['loanDocuments' => fn ($q) => $q
+                    ->where('loan_application_id', $loanApplicationId)
+                    ->with(['reviewedBy:'.User::SUMMARY_COLUMNS, 'verifiedBy:'.User::SUMMARY_COLUMNS])]);
             }
 
             if ($request->filled('customer_id')) {
@@ -244,6 +259,37 @@ class DocumentController extends Controller implements HasMiddleware
     /**
      * Store a newly created document.
      */
+    /**
+     * Attach a freshly uploaded document to the loan applications it belongs to.
+     *
+     * The link is what carries the per-application review and verify stamps,
+     * so a document that never gets indexed can never be ticked off.
+     */
+    private function indexNewDocument(Document $document): void
+    {
+        $applications = collect();
+
+        if ($document->loan_application_id) {
+            $applications = LoanApplication::where('id', $document->loan_application_id)->get();
+        } elseif ($document->customer_id) {
+            // Only files still open to change. A disbursed or closed loan's
+            // paperwork is settled, and LoanApplicationStatus::allowsDocumentChanges()
+            // is the same test frozenApplicationResponse() uses to refuse edits.
+            $applications = LoanApplication::where(function ($query) use ($document) {
+                $query->where('customer_id', $document->customer_id)
+                    ->orWhereHas('loanApplicationCustomers', fn ($q) => $q->where('customer_id', $document->customer_id));
+            })->get();
+
+            $applications = $applications->filter(
+                fn (LoanApplication $application) => $application->status->allowsDocumentChanges()
+            );
+        }
+
+        foreach ($applications as $application) {
+            $this->loanDocumentService->syncForApplication($application);
+        }
+    }
+
     public function store(CreateDocumentRequest $request)
     {
         try {
@@ -273,6 +319,15 @@ class DocumentController extends Controller implements HasMiddleware
             $data['uploaded_at'] = now();
 
             $document = Document::create($data);
+
+            // Index it against the applications whose file it belongs to.
+            //
+            // Uploaded for one application: that application. Uploaded against
+            // the customer instead (their NIC copy, their pay slips), it joins
+            // the file of every application of theirs still being decided --
+            // otherwise a document handed in mid-review would never appear on
+            // the checklist the officer is about to tick.
+            $this->indexNewDocument($document);
 
             $this->logActivity('CREATE', 'Document', "Uploaded document: {$document->document_name}", $data);
 
