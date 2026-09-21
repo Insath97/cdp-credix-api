@@ -33,11 +33,6 @@ class DocumentController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            // 'applications' was in none of these lists, so the feed behind the
-            // document upload screen -- every loan application, with the
-            // customer's name, phone, email, product, branch and status --
-            // answered any authenticated principal, a customer's portal token
-            // included.
             new Middleware('permission:Document Index', only: ['index', 'show', 'applications', 'file']),
             new Middleware('permission:Document Create', only: ['store']),
             new Middleware('permission:Document Update', only: ['update']),
@@ -101,6 +96,11 @@ class DocumentController extends Controller implements HasMiddleware
                 'guarantor:id,customer_id,full_name,id_number,employment_status,employer_name',
                 'loanApplication.application:id,application_no',
                 'uploader:'.User::SUMMARY_COLUMNS,
+                // Who checked this paper, read through loan_documents because
+                // the stamp belongs to a document AND an application together.
+                // Filtering by loan_application_id below narrows these to one file.
+                'loanDocuments.reviewedBy:'.User::SUMMARY_COLUMNS,
+                'loanDocuments.verifiedBy:'.User::SUMMARY_COLUMNS,
             ]);
 
             if ($request->has('search')) {
@@ -148,14 +148,11 @@ class DocumentController extends Controller implements HasMiddleware
                     }
                 });
 
-                // Who checked each document ON THIS APPLICATION. The stamps
-                // used to sit on the document row, which meant a customer's
-                // shared NIC copy showed whichever loan had looked at it last.
-                // Scoped to the one application asked for, so the checklist
-                // reads its own verdicts and nobody else's.
-                $query->with(['loanDocuments' => fn ($q) => $q
-                    ->where('loan_application_id', $loanApplicationId)
-                    ->with(['reviewedBy:'.User::SUMMARY_COLUMNS, 'verifiedBy:'.User::SUMMARY_COLUMNS])]);
+                // Narrow the stamps to the application being looked at, so
+                // the checklist reads its own verdicts and nobody else's. The
+                // reviewedBy / verifiedBy nested loads are already declared
+                // above and still apply.
+                $query->with(['loanDocuments' => fn ($q) => $q->where('loan_application_id', $loanApplicationId)]);
             }
 
             if ($request->filled('customer_id')) {
@@ -217,8 +214,15 @@ class DocumentController extends Controller implements HasMiddleware
             $perPage = $request->get('per_page', 15);
 
             $query = LoanApplication::query()
-                ->has('documents')
-                ->withCount('documents')
+                // Counted through loan_documents, not the documents hasMany.
+                // That relation only sees files carrying this application's
+                // loan_application_id, so an application whose whole file is
+                // the borrower's own papers -- every application built from an
+                // existing customer -- had no documents at all by this measure
+                // and never appeared in the list. Aliased to documents_count so
+                // the response keeps the key the screen already reads.
+                ->has('loanDocuments')
+                ->withCount(['loanDocuments as documents_count'])
                 ->with([
                     'application:id,application_no',
                     'customer:'.Customer::SUMMARY_COLUMNS.',employment_status',
@@ -241,7 +245,12 @@ class DocumentController extends Controller implements HasMiddleware
                 'message' => 'Loan applications with documents retrieved successfully',
                 'data'    => $applications,
                 'meta'    => [
-                    'unlinked_count' => Document::whereNull('loan_application_id')->count(),
+                    // Genuinely unattached: belonging to no application's file
+                    // at all. Counting whereNull('loan_application_id') now
+                    // overstates it wildly -- a customer's NIC copy has no
+                    // loan_application_id and never will, yet it belongs to
+                    // every loan they have applied for.
+                    'unlinked_count' => Document::doesntHave('loanDocuments')->count(),
                 ],
             ], 200);
         } catch (\Throwable $th) {
@@ -253,9 +262,6 @@ class DocumentController extends Controller implements HasMiddleware
         }
     }
 
-    /**
-     * Store a newly created document.
-     */
     /**
      * Attach a freshly uploaded document to the loan applications it belongs to.
      *
@@ -287,6 +293,9 @@ class DocumentController extends Controller implements HasMiddleware
         }
     }
 
+    /**
+     * Store a newly created document.
+     */
     public function store(CreateDocumentRequest $request)
     {
         try {
@@ -356,6 +365,10 @@ class DocumentController extends Controller implements HasMiddleware
                 'guarantor:id,customer_id,full_name,id_number,employment_status,employer_name',
                 'loanApplication.application:id,application_no',
                 'uploader:'.User::SUMMARY_COLUMNS,
+                // Every application this paper forms part of, each with its own
+                // review and verify stamp. See the note in index().
+                'loanDocuments.reviewedBy:'.User::SUMMARY_COLUMNS,
+                'loanDocuments.verifiedBy:'.User::SUMMARY_COLUMNS,
             ]);
 
             // Confined the same way index() is. A bare find($id) meant the
