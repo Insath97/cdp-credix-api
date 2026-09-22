@@ -118,7 +118,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             $case->load(['loanApplication.application', 'loanApplication.customer:'.Customer::CONTACT_COLUMNS, 'assignedAgent.employee', 'openedBy:'.User::SUMMARY_COLUMNS]);
 
             if ($case->loanApplication) {
-                $recoveryMessage = "Your loan account ({$case->loanApplication->reference()}) has become overdue. Please contact us immediately to avoid further recovery actions.";
+                $recoveryMessage = "Your loan account has become overdue. Please contact us immediately to avoid further recovery actions.";
 
                 foreach ($this->caseRecipients($case) as $notifyCustomer) {
                     if (!empty($notifyCustomer->phone_primary)) {
@@ -143,10 +143,15 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             }
 
             if ($case->assignedAgent && !empty($case->assignedAgent->employee?->phone_primary)) {
+                // The case number and the customer's name, not their row ids.
+                // An agent cannot look a borrower up by "Customer ID: 3", and
+                // the loan number is appended by NotificationService anyway.
+                $agentCustomerName = $case->loanApplication?->customer?->full_name ?? 'the customer';
+
                 $this->notificationService->sendSms(
                     'recovery_case_opened_agent',
                     $case->assignedAgent->employee->phone_primary,
-                    "CDP Capital: A new overdue recovery case (Case ID: {$case->id}, Customer ID: {$case->loanApplication->customer_id}) has been assigned to you. Please follow up with the customer.",
+                    "CDP Capital: A new overdue recovery case ({$case->case_no}) has been assigned to you. Customer: {$agentCustomerName}. Please follow up.",
                     ['loan_application_id' => $case->loan_application_id, 'user_id' => $case->assigned_agent_id]
                 );
             }

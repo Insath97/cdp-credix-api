@@ -18,15 +18,14 @@ class Application extends Model
 
         static::creating(function ($application) {
             if (empty($application->application_no)) {
-                // APP-{BRANCH}-{yyyymmdd}{00000001}. The format and the branch
-                // code rules live in ReferenceNumberService, which also mints
-                // the approval reference, so the two cannot drift apart.
+                // APP-{BRANCH}-{yymmdd}{0001}. The format and the branch code
+                // rules live in ReferenceNumberService, which also mints the
+                // approval reference, so the two cannot drift apart.
                 //
-                // Numbers issued before this format existed read
-                // APP-{BRANCH}-{yymm}{0001} and are deliberately left alone:
-                // they are printed on paper, quoted in SMS already sent, and
-                // referenced from payments. No prefix this generator builds can
-                // match them, so the new counter starts clean.
+                // Numbers issued under either older format are deliberately
+                // left alone: they are printed on paper, quoted in SMS already
+                // sent, and referenced from payments. nextSequence() is what
+                // keeps them from being mistaken for the new counter.
                 $application->application_no = app(ReferenceNumberService::class)
                     ->forApplication($application->branch);
             }

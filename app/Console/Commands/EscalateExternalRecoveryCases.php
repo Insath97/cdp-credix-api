@@ -78,7 +78,7 @@ class EscalateExternalRecoveryCases extends Command
                     $daysOverdue
                 );
 
-                $externalEscalationMessage = "Your overdue loan account ({$loanApplication->reference()}) has been referred to external recovery. Please settle your outstanding balance immediately.";
+                $externalEscalationMessage = "Your overdue loan account has been referred to external recovery. Please settle your outstanding balance immediately.";
 
                 foreach ($arrears['customers'] as $notifyCustomer) {
                     if (!empty($notifyCustomer->phone_primary)) {

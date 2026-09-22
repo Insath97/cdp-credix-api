@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Jobs\SendSmsJob;
 use App\Mail\GenericNotificationMail;
 use App\Models\Customer;
+use App\Models\LoanApplication;
 use App\Models\Notification;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -28,6 +29,7 @@ class NotificationService
      * The house style every customer-facing notification is written in.
      */
     private const GREETING  = 'Dear %s,';
+    private const REFERENCE = 'Loan Ref: %s';
     private const SIGNATURE = "Best Wishes,\nCDP Capital (PVT) LTD.";
 
     /**
@@ -136,7 +138,8 @@ class NotificationService
     }
 
     /**
-     * Wrap a message in the house format:
+     * Add the loan number to a message, and for a customer wrap it in the
+     * house format:
      *
      *     Dear <customer>,
      *
@@ -157,15 +160,59 @@ class NotificationService
      */
     private function personalise(string $message, array $context): string
     {
+        $reference = $this->loanReferenceFor($context);
+
+        // Staff and recovery agents: no greeting and no sign-off -- those read
+        // as a form letter on an operational note -- but the number still
+        // belongs, because "New loan application pending for review" names no
+        // file at all and a reviewer had nothing to search for. Appended at the
+        // end so the instruction stays the first thing read.
         if (empty($context['customer_id'])) {
-            return $message;
+            return $reference
+                ? $message . "\n" . sprintf(self::REFERENCE, $reference)
+                : $message;
         }
 
         $name = Customer::whereKey($context['customer_id'])->value('full_name');
 
-        return sprintf(self::GREETING, $name ?: 'Customer')
+        $head = sprintf(self::GREETING, $name ?: 'Customer');
+
+        // The file the message is about, quoted so a customer ringing back can
+        // say which loan they mean and an officer can find it without asking
+        // for a name and a date. Added here rather than in each message,
+        // because every customer notification carries loan_application_id and
+        // the ones that used to paste the reference into their own wording
+        // each did it differently.
+        //
+        // Absent only where there is genuinely no loan: the registration
+        // credentials SMS names no application, and adding an empty line to it
+        // would look like a fault.
+        if ($reference) {
+            $head .= "\n\n" . sprintf(self::REFERENCE, $reference);
+        }
+
+        return $head
             . "\n\n" . $message
             . "\n\n" . self::SIGNATURE;
+    }
+
+    /**
+     * The human-readable number of the loan this notification is about.
+     *
+     * LoanApplication::reference() answers the application number the customer
+     * has held since the file was taken -- not the approval reference, which
+     * only exists from approval onwards and would mean the number in their
+     * messages changed halfway through.
+     */
+    private function loanReferenceFor(array $context): ?string
+    {
+        if (empty($context['loan_application_id'])) {
+            return null;
+        }
+
+        return LoanApplication::with('application:id,application_no')
+            ->find($context['loan_application_id'])
+            ?->reference();
     }
 
     /**

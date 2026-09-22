@@ -370,7 +370,10 @@ class GroupLoanController extends Controller implements HasMiddleware
                             'group_loan_submitted',
                             $staffPhone,
                             'CDP Capital: New group loan application pending for review.',
-                            ['user_id' => $staffUser->id]
+                            // Names the loan so the appended reference can
+                            // reach it; without this the reviewer was told a
+                            // group loan was waiting but not which one.
+                            ['user_id' => $staffUser->id, 'loan_application_id' => $groupLoan->loanApplication?->id]
                         );
                     }
                 }

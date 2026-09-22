@@ -74,7 +74,7 @@ class EscalateInternalRecoveryCases extends Command
                     $arrears['customer_id']
                 );
 
-                $internalEscalationMessage = "Your loan account ({$loanApplication->reference()}) has become overdue. Please contact us immediately to avoid further recovery actions.";
+                $internalEscalationMessage = "Your loan account has become overdue. Please contact us immediately to avoid further recovery actions.";
 
                 foreach ($arrears['customers'] as $notifyCustomer) {
                     if (!empty($notifyCustomer->phone_primary)) {

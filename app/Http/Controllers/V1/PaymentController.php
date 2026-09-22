@@ -162,13 +162,15 @@ class PaymentController extends Controller implements HasMiddleware
             ? " Recovery case(s) resolved: {$casesResolved}."
             : '';
 
+        // No loan number spelled out here: NotificationService appends it to
+        // every notification from the context, so naming it again would print
+        // it twice.
         $message = sprintf(
-            'CDP Capital: Payment %s received. %s paid %s on %s against loan %s.%s',
+            'CDP Capital: Payment %s received. %s paid %s on %s.%s',
             $payment->receipt_no,
             $payer,
             number_format((float) $payment->amount, 2),
             $paidOn,
-            $loanApplication->reference(),
             $caseLine
         );
 
@@ -424,7 +426,7 @@ class PaymentController extends Controller implements HasMiddleware
                     // stage -- has to be told it is over too. Without this the
                     // last word they ever hear on it is the escalation SMS.
                     if ($casesResolved > 0) {
-                        $recoveryClosedMessage = "Thank you. Your overdue amount has been settled and the recovery action on your loan account ({$loanApplication->reference()}) is now closed.";
+                        $recoveryClosedMessage = "Thank you. Your overdue amount has been settled and the recovery action on your loan account is now closed.";
 
                         if (!empty($notifyCustomer->phone_primary)) {
                             $this->notificationService->sendSms(
