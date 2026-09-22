@@ -62,6 +62,8 @@ class PasswordChangeController extends Controller
             $user->update([
                 'password'            => Hash::make($request->password),
                 'password_changed_at' => now(),
+                // The temporary password is gone, so its deadline goes with it.
+                'password_expires_at' => null,
             ]);
 
             Log::info('Password changed with current password', ['user_id' => $user->id]);
@@ -213,6 +215,8 @@ class PasswordChangeController extends Controller
             $user->update([
                 'password' => Hash::make($request->password),
                 'password_changed_at' => now(),
+                // The temporary password is gone, so its deadline goes with it.
+                'password_expires_at' => null,
             ]);
 
             // Mark request as verified
@@ -353,6 +357,8 @@ class PasswordChangeController extends Controller
             $user->update([
                 'password' => Hash::make($request->password),
                 'password_changed_at' => now(),
+                // The temporary password is gone, so its deadline goes with it.
+                'password_expires_at' => null,
             ]);
 
             // Mark request as verified

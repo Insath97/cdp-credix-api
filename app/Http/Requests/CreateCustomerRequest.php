@@ -180,12 +180,10 @@ class CreateCustomerRequest extends FormRequest
         // reset all ask for eight. A customer login created through this form
         // signs in to the same system, so a shorter one here was the only way
         // round the policy.
-        // Required, not nullable: every customer gets a login account, and
-        // the password has to be one the operator deliberately chose. The
-        // controller used to fall back to Str::random(10) and text the
-        // result to the customer, minting a fresh password on every
-        // resubmission of the same form.
-        'user_password' => 'required|string|min:8|max:255',
+        // No user_password. The account is opened with a temporary password
+        // the system generates and the customer must replace within three
+        // days, so there is nothing for an operator to type -- and a password
+        // typed by staff is a password staff know.
 
         // Loan Application Validation
         'loan_product_id' => 'nullable|integer|exists:loan_products,id',

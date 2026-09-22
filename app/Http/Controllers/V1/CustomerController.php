@@ -98,9 +98,6 @@ class CustomerController extends Controller implements HasMiddleware
             $currentUser = Auth::guard('api')->user();
             $data = $request->validated();
 
-            // The recommender snapshot columns are filled from the chosen
-            // employee whenever the client sent only the employee id (or left
-            // part of the snapshot blank).
             $data = Employee::mergeRecommenderSnapshot($data);
 
             $customer = Customer::create($data);
@@ -138,18 +135,7 @@ class CustomerController extends Controller implements HasMiddleware
                 }
             }
 
-            // The password is the one the operator typed on the registration
-            // form. It is never generated here: a generated password is a
-            // credential nobody chose, texted in clear to the customer, and
-            // regenerated on every resubmission -- which is how one customer
-            // came to receive four welcome messages carrying four different
-            // passwords for the same CUS0001 account. CreateCustomerRequest
-            // makes user_password required, so a frontend that stops sending
-            // it fails loudly instead of silently inventing one.
-            //
-            // Username follows the same shape it always did: the one the form
-            // supplied, falling back to the customer code.
-            $plainPassword = $data['user_password'];
+            $plainPassword = User::generateTemporaryPassword();
             $user = User::create([
                 'name' => $customer->full_name,
                 'username' => !empty($data['create_user_account']) && !empty($data['user_username'])
@@ -157,13 +143,8 @@ class CustomerController extends Controller implements HasMiddleware
                     : $customer->customer_code,
                 'email' => $customer->email,
                 'password' => Hash::make($plainPassword),
-                // Stamped at creation: the password was chosen for this
-                // account on purpose, not defaulted to something guessable.
-                // EnsurePasswordChanged holds accounts whose password
-                // nobody deliberately picked -- and the customer portal has
-                // no change-password screen, so leaving this null would
-                // lock every new customer out of it with no way back.
-                'password_changed_at' => now(),
+                'password_changed_at' => null,
+                'password_expires_at' => now()->addDays(User::TEMPORARY_PASSWORD_DAYS),
                 'user_type' => 'customer',
                 'customer_id' => $customer->id,
                 'is_active' => true,
@@ -263,7 +244,10 @@ class CustomerController extends Controller implements HasMiddleware
 
             $customer->load(['customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
 
-            $credentialsMessage = "Welcome! Your account has been created.\nUsername: {$user->username}\nPassword: {$plainPassword}\nPlease keep this information secure and change your password after logging in.";
+            $credentialsMessage = "Welcome! Your account has been created.\n"
+                . "Username: {$user->username}\n"
+                . "Temporary Password: {$plainPassword}\n"
+                . 'This password must be changed within ' . User::TEMPORARY_PASSWORD_DAYS . ' days.';
 
             if (!empty($customer->email)) {
                 $emailNotification = $this->notificationService->sendEmail(
@@ -705,7 +689,12 @@ class CustomerController extends Controller implements HasMiddleware
             // If no customer_code, return all
             $perPage = request()->get('per_page', 15);
             $customers = Customer::with([
-                'bankDetails:id,customer_id,bank_name,branch_name,account_number,payment_method',
+                'bankDetails:id,
+                 customer_id,
+                 bank_name,
+                 branch_name,
+                 account_number,
+                 payment_method',
             ])
                 ->select('id', 'customer_code', 'full_name', 'email', 'phone_primary', 'id_type', 'id_number')
                 ->orderBy('id', 'asc')
