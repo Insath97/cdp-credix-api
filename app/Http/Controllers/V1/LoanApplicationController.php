@@ -55,6 +55,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
             new Middleware('permission:Loan Application Reverify', only: ['reverify']),
             new Middleware('permission:Loan Application Approve', only: ['approve']),
             new Middleware('permission:Loan Application Reject', only: ['reject']),
+            new Middleware('permission:Loan Application Reopen', only: ['reopen']),
             new Middleware('permission:Loan Application Offer Response', only: ['holdOffer', 'acceptOffer', 'declineOffer']),
             new Middleware('permission:Loan Application Disburse', only: ['disburse']),
             new Middleware('permission:Loan Application Cancel', only: ['cancel']),
@@ -379,6 +380,22 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 return $guard;
             }
 
+            // A rejected, cancelled or closed file is a finished record, not a
+            // draft. Nothing stopped it being edited before, so a rejected
+            // application could be quietly rewritten and its rejection left
+            // describing figures that were no longer there. Reopening is what
+            // makes one editable again, which is the whole point of the status.
+            if ($loanApplication->status->isTerminal()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "This loan application is {$loanApplication->status->value} and can no longer be edited."
+                        . ($loanApplication->status === LoanApplicationStatus::Rejected
+                            ? ' Reopen it first if it needs to be worked on again.'
+                            : ''),
+                    'errors'  => ['status' => $loanApplication->status->value],
+                ], 422);
+            }
+
             $data = $request->validated();
 
             $data = Employee::mergeRecommenderSnapshot($data);
@@ -584,44 +601,18 @@ class LoanApplicationController extends Controller implements HasMiddleware
         $this->loanDocumentService->markChecked($loanApplication, $documentIds, $byColumn, $atColumn);
     }
 
-    /**
-     * Verify a reviewed loan application — the second of the three hands.
-     *
-     * Only from Reviewed. A file that already failed verification is sitting
-     * in Reverify and belongs to reverify() instead: the two are the same
-     * check, but they are not the same event, and keeping one route per event
-     * is what lets the activity log, the response message and the permission
-     * differ without any of them having to re-derive which case this was.
-     */
+
     public function verify(Request $request, string $id)
     {
         return $this->runVerification($request, $id, false);
     }
 
-    /**
-     * Verify a loan application that was sent back for a second look.
-     *
-     * The same check verify() runs, on a file already in Reverify. It clears
-     * the reason the file was sent back — that described what could not be
-     * confirmed last time, and leaving it would sit on screen beside a file
-     * that has now passed — and bumps the count of how many looks it has
-     * taken, because a file on its third is worth noticing. The failure itself
-     * stays readable in loan_application_status_history.
-     */
     public function reverify(Request $request, string $id)
     {
         return $this->runVerification($request, $id, true);
     }
 
-    /**
-     * The body behind verify() and reverify().
-     *
-     * One implementation because it is one check: the only real differences
-     * are which status the file must be in to start, and the words used to
-     * describe what happened afterwards. Splitting these into two copies would
-     * let the actual verification logic drift apart between a first and a
-     * second look, which is the one thing that must never happen.
-     */
+
     private function runVerification(Request $request, string $id, bool $isReverification)
     {
         try {
@@ -729,21 +720,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
         }
     }
 
-    /**
-     * Fail the verification of a reviewed loan application.
-     *
-     * Verification is the fork in the flow: from here a file either passes to
-     * approval, or it lands in Reverify for a second look. This is the second
-     * branch. It is not a rejection — rejection is the lender's answer to the
-     * request, this is "we could not confirm what we were given" — so the file
-     * stays open, the customer is told why by SMS, and verification runs again.
-     *
-     * No verified_by is stamped: the file has not passed verification, so the
-     * maker-checker chain has not advanced. The reviewer is still barred from
-     * doing this (see assertSegregationOfDuties) — failing a verification is
-     * an act of verification, and letting the reviewer do it would hand one
-     * person two of the three hands.
-     */
+
     public function verifyFail(Request $request, string $id)
     {
         try {
@@ -832,7 +809,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
         }
     }
 
-    
+
     public function review(Request $request, string $id)
     {
         try {
@@ -911,18 +888,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
         }
     }
 
-    /**
-     * Fail the review of a submitted loan application and send it back to the
-     * customer.
-     *
-     * This is not a rejection. Rejection is the lender's answer to the request
-     * and is final; this says the paperwork was not good enough to check — an
-     * unreadable NIC scan, a missing salary slip — so the customer is told by
-     * SMS what to fix and the file waits in Review Failed until they resubmit.
-     * Nothing here touches the lending decision, and no reviewer is recorded:
-     * the file has not passed review, so the maker-checker chain has not
-     * started and whoever failed it may still review it after the resubmission.
-     */
+
     public function reviewFail(Request $request, string $id)
     {
         try {
@@ -1011,21 +977,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
         }
     }
 
-    /**
-     * Put a failed application back in the queue once the customer has
-     * reuploaded their documents.
-     *
-     * The status goes back to Submitted, so the file re-enters review from the
-     * top rather than skipping the stage it failed. The failure reason is
-     * cleared — it described the old document set and would otherwise still be
-     * on screen next to the new one — but the count is kept and bumped, because
-     * a file on its fourth attempt is worth seeing. The previous failure stays
-     * readable in loan_application_status_history.
-     *
-     * Documents themselves are uploaded through the existing Document
-     * endpoints; Review Failed is not disbursed-or-later, so
-     * allowsDocumentChanges() already permits that.
-     */
+    
     public function resubmit(Request $request, string $id)
     {
         try {
@@ -1478,6 +1430,112 @@ class LoanApplicationController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to disburse loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Put a rejected loan application back into play.
+     *
+     * The rejection is not undone and nothing about it is rewritten: it stays
+     * in loan_application_status_history as the row it always was, with the
+     * officer who rejected it, when, and why. This adds a row after it. Reading
+     * the trail in order tells the whole story, which is what an audit wants
+     * and what an edited record could never give.
+     *
+     * No new table and no new columns on the loan application: the history
+     * table already stores who changed a status, when, the reason, and a
+     * metadata bag for anything else -- which is exactly what "record the
+     * reopen action" asks for. The metadata here names the rejection being
+     * reversed, so the reopen row is readable on its own without walking back
+     * through the trail.
+     *
+     * is_active is restored explicitly. The workflow service forces it false on
+     * the way into a terminal status but has no rule for coming back out, so
+     * without this the reopened file would stay off every working list.
+     */
+    public function reopen(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
+            // Read before the transition writes its own row, so this names the
+            // rejection being reversed rather than finding itself.
+            $rejection = LoanApplicationStatusHistory::where('loan_application_id', $loanApplication->id)
+                ->where('loan_application_status', LoanApplicationStatus::Rejected)
+                ->latest('id')
+                ->first();
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Reopened,
+                Auth::id(),
+                $request->input('remarks'),
+                // is_active only. No reopened_at/reopened_by columns are
+                // added to the loan application: the history row below already
+                // records who and when, and a second copy on the row could
+                // only ever drift from it.
+                ['is_active' => true],
+                [
+                    'reopened_from'             => LoanApplicationStatus::Rejected->value,
+                    'reopened_by'               => Auth::id(),
+                    'reopened_at'               => now()->toDateTimeString(),
+                    // The rejection this reverses, copied so the reopen row
+                    // answers "what was overturned" without a second lookup.
+                    // rejection_reason is deliberately left on the loan
+                    // application untouched as well.
+                    'rejection_history_id'      => $rejection?->id,
+                    'previous_rejection_reason' => $loanApplication->rejection_reason ?? $rejection?->remarks,
+                    'previously_rejected_at'    => $rejection?->changed_at?->toDateTimeString(),
+                    'previously_rejected_by'    => $rejection?->changed_by,
+                ]
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} reopened after rejection", [
+                'loan_application_id' => $loanApplication->id,
+                'reopened_by'         => Auth::id(),
+                'remarks'             => $request->input('remarks'),
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application reopened successfully. It can be edited and sent for review again.',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to reopen loan application',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }

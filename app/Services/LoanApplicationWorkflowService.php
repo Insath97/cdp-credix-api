@@ -30,7 +30,8 @@ class LoanApplicationWorkflowService
         LoanApplicationStatus $to,
         ?int $actorId = null,
         ?string $remarks = null,
-        array $extra = []
+        array $extra = [],
+        array $metadata = []
     ): LoanApplication {
         $from = $loanApplication->status;
 
@@ -42,8 +43,7 @@ class LoanApplicationWorkflowService
 
         $this->assertSegregationOfDuties($loanApplication, $to, $actorId);
 
-        // A guarantor is mandatory for Individual Loan before it can be
-        // verified, but stays optional for Group Loan members.
+
         if ($to === LoanApplicationStatus::Verified
             && $loanApplication->group_loan_id === null
             && $loanApplication->loanApplicationGuarantors()->count() === 0) {
@@ -52,7 +52,7 @@ class LoanApplicationWorkflowService
             );
         }
 
-        return DB::transaction(function () use ($loanApplication, $from, $to, $actorId, $remarks, $extra) {
+        return DB::transaction(function () use ($loanApplication, $from, $to, $actorId, $remarks, $extra, $metadata) {
             // The approval reference, minted the first time this application is
             // approved. Guarded on being null rather than on the transition
             // alone: a loan that is reverted and approved again keeps the
@@ -71,7 +71,16 @@ class LoanApplicationWorkflowService
                 // "Active". Applied here rather than in each controller so
                 // cancel/reject/close all get it, including the Group Loan
                 // cascade, which transitions through this same method.
-                'is_active' => $to->isTerminal() ? false : $loanApplication->is_active,
+                // Going the other way has to be said explicitly. Reopening a
+                // rejected file passes is_active in $extra, and this line sits
+                // second in the array_merge -- so without honouring it here the
+                // reopened application inherited the false set at rejection and
+                // stayed off every working list. A terminal status still forces
+                // false whatever the caller passes; that invariant is not
+                // negotiable.
+                'is_active' => $to->isTerminal()
+                    ? false
+                    : ($extra['is_active'] ?? $loanApplication->is_active),
             ]));
 
             $loanApplication->application()->update([
@@ -82,7 +91,8 @@ class LoanApplicationWorkflowService
                 $loanApplication,
                 $to,
                 $actorId,
-                $remarks
+                $remarks,
+                $metadata
             );
 
             if ($to === LoanApplicationStatus::Disbursed) {

@@ -58,6 +58,18 @@ enum LoanApplicationStatus: string
     case Declined = 'declined';
 
     case Rejected = 'rejected';
+
+    /**
+     * A rejected file that an authorised officer has put back into play.
+     *
+     * Deliberately its own status rather than a silent return to Submitted:
+     * "this was rejected and someone overturned it" is exactly the thing an
+     * audit asks about, and collapsing it into Submitted would leave the
+     * status column unable to tell a reopened file from a fresh one. The
+     * rejection itself is untouched -- it stays in loan_application_status_history
+     * as the row it always was, and the reopen is a new row after it.
+     */
+    case Reopened = 'reopened';
     case Disbursed = 'disbursed';
     case Active = 'active';
     case Overdue = 'overdue';
@@ -99,6 +111,16 @@ enum LoanApplicationStatus: string
             // Money moves only after the borrower has said yes. On Hold is a
             // parking place for "give me a few days", not a decision, so it
             // leads to the same two answers.
+            // The single way out of a rejection, and only by the explicit
+            // reopen action -- nothing else in the workflow leads here.
+            self::Rejected => [self::Reopened],
+
+            // A reopened file re-enters the workflow exactly where a new one
+            // does. It is not sent straight back to Rejected: reversing a
+            // rejection and then re-rejecting without a fresh review would
+            // leave no record of anyone having looked at it again.
+            self::Reopened => [self::Reviewed, self::ReviewFailed, self::Cancelled],
+
             self::Approved => [self::OnHold, self::Accepted, self::Declined],
             self::OnHold => [self::Accepted, self::Declined],
             self::Accepted => [self::Disbursed],
@@ -116,12 +138,17 @@ enum LoanApplicationStatus: string
     }
 
     /**
-     * Whether this is an end state: the loan application is finished and can
-     * never move again (allowedTransitions() is empty for all three).
+     * Whether this is an end state: the loan application's workflow is over
+     * and it must not be flagged is_active. That flag is what the listings and
+     * the frontend badge read, so a cancelled loan left active shows up as
+     * "Active" even though there is nothing left to do with it.
      *
-     * A row in one of these must never be flagged is_active — that flag is
-     * what the listings and the frontend badge read, so a cancelled loan left
-     * active shows up as "Active" even though its workflow is over.
+     * Cancelled and Closed can never move again. Rejected has exactly one way
+     * out -- the reopen action, which is a deliberate, permissioned reversal
+     * rather than a step in the workflow -- so it is still an end state for
+     * every purpose that reads this: it is not live, it cannot be reactivated
+     * through toggle-status, and it is not editable. Reopening is what brings
+     * it back, and Reopened is not terminal.
      */
     public function isTerminal(): bool
     {
@@ -174,7 +201,11 @@ enum LoanApplicationStatus: string
     public function customerFacingStatus(): string
     {
         return match ($this) {
-            self::Submitted, self::Reviewed, self::Verified => self::CUSTOMER_PROCESSING,
+            // Reopened sits here too. The customer was told the file was
+            // rejected; leaving them on that after it has been put back into
+            // play would be wrong, and the internal fact that it was reopened
+            // is no more their business than which desk it is on.
+            self::Submitted, self::Reviewed, self::Verified, self::Reopened => self::CUSTOMER_PROCESSING,
             // The two internal stages the customer must see. For
             // ReviewFailed nothing moves until they reupload, so hiding it
             // behind 'processing' would leave them waiting for a file that is
@@ -201,7 +232,7 @@ enum LoanApplicationStatus: string
     {
         return match ($this) {
             self::Submitted, self::Reviewed, self::Verified,
-            self::ReviewFailed, self::Reverify => 'in_progress',
+            self::ReviewFailed, self::Reverify, self::Reopened => 'in_progress',
             // The coarse column tracks broad progress: an offer awaiting the
             // borrower's answer is still an approved file. A declined one is
             // on its way to cancelled and never comes back.

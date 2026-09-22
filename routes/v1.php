@@ -259,6 +259,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/hold-offer', [LoanApplicationController::class, 'holdOffer']);
         Route::patch('{id}/accept-offer', [LoanApplicationController::class, 'acceptOffer']);
         Route::patch('{id}/decline-offer', [LoanApplicationController::class, 'declineOffer']);
+        Route::patch('{id}/reopen', [LoanApplicationController::class, 'reopen']);
         Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });
