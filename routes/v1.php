@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\V1\GlobalSearchController;
 use App\Http\Controllers\V1\AuthController;
 use App\Http\Controllers\V1\ActivityController;
 use App\Http\Controllers\V1\PermissionController;
@@ -76,17 +77,24 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
 
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
-    // Both verbs: the profile screen sends a partial update, and PUT is what
-    // it has always sent.
     Route::match(['put', 'patch'], 'me', [AuthController::class, 'updateProfile']);
 
     // Password
     Route::prefix('password')->group(function () {
         Route::post('request-change', [PasswordChangeController::class, 'requestChange'])->middleware('throttle:otp-request');
         Route::post('change-with-otp', [PasswordChangeController::class, 'changeWithOtp'])->middleware('throttle:otp-verify');
-        // Signed in and able to type the existing password: no OTP needed.
         Route::post('change', [PasswordChangeController::class, 'changeWithCurrentPassword'])->middleware('throttle:otp-verify');
     });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Global Search
+    |--------------------------------------------------------------------------
+    | One person, looked up by their identification document across the user,
+    | customer and guarantor modules at once. Read-only.
+    */
+    Route::get('global-search/id-types', [GlobalSearchController::class, 'idTypes']);
+    Route::get('global-search', [GlobalSearchController::class, 'search']);
 
     /*ActivityLog*/
     // Before the resource, or 'filter-options' is read as an activity id.
@@ -263,7 +271,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });
-    
+
     Route::prefix('loan-application-status-history')->group(function () {
         Route::get('statuses', [LoanApplicationStatusHistoryController::class, 'statuses']);
         Route::get('/', [LoanApplicationStatusHistoryController::class, 'index']);

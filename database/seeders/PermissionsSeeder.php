@@ -176,6 +176,9 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Product Delete', 'group_name' => 'Loan Product Management Permissions'],
             ['name' => 'Loan Product Toggle Status', 'group_name' => 'Loan Product Management Permissions'],
 
+            /* Global Search */
+            ['name' => 'Global Search', 'group_name' => 'Global Search Permissions'],
+            
             /* Loan Application Management */
             ['name' => 'Loan Application Index', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Create', 'group_name' => 'Loan Application Management Permissions'],

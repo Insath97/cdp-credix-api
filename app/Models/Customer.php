@@ -185,9 +185,19 @@ class Customer extends Model
         });
     }
 
-    public function user(): BelongsTo
+    /**
+     * The customer's own login account.
+     *
+     * hasOne, not belongsTo. The link is users.customer_id -> customers.id, so
+     * belongsTo pointed the wrong way and, worse, named the local column
+     * customer_id -- which on this table is the human reference 'CUST-0001',
+     * not a foreign key. It compiled to `users.id = 'CUST-0001'` and returned
+     * null for every customer that has ever existed, so the customer list and
+     * detail screens both showed no account even where one was sitting there.
+     */
+    public function user(): HasOne
     {
-        return $this->belongsTo(User::class, 'customer_id');
+        return $this->hasOne(User::class, 'customer_id');
     }
 
     public function branch(): BelongsTo
@@ -263,19 +273,9 @@ class Customer extends Model
         return $this->hasMany(CreditScoreEvent::class);
     }
 
-    /**
-     * The score's plain-language band: excellent / good / fair / poor /
-     * very_poor, or null.
-     *
-     * Null covers two cases the UI must not conflate with a bad score: a
-     * customer with no repayment history at all, and a query that did not
-     * select the credit_score column in the first place.
-     */
     public function getCreditScoreBandAttribute(): ?string
     {
-        // Read off the on-time rate, not the score: the score is a point
-        // total that grows with the length of the record, so it cannot say on
-        // its own how reliably this person pays.
+
         if (!array_key_exists('credit_score_on_time_rate', $this->attributes)
             || $this->credit_score_on_time_rate === null) {
             return null;
@@ -284,12 +284,7 @@ class Customer extends Model
         return app(CreditScoreService::class)->band((float) $this->credit_score_on_time_rate);
     }
 
-    /**
-     * Whether this customer has ever had an installment judged.
-     *
-     * Read this before showing the score anywhere: a null credit_score means
-     * "no repayment history yet", which must not be rendered as a zero.
-     */
+    
     public function hasCreditHistory(): bool
     {
         return $this->credit_score !== null;
