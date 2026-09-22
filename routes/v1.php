@@ -86,18 +86,11 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::post('change', [PasswordChangeController::class, 'changeWithCurrentPassword'])->middleware('throttle:otp-verify');
     });
 
-    /*
-    |--------------------------------------------------------------------------
-    | Global Search
-    |--------------------------------------------------------------------------
-    | One person, looked up by their identification document across the user,
-    | customer and guarantor modules at once. Read-only.
-    */
+    // Global Search
     Route::get('global-search/id-types', [GlobalSearchController::class, 'idTypes']);
     Route::get('global-search', [GlobalSearchController::class, 'search']);
 
-    /*ActivityLog*/
-    // Before the resource, or 'filter-options' is read as an activity id.
+    //ActivityLog
     Route::get('activities/filter-options', [ActivityController::class, 'filterOptions']);
     Route::apiResource('activities', ActivityController::class);
 
@@ -176,12 +169,6 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     Route::apiResource('groups', GroupController::class);
 
     // Customers
-    //
-    // The prefix group goes BEFORE the apiResource, the way every other module
-    // in this file does it. Registered the other way round, customers/{customer}
-    // matched first and 'list' was read as a customer id: the controller looked
-    // up a customer called "list", found none, and GET customers/list answered
-    // 404 for everyone.
     Route::prefix('customers')->group(function () {
         Route::get('list', [CustomerController::class, 'index']);
         Route::get('list/public/{customer_code?}', [CustomerController::class, 'getPublicDetails']);
@@ -220,10 +207,6 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     });
 
     // Documents
-    //
-    // 'documents/applications' is registered BEFORE the apiResource, or
-    // documents/{document} swallows it and Laravel tries to look up a document
-    // with the id "applications". The same ordering protects 'file'.
     Route::get('documents/applications', [DocumentController::class, 'applications']);
     Route::get('documents/file', [DocumentController::class, 'file']);
     Route::apiResource('documents', DocumentController::class);
@@ -280,13 +263,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
 
     Route::apiResource('loan-applications', LoanApplicationController::class);
 
-    /*
-    |--------------------------------------------------------------------------
-    | Legal
-    |--------------------------------------------------------------------------
-    | Templates are the agreements registered per loan product; legal documents
-    | are the ones drawn up from them against a loan application.
-    */
+    // Legal
     Route::prefix('legal-document-templates')->group(function () {
         Route::get('list', [LegalDocumentTemplateController::class, 'getActiveList']);
         Route::patch('{id}/toggle-status', [LegalDocumentTemplateController::class, 'toggleStatus']);
@@ -397,9 +374,6 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     // System Settings
     Route::prefix('settings')->group(function () {
         Route::get('list', [SettingController::class, 'list']);
-        // Before settings/{key} below, or 'flags' is read as a setting name.
-        // Feature switches only, and no Setting Index needed -- the roles that
-        // act on a switch have to be able to see it.
         Route::get('flags', [SettingController::class, 'flags']);
     });
     Route::get('settings', [SettingController::class, 'index']);

@@ -13,15 +13,7 @@ use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Auth;
 
-/**
- * Read-only access to the loan application status trail.
- *
- * There is deliberately no store, update or destroy. Rows are written by
- * LoanApplicationStatusHistory::record() from the places that actually move a
- * file, and an audit trail with a write endpoint is not an audit trail —
- * anyone able to reach it could invent a transition that never happened, or
- * quietly remove one that did.
- */
+
 class LoanApplicationStatusHistoryController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait, ScopesToUserBranch;
@@ -71,9 +63,6 @@ class LoanApplicationStatusHistoryController extends Controller implements HasMi
                 $query->where('changed_by', $request->changed_by);
             }
 
-            // Range over change_date rather than changed_at, so date_to
-            // includes everything that happened on that day instead of
-            // stopping at midnight.
             if ($request->filled('date_from')) {
                 $query->whereDate('change_date', '>=', $request->date_from);
             }
@@ -82,9 +71,6 @@ class LoanApplicationStatusHistoryController extends Controller implements HasMi
                 $query->whereDate('change_date', '<=', $request->date_to);
             }
 
-            // The trail has no branch of its own; it borrows the branch of the
-            // loan application it describes, so a branch officer sees the
-            // history of their own files and no one else's.
             $branchId = $this->userBranchId();
             if ($branchId !== null) {
                 $query->whereHas('loanApplication', fn ($q) => $q->where('branch_id', $branchId));
@@ -119,13 +105,7 @@ class LoanApplicationStatusHistoryController extends Controller implements HasMi
         }
     }
 
-    /**
-     * The full trail for one loan application, oldest first.
-     *
-     * Ordered the other way round from index() on purpose: a single file's
-     * history is read as a story from the beginning, while a mixed listing is
-     * read as "what happened lately".
-     */
+    
     public function show(string $loanApplicationId)
     {
         try {
