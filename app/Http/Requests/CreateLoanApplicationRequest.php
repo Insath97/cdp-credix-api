@@ -8,10 +8,19 @@ use App\Enums\LoanApplicationStatus;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use App\Traits\GuardsLoanWorkflowFields;
+use App\Services\CustomerLoanEligibilityService;
 
 class CreateLoanApplicationRequest extends FormRequest
 {
     use GuardsLoanWorkflowFields;
+
+    /**
+     * The first one-live-loan refusal raised in withValidator(), if any.
+     * failedValidation() shows it as the top-level message, so the officer
+     * reads why the loan was refused instead of "There is an issue with the
+     * input for customer_id."
+     */
+    private ?string $liveLoanRefusal = null;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -70,6 +79,39 @@ class CreateLoanApplicationRequest extends FormRequest
         return $this->workflowOwnedMessages();
     }
 
+    /**
+     * One live loan per customer -- the primary borrower and every joint
+     * co-borrower alike. Only runs on ids that already passed their own rules,
+     * so a missing customer is reported once, as "does not exist".
+     *
+     * The controller repeats this under a row lock inside its transaction;
+     * this pass is what gives the officer a field-level message up front.
+     */
+    protected function withValidator(Validator $validator)
+    {
+        $validator->after(function ($validator) {
+            $errors = $validator->errors();
+
+            if (!$errors->has('customer_id') && $this->filled('customer_id')) {
+                if ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $this->input('customer_id'))) {
+                    $this->liveLoanRefusal ??= $refusal;
+                    $errors->add('customer_id', $refusal);
+                }
+            }
+
+            foreach ((array) $this->input('joint_customer_ids', []) as $i => $jointId) {
+                $field = "joint_customer_ids.{$i}";
+                if ($errors->has($field) || !is_numeric($jointId)) {
+                    continue;
+                }
+                if ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $jointId)) {
+                    $this->liveLoanRefusal ??= $refusal;
+                    $errors->add($field, $refusal);
+                }
+            }
+        });
+    }
+
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
@@ -80,9 +122,10 @@ class CreateLoanApplicationRequest extends FormRequest
             ];
         })->values();
 
-        $message = $fieldErrors->count() > 1
-            ? 'There are multiple validation errors. Please review the form and correct the issues.'
-            : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.';
+        $message = $this->liveLoanRefusal
+            ?? ($fieldErrors->count() > 1
+                ? 'There are multiple validation errors. Please review the form and correct the issues.'
+                : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.');
 
         throw new HttpResponseException(response()->json([
             'message' => $message,

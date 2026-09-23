@@ -56,8 +56,7 @@ class CdpCustomerVerificationController extends Controller implements HasMiddlew
                 ], $result['status_code']);
             }
 
-
-            $payload = $result['data'] ?? [];
+           $payload = $result['data'] ?? [];
 
             return response()->json([
                 'status'  => 'success',

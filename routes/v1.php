@@ -301,6 +301,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/reverify', [GroupLoanController::class, 'reverify']);
         Route::patch('{id}/approve', [GroupLoanController::class, 'approve']);
         Route::patch('{id}/reject', [GroupLoanController::class, 'reject']);
+        Route::patch('{id}/reopen', [GroupLoanController::class, 'reopen']);
         Route::patch('{id}/hold-offer', [GroupLoanController::class, 'holdOffer']);
         Route::patch('{id}/accept-offer', [GroupLoanController::class, 'acceptOffer']);
         Route::patch('{id}/decline-offer', [GroupLoanController::class, 'declineOffer']);

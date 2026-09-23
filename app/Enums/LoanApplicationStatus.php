@@ -156,6 +156,33 @@ enum LoanApplicationStatus: string
     }
 
     /**
+     * Statuses in which a loan no longer holds its borrowers.
+     *
+     * A customer may hold only one live loan at a time -- individual, joint or
+     * group, as primary or as co-borrower/member. Every status NOT listed here
+     * counts as live: the whole pre-approval pipeline included, because two
+     * applications for the same person moving through review in parallel is
+     * exactly what the rule exists to stop.
+     *
+     * Declined is here as well as the three terminal states: the borrower has
+     * refused the offer, and the only way out of Declined is Cancelled.
+     *
+     * @return array<int, self>
+     */
+    public static function releasingBorrowers(): array
+    {
+        return [self::Rejected, self::Cancelled, self::Closed, self::Declined];
+    }
+
+    /**
+     * Whether a loan at this status keeps its borrowers from taking another.
+     */
+    public function holdsBorrowers(): bool
+    {
+        return !in_array($this, self::releasingBorrowers(), true);
+    }
+
+    /**
      * Whether the money has already gone out on this application.
      *
      * Disbursed, and every state that follows it, means the lending decision

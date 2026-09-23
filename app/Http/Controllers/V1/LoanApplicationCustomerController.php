@@ -11,6 +11,8 @@ use App\Models\LoanApplicationCustomer;
 use App\Models\Customer;
 use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
+use App\Exceptions\CustomerHasLiveLoanException;
+use App\Services\CustomerLoanEligibilityService;
 use App\Services\GroupLoanWorkflowService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationCustomerRequest;
@@ -99,12 +101,17 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
             $record = DB::transaction(function () use ($data) {
                 $loanApplication = LoanApplication::with('groupLoan')->find($data['loan_application_id']);
 
-                if (empty($data['customer_id'])) {
+                $typedIn = empty($data['customer_id']);
+
+                if ($typedIn) {
                     $data['customer_id'] = $this->createCustomerFromMember($data, $loanApplication)->id;
                 }
 
-                // First co-borrower ever added: bring the loan's own primary customer
-                // into the pivot too, so it always holds the complete borrower set.
+                CustomerLoanEligibilityService::assertEligible(
+                    [($typedIn ? 'nic' : 'customer_id') => $data['customer_id']],
+                    $loanApplication?->id
+                );
+
                 if ($loanApplication && $loanApplication->loanApplicationCustomers()->count() === 0) {
                     LoanApplicationCustomer::create([
                         'loan_application_id' => $loanApplication->id,
@@ -113,13 +120,9 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 }
 
                 $record = LoanApplicationCustomer::create($data);
-
-                // The pivot holds a per-member snapshot of the customer's details
-                // so later edits from the loan never touch the shared record.
                 $record->setRelation('customer', Customer::find($data['customer_id']));
                 $record->snapshotFromCustomer();
 
-                // A group loan's header tracks how many members it has.
                 if ($loanApplication?->groupLoan) {
                     $this->groupLoanWorkflowService->syncAmounts($loanApplication->groupLoan);
                 }
@@ -135,6 +138,8 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 'data'    => $record->load(['loanApplication', 'customer:'.Customer::SUMMARY_COLUMNS]),
             ], 201);
 
+        } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
@@ -316,6 +321,12 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
             }
         }
 
+        if (array_key_exists('nic', $snapshot)
+            && CustomerLoanEligibilityService::normalizeNic($snapshot['nic']) !== CustomerLoanEligibilityService::normalizeNic($record->nic)
+            && ($refusal = CustomerLoanEligibilityService::refusalForNic($snapshot['nic'], $snapshot['member_name'] ?? $record->member_name, $record->loan_application_id))) {
+            return (new CustomerHasLiveLoanException($refusal, 'nic'))->toResponse();
+        }
+
         $record->update($snapshot ?: []);
 
         $this->logActivity('UPDATE', 'LoanApplicationCustomer', "Updated group member details for loan application customer ID {$record->id}", [
@@ -402,6 +413,9 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
         }
     }
 
+    /**
+     * Return a "not found" response.
+     */
     private function notFoundResponse()
     {
         return response()->json([
@@ -412,13 +426,6 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
 
     /**
      * The shared "is this list still editable?" gate.
-     *
-     * A Group Loan's members may be added, removed and edited only while the
-     * group loan is Available — once approved (Locked) the list is frozen,
-     * because by then the approved amount has been split across exactly these
-     * members. A Joint Loan's co-borrowers keep the original Submitted rule.
-     *
-     * Returns a 422 response when the change is not allowed, or null when it is.
      */
     private function membersLockedResponse(?LoanApplication $loanApplication, string $action)
     {

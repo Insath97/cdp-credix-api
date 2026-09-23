@@ -563,6 +563,19 @@ class LoanApplication extends Model
     }
 
     /**
+     * Loans that still hold their borrowers -- see
+     * LoanApplicationStatus::holdsBorrowers(). Reads the status column, not
+     * is_active: is_active can be toggled by hand and is not the truth.
+     */
+    public function scopeLive(Builder $query): Builder
+    {
+        return $query->whereNotIn(
+            'status',
+            array_map(fn (LoanApplicationStatus $s) => $s->value, LoanApplicationStatus::releasingBorrowers())
+        );
+    }
+
+    /**
      * Scope to loan applications belonging to a given customer, whether as the
      * primary applicant or as a Joint Loan co-borrower attached via the pivot.
      */

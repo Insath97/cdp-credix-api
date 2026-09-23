@@ -326,3 +326,35 @@ code is wrong.
 **Date-only columns need `date:Y-m-d`, not `date`.** `APP_TIMEZONE` is `Asia/Colombo`, so a
 plain `'date'` cast serialises `2026-07-21` as `"2026-07-20T18:30:00Z"`, and the frontend
 renders dates by slicing the first 10 characters — showing **the day before**.
+
+---
+
+## 9. One live loan per customer
+
+A customer who is on a live loan cannot be put on another one. This covers every kind of
+loan and every role on it: individual borrower, joint co-borrower and group member. A
+guarantor role does **not** count (that has its own limit, `max_loans_per_guarantor`).
+
+**Live** means any status except `rejected`, `cancelled`, `closed` and `declined`
+(`LoanApplicationStatus::holdsBorrowers()`, `LoanApplication::scopeLive()`). The whole review
+pipeline counts, not only disbursed loans. The check reads `status`, never `is_active`.
+
+**A person is matched by customer id and by NIC.** A typed-in group member creates a new
+customer row each time, so the same person can have several rows. Old (`853400937V`) and new
+(`198534000937`) NIC formats count as the same number. Group member snapshot NICs
+(`loan_application_customers.nic`) are matched as well.
+
+All the logic lives in `CustomerLoanEligibilityService`. It is checked in two places:
+
+| Where | What it gives |
+|---|---|
+| FormRequest `withValidator()` | a 422 on the exact field (`customer_id`, `joint_customer_ids.N`, `members.N.nic`, …), before any write |
+| `assertEligible()` inside the create transaction | locks the customer rows (`lockForUpdate`, ordered by id) and checks again, so a double-click or two officers at once cannot create two loans. Throws `CustomerHasLiveLoanException` → same 422 shape |
+
+Paths covered: `POST /loan-applications`, `POST /group-loans`, `POST /loan-application-customers`,
+`PATCH /loan-applications/{id}` (when `customer_id` changes), `PATCH /loan-applications/{id}/reopen`
+(the borrowers may have taken another loan while the file was rejected), and a group member's
+NIC being edited.
+
+> `POST /loan-applications` is now wrapped in a `DB::transaction()` for this. Its SMS and
+> document indexing still run after the commit, as before.
