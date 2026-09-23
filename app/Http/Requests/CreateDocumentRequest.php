@@ -31,15 +31,7 @@ class CreateDocumentRequest extends FormRequest
             'document_type' => ['nullable', 'string', Rule::in(array_keys(Document::TYPES))],
             'is_mandatory'  => 'nullable|boolean',
             'document_name' => 'required|string|max:255',
-            // An upload, and only an upload.
-            //
-            // file_path used to be accepted here as an alternative, and it is
-            // the string every later read, stream and delete resolves against.
-            // A caller who could set it could choose which file the server
-            // opened: pointed at ../.env against a victim's customer_id, the
-            // victim's own portal would stream it straight back. The path is
-            // now always server-generated.
-            'file'          => 'required|file|mimes:pdf,jpg,jpeg,png|max:10240',
+            'file'          => 'required|file|mimes:pdf,jpg,jpeg,png|max:15360',
             'remarks'       => 'nullable|string',
             'status'        => 'nullable|string|in:active,rejected,expired',
             'is_active'     => 'nullable|boolean',

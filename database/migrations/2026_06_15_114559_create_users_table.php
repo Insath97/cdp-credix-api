@@ -19,6 +19,12 @@ return new class extends Migration
             $table->string('password');
             $table->timestamp('password_changed_at')->nullable();
             $table->timestamp('password_expires_at')->nullable();
+            // When passwords:lock-expired took can_login away because the
+            // temporary password was never replaced. What distinguishes that
+            // from an admin switching the account off by hand: only a lock
+            // this column records is lifted again when the owner finally sets
+            // a password, so a deliberate deactivation is never undone.
+            $table->timestamp('password_locked_at')->nullable();
             $table->timestamp('two_factor_verified_at')->nullable();
             $table->enum('user_type', ['admin', 'staff','customer'])->default('admin');
             $table->foreignId('employee_id')->nullable()->constrained('employees')->nullOnDelete();

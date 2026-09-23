@@ -12,6 +12,11 @@ Artisan::command('inspire', function () {
 // texts real borrowers, so a second overlapping run is a second SMS.
 Schedule::command('installments:send-due-reminders')->dailyAt('00:15')->withoutOverlapping();
 
+// Locks accounts that never replaced their temporary password. Enforcement
+// itself is at login time, so this running late costs nothing -- it persists
+// the state the user lists and reports read.
+Schedule::command('passwords:lock-expired')->dailyAt('00:20')->withoutOverlapping();
+
 Schedule::command('loans:mark-overdue')->dailyAt('00:30')->withoutOverlapping();
 Schedule::command('installments:send-overdue-sms')->dailyAt('01:00')->withoutOverlapping();
 Schedule::command('recovery:escalate-internal')->dailyAt('01:30')->withoutOverlapping();

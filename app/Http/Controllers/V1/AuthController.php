@@ -140,6 +140,31 @@ class AuthController extends Controller
             $token = $guard->login($user);
             $user = auth('api')->user();
 
+            // Checked before canLogin(), and computed from the deadline rather
+            // than from the lock the nightly command writes.
+            //
+            // Before the deadline: the customer signs in normally and changes
+            // the password in the portal. After it: no token is issued at all,
+            // so there is no session to hold at a password-change screen -- the
+            // way back in is forgot-password, which sends an OTP to the phone
+            // and does not require a login. Saying so here is the difference
+            // between a customer ringing the branch and a customer recovering
+            // on their own.
+            //
+            // Not left to passwords:lock-expired: that runs once a night, and
+            // the hours between the deadline passing and the job firing would
+            // otherwise still accept the password.
+            if ($user->temporaryPasswordExpired()) {
+                Auth::guard('api')->logout();
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Your temporary password has expired because it was not changed within '
+                        . \App\Models\User::TEMPORARY_PASSWORD_DAYS
+                        . ' days. Use "Forgot password" to request a new one.',
+                    'errors'  => ['temporary_password_expired' => true],
+                ], 403);
+            }
+
             if (!$user->canLogin()) {
                 Auth::guard('api')->logout();
                 return response()->json([

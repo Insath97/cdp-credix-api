@@ -50,6 +50,7 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         'password',
         'password_changed_at',
         'password_expires_at',
+        'password_locked_at',
         // Absent from this list until now, while AuthController::verifyOtp()
         // set it through a mass-assigning update(). The write was silently
         // dropped every time, so no customer was ever recorded as having
@@ -84,6 +85,8 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         'created_at',
         'updated_at',
         'deleted_at',
+        'password_expires_at',
+        'password_locked_at',
     ];
 
     /**
@@ -99,6 +102,7 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
             'password' => 'hashed',
             'password_changed_at' => 'datetime',
             'password_expires_at' => 'datetime',
+            'password_locked_at' => 'datetime',
             'last_login_at' => 'datetime',
             'is_active' => 'boolean',
             'can_login' => 'boolean',
@@ -295,6 +299,17 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         }
 
         return implode('', $chars);
+    }
+
+    /**
+     * Locked by passwords:lock-expired rather than by a person.
+     *
+     * Only such a lock is lifted when the owner finally sets their own
+     * password. An account an admin deactivated stays deactivated.
+     */
+    public function isLockedForExpiredPassword(): bool
+    {
+        return $this->password_locked_at !== null;
     }
 
     /**
