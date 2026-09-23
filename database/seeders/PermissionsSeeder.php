@@ -178,6 +178,8 @@ class PermissionsSeeder extends Seeder
 
             /* Global Search */
             ['name' => 'Global Search', 'group_name' => 'Global Search Permissions'],
+            /* CDP Connect */
+            ['name' => 'CDP Customer Verification', 'group_name' => 'CDP Connect Permissions'],
             
             /* Loan Application Management */
             ['name' => 'Loan Application Index', 'group_name' => 'Loan Application Management Permissions'],

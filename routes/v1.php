@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\V1\CdpCustomerVerificationController;
 use App\Http\Controllers\V1\GlobalSearchController;
 use App\Http\Controllers\V1\AuthController;
 use App\Http\Controllers\V1\ActivityController;
@@ -89,6 +90,14 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     // Global Search
     Route::get('global-search/id-types', [GlobalSearchController::class, 'idTypes']);
     Route::get('global-search', [GlobalSearchController::class, 'search']);
+
+    // CDP Connect verification -- read-only lookup on the investment side.
+    // GET and POST both, as the integration guide specifies. Deliberately
+    // inside the authenticated group rather than the public one: this endpoint
+    // spends Credix's shared CDP key on the caller's behalf, so leaving it open
+    // would let anyone on the network enumerate NICs against the investment
+    // database without an account.
+    Route::match(['get', 'post'], 'cdp/verify-customer', [CdpCustomerVerificationController::class, 'checkCustomer']);
 
     //ActivityLog
     Route::get('activities/filter-options', [ActivityController::class, 'filterOptions']);

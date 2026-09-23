@@ -41,6 +41,13 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI'),
     ],
 
+    'cdp_connect' => [
+        'base_url' => env('CDP_CONNECT_BASE_URL'),
+        'api_key'  => env('CDP_CONNECT_API_KEY'),
+        'timeout'  => (int) env('CDP_CONNECT_TIMEOUT', 15),
+        'key_header' => 'X-Credix-Key',
+    ],
+
     'dialog_sms' => [
         'url' => env('DIALOG_SMS_URL', 'https://esms.dialog.lk'),
         'send_url' => env('DIALOG_SMS_SEND_URL', 'https://e-sms.dialog.lk/api/v2/sms'),
@@ -48,7 +55,7 @@ return [
         'password' => env('DIALOG_SMS_PASSWORD'),
         'mask' => env('DIALOG_SMS_MASK', 'CDP EMPIRE'),
 
-       
+
         'allowed_numbers' => array_values(array_filter(array_map(
             'trim',
             explode(',', (string) env('SMS_ALLOWED_NUMBERS', ''))
