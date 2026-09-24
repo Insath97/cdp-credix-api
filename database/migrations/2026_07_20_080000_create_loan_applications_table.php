@@ -81,6 +81,8 @@ return new class extends Migration
 
             $table->boolean('is_active')->default(true);
 
+            $table->string('collateral_policy_number', 100)->nullable()->index()->after('loan_product_id');
+
             $table->softDeletes();
             $table->timestamps();
 

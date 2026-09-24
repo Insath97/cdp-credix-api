@@ -26,7 +26,9 @@ use Illuminate\Routing\Controllers\Middleware;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\CustomerHasLiveLoanException;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
+use App\Exceptions\InvestmentCollateralException;
 use App\Services\CustomerLoanEligibilityService;
+use App\Services\InvestmentCollateralService;
 use App\Services\LoanApplicationWorkflowService;
 use App\Services\LoanDocumentService;
 use App\Services\NotificationService;
@@ -41,6 +43,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
         protected LoanApplicationWorkflowService $workflowService,
         protected NotificationService $notificationService,
         protected LoanDocumentService $loanDocumentService,
+        protected InvestmentCollateralService $investmentCollateral,
     ) {
     }
 
@@ -200,12 +203,44 @@ class LoanApplicationController extends Controller implements HasMiddleware
 
             $data = Employee::mergeRecommenderSnapshot($data);
 
+            // Investment-backed product: the pledged CDP Core policy is checked
+            // against Core (ownership, approval, LTV, maturity) before anything
+            // is written. Outside the transaction because it is an HTTP call;
+            // the one-live-loan-per-policy rule is re-checked under the lock
+            // below. No-op for a product that takes no collateral.
+            $product = LoanProduct::findOrFail($data['loan_product_id']);
+            $this->investmentCollateral->validate(
+                $product,
+                Customer::findOrFail($data['customer_id']),
+                $data['collateral_policy_number'] ?? null,
+                (float) $data['requested_amount'],
+                (int) $data['term_months'],
+                !empty($data['applied_at']) ? \Carbon\Carbon::parse($data['applied_at']) : now()
+            );
+            if (!$product->requires_investment_collateral) {
+                $data['collateral_policy_number'] = null;
+            }
+
             $loanApplication = DB::transaction(function () use (&$data) {
                 $borrowers = ['customer_id' => $data['customer_id']];
                 foreach ($data['joint_customer_ids'] ?? [] as $i => $jointId) {
                     $borrowers["joint_customer_ids.{$i}"] = $jointId;
                 }
                 CustomerLoanEligibilityService::assertEligible($borrowers);
+
+                if (!empty($data['collateral_policy_number'])) {
+                    // Two submissions for the same policy both passed the
+                    // HTTP-time check above; only one may get through here.
+                    $holder = LoanApplication::holdingPolicy($data['collateral_policy_number'])
+                        ->lockForUpdate()
+                        ->with('application')
+                        ->first();
+                    if ($holder) {
+                        throw new InvestmentCollateralException(
+                            "Policy {$data['collateral_policy_number']} was pledged against loan {$holder->reference()} a moment ago."
+                        );
+                    }
+                }
 
                 if (empty($data['application_id'])) {
                     $branchName = !empty($data['branch_id'])
@@ -289,6 +324,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
             ], 201);
 
         } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
+        } catch (InvestmentCollateralException $e) {
             return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
@@ -1476,6 +1513,21 @@ class LoanApplicationController extends Controller implements HasMiddleware
             $loanApplication = DB::transaction(function () use ($loanApplication, $borrowers, $request, $rejection) {
                 CustomerLoanEligibilityService::assertEligible($borrowers, $loanApplication->id);
 
+                // A rejected loan freed its policy; another loan may have taken
+                // it since. It cannot be reopened while that loan is live.
+                if ($loanApplication->collateral_policy_number) {
+                    $holder = LoanApplication::holdingPolicy($loanApplication->collateral_policy_number)
+                        ->where('id', '!=', $loanApplication->id)
+                        ->lockForUpdate()
+                        ->with('application')
+                        ->first();
+                    if ($holder) {
+                        throw new InvestmentCollateralException(
+                            "This loan cannot be reopened: its policy {$loanApplication->collateral_policy_number} now secures loan {$holder->reference()}. Create a new application with fresh collateral instead."
+                        );
+                    }
+                }
+
                 return $this->workflowService->transition(
                     $loanApplication,
                     LoanApplicationStatus::Reopened,
@@ -1507,6 +1559,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
             ], 200);
 
         } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
+        } catch (InvestmentCollateralException $e) {
             return $e->toResponse();
         } catch (InvalidLoanApplicationTransitionException $e) {
             return response()->json([

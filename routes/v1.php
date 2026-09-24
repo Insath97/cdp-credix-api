@@ -17,6 +17,9 @@ use App\Http\Controllers\V1\DesignationController;
 use App\Http\Controllers\V1\CountryController;
 use App\Http\Controllers\V1\GroupController;
 use App\Http\Controllers\V1\CustomerController;
+use App\Http\Controllers\V1\CustomerLoanEligibilityController;
+use App\Http\Controllers\V1\CustomerInvestmentController;
+use App\Http\Controllers\V1\External\CorePolicyHoldController;
 use App\Http\Controllers\V1\CustomerBankDetailController;
 use App\Http\Controllers\V1\GuarantorController;
 use App\Http\Controllers\V1\LiabilityController;
@@ -91,13 +94,10 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     Route::get('global-search/id-types', [GlobalSearchController::class, 'idTypes']);
     Route::get('global-search', [GlobalSearchController::class, 'search']);
 
-    // CDP Connect verification -- read-only lookup on the investment side.
-    // GET and POST both, as the integration guide specifies. Deliberately
-    // inside the authenticated group rather than the public one: this endpoint
-    // spends Credix's shared CDP key on the caller's behalf, so leaving it open
-    // would let anyone on the network enumerate NICs against the investment
-    // database without an account.
-    Route::match(['get', 'post'], 'cdp/verify-customer', [CdpCustomerVerificationController::class, 'checkCustomer']);
+    // CDP Connect verification 
+    Route::get('cdp/verify-customer', [CdpCustomerVerificationController::class, 'checkCustomer']);
+    Route::post('cdp/verify-customer', [CdpCustomerVerificationController::class, 'checkCustomer']);
+
 
     //ActivityLog
     Route::get('activities/filter-options', [ActivityController::class, 'filterOptions']);
@@ -180,6 +180,8 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     // Customers
     Route::prefix('customers')->group(function () {
         Route::get('list', [CustomerController::class, 'index']);
+        Route::get('loan-eligibility', [CustomerLoanEligibilityController::class, 'show']);
+        Route::get('{id}/investments', [CustomerInvestmentController::class, 'index']);
         Route::get('list/public/{customer_code?}', [CustomerController::class, 'getPublicDetails']);
         Route::patch('{id}/toggle-status', [CustomerController::class, 'toggleStatus']);
         Route::post('{id}/restore', [CustomerController::class, 'restore']);
@@ -409,6 +411,11 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::get('recovery/{id}', [ReportController::class, 'recoveryShow']);
     });
 
+});
+
+/* server-to-server routes for CDP Core (X-Core-Key, no JWT) */
+Route::middleware(['core.key', 'throttle:60,1'])->prefix('v1/external/core')->group(function () {
+    Route::get('policy-hold', [CorePolicyHoldController::class, 'index']);
 });
 
 /* customer dashboard routes */

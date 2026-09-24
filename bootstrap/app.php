@@ -27,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.auth' => \App\Http\Middleware\AdminAuthMiddleware::class,
             'customer.auth' => \App\Http\Middleware\CustomerAuthMiddleware::class,
             'password.changed' => \App\Http\Middleware\EnsurePasswordChanged::class,
+            'core.key' => \App\Http\Middleware\VerifyCdpCoreKey::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -48,6 +48,12 @@ return [
         'key_header' => 'X-Credix-Key',
     ],
 
+    // The other direction: CDP Core calling Credix (policy-hold lookup before
+    // a payout). Core sends this key in X-Core-Key.
+    'cdp_core' => [
+        'inbound_key' => env('CDP_CORE_INBOUND_KEY'),
+    ],
+
     'dialog_sms' => [
         'url' => env('DIALOG_SMS_URL', 'https://esms.dialog.lk'),
         'send_url' => env('DIALOG_SMS_SEND_URL', 'https://e-sms.dialog.lk/api/v2/sms'),

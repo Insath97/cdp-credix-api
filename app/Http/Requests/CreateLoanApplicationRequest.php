@@ -41,6 +41,9 @@ class CreateLoanApplicationRequest extends FormRequest
             'joint_customer_ids'     => 'nullable|array',
             'joint_customer_ids.*'   => ['integer', 'distinct', 'exists:customers,id', Rule::notIn([$this->input('customer_id')])],
             'loan_product_id'        => 'required|integer|exists:loan_products,id',
+            // CDP Core policy pledged as security; required and verified against
+            // Core in the controller when the product requires collateral.
+            'collateral_policy_number' => 'nullable|string|max:100',
             'branch_id'              => 'nullable|integer|exists:branches,id',
             'requested_amount'       => 'required|numeric|min:0',
             'interest_rate'          => 'required|numeric|min:0|max:999.999',
@@ -96,6 +99,14 @@ class CreateLoanApplicationRequest extends FormRequest
                 if ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $this->input('customer_id'))) {
                     $this->liveLoanRefusal ??= $refusal;
                     $errors->add('customer_id', $refusal);
+                }
+            }
+
+            // Investment-backed products are individual loans only.
+            if ($this->filled('loan_product_id') && !empty($this->input('joint_customer_ids'))) {
+                $product = \App\Models\LoanProduct::find($this->input('loan_product_id'));
+                if ($product?->requires_investment_collateral) {
+                    $errors->add('joint_customer_ids', 'An investment-backed loan is an individual loan; joint co-borrowers cannot be added.');
                 }
             }
 

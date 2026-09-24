@@ -32,6 +32,8 @@ class LoanProduct extends Model
         'is_active',
         'is_islamic',
         'is_group_loan',
+        'requires_investment_collateral',
+        'max_loan_percentage',
     ];
 
     protected $hidden = [
@@ -54,6 +56,8 @@ class LoanProduct extends Model
         'is_active'            => 'boolean',
         'is_islamic'           => 'boolean',
         'is_group_loan'        => 'boolean',
+        'requires_investment_collateral' => 'boolean',
+        'max_loan_percentage'  => 'decimal:2',
     ];
 
     /**
@@ -78,6 +82,31 @@ class LoanProduct extends Model
     public function scopeGroupLoanEligible(Builder $query): Builder
     {
         return $query->where('is_group_loan', true);
+    }
+
+    /**
+     * Scope for products secured by a CDP Core investment.
+     */
+    public function scopeInvestmentBacked(Builder $query): Builder
+    {
+        return $query->where('requires_investment_collateral', true);
+    }
+
+    /**
+     * The most this product will lend against a pledged investment.
+     *
+     *   1,000,000 investment at max_loan_percentage 80 -> 800,000.
+     *
+     * Null when the product takes no collateral, so callers can tell "no
+     * ceiling applies" from "ceiling is zero".
+     */
+    public function maxLoanAgainst(float $investmentValue): ?float
+    {
+        if (!$this->requires_investment_collateral || $this->max_loan_percentage === null) {
+            return null;
+        }
+
+        return round($investmentValue * ((float) $this->max_loan_percentage / 100), 2);
     }
 
     public function loanApplications(): HasMany

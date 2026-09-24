@@ -37,6 +37,7 @@ class LoanApplication extends Model
         'application_id',
         'customer_id',
         'loan_product_id',
+        'collateral_policy_number',
         'branch_id',
         'group_loan_id',
         'requested_amount',
@@ -567,6 +568,17 @@ class LoanApplication extends Model
      * LoanApplicationStatus::holdsBorrowers(). Reads the status column, not
      * is_active: is_active can be toggled by hand and is not the truth.
      */
+    /**
+     * Live loans secured by this CDP Core policy. Normally zero or one: a
+     * policy may back only one live loan at a time, and CDP Core asks this
+     * before paying the policy out.
+     */
+    public function scopeHoldingPolicy(Builder $query, string $policyNumber): Builder
+    {
+        return $query->live()
+            ->whereRaw('UPPER(TRIM(collateral_policy_number)) = ?', [strtoupper(trim($policyNumber))]);
+    }
+
     public function scopeLive(Builder $query): Builder
     {
         return $query->whereNotIn(

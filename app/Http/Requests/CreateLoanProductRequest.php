@@ -28,15 +28,11 @@ class CreateLoanProductRequest extends FormRequest
             'loan_type_id' => 'required|integer|exists:loan_types,id',
             'loan_term_id' => 'required|integer|exists:loan_terms,id',
             'description' => 'nullable|string',
-            // A Group Loan product has no interest rate at all — repayment is
-            // derived from the service charge percentage in System Settings.
-            // Every other product still needs one, since approve() computes
-            // interest from it.
             'interest_rate' => [
                 'nullable',
                 'numeric',
                 'min:0',
-                'max:999.999',
+                'max:99.999',
                 Rule::requiredIf(fn () => !$this->boolean('is_group_loan')),
             ],
             'interest_type' => 'nullable|string|in:flat,reducing',
@@ -51,6 +47,15 @@ class CreateLoanProductRequest extends FormRequest
             'is_active' => 'nullable|boolean',
             'is_islamic' => 'nullable|boolean',
             'is_group_loan' => 'nullable|boolean',
+            'requires_investment_collateral' => 'nullable|boolean',
+            'max_loan_percentage' => [
+                'nullable',
+                'numeric',
+                'gt:0',
+                'max:100',
+                Rule::requiredIf(fn () => $this->boolean('requires_investment_collateral')),
+                Rule::prohibitedIf(fn () => $this->has('requires_investment_collateral') && !$this->boolean('requires_investment_collateral')),
+            ],
         ];
     }
 
