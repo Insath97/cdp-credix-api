@@ -91,10 +91,7 @@ class LoanApplicationGuarantorController extends Controller implements HasMiddle
 
             $record = LoanApplicationGuarantor::create($data);
 
-            // The guarantor's papers now belong to this file. Linked here,
-            // at the moment the relationship is made, rather than left for
-            // the next review to pick up -- and linked to THIS application
-            // only, which is the whole point of reading the pivot.
+            
             if ($record->loanApplication) {
                 $this->loanDocumentService->syncForApplication($record->loanApplication);
             }
