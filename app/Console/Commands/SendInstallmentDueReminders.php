@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\LoanApplication;
 use App\Models\LoanInstallment;
+use App\Models\Notification;
 use App\Services\NotificationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -43,6 +44,21 @@ class SendInstallmentDueReminders extends Command
 
             foreach ($this->recipientsFor($installment, $loanApplication) as $customer) {
                 if (empty($customer->phone_primary)) {
+                    continue;
+                }
+
+                // The same guard SendOverdueSmsReminders carries. Without it a
+                // second run on the same day -- a manual invocation, a retry
+                // after a crash part-way through the batch, or two schedulers
+                // overlapping -- texted every borrower their reminder again.
+                $alreadySentToday = Notification::where('loan_application_id', $installment->loan_application_id)
+                    ->where('customer_id', $customer->id)
+                    ->where('type', 'installment_due_reminder')
+                    ->where('channel', 'sms')
+                    ->whereDate('created_at', now()->toDateString())
+                    ->exists();
+
+                if ($alreadySentToday) {
                     continue;
                 }
 

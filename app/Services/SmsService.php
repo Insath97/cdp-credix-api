@@ -201,6 +201,22 @@ class SmsService
      */
     protected function formatNumber(string $number): string
     {
+        return self::normalise($number);
+    }
+
+    /**
+     * The canonical 9-digit form of a number, which is what identifies a
+     * handset. 0752932640, 752932640 and +94752932640 are one phone, and are
+     * all stored as-typed -- customers.phone_primary carries no uniqueness of
+     * any kind -- so anything that needs to ask "have I already texted this
+     * person?" has to compare on this rather than on the raw column.
+     *
+     * Static because NotificationService dedupes on it without needing a
+     * gateway client; formatNumber() stays the instance-side name the send
+     * path has always used.
+     */
+    public static function normalise(string $number): string
+    {
         $number = preg_replace('/[^0-9]/', '', $number);
 
         if (str_starts_with($number, '94')) {

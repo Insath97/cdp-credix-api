@@ -10,9 +10,11 @@ use App\Models\Application;
 use App\Models\Branch;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationCustomer;
+use App\Models\LoanApplicationStatusHistory;
 use App\Models\LoanProduct;
 use App\Models\Customer;
 use App\Models\Document;
+use App\Models\Employee;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use App\Traits\ScopesToUserBranch;
@@ -23,6 +25,7 @@ use Illuminate\Routing\Controllers\Middleware;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Services\LoanApplicationWorkflowService;
+use App\Services\LoanDocumentService;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Validator;
 use Spatie\Permission\Models\Role;
@@ -34,6 +37,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
     public function __construct(
         protected LoanApplicationWorkflowService $workflowService,
         protected NotificationService $notificationService,
+        protected LoanDocumentService $loanDocumentService,
     ) {
     }
 
@@ -45,10 +49,13 @@ class LoanApplicationController extends Controller implements HasMiddleware
             new Middleware('permission:Loan Application Update', only: ['update']),
             new Middleware('permission:Loan Application Toggle Status', only: ['toggleStatus', 'activate', 'deactivate']),
             new Middleware('permission:Loan Application Delete', only: ['destroy']),
-            new Middleware('permission:Loan Application Review', only: ['review']),
-            new Middleware('permission:Loan Application Verify', only: ['verify']),
+            new Middleware('permission:Loan Application Review', only: ['review', 'reviewFail']),
+            new Middleware('permission:Loan Application Resubmit', only: ['resubmit']),
+            new Middleware('permission:Loan Application Verify', only: ['verify', 'verifyFail']),
+            new Middleware('permission:Loan Application Reverify', only: ['reverify']),
             new Middleware('permission:Loan Application Approve', only: ['approve']),
             new Middleware('permission:Loan Application Reject', only: ['reject']),
+            new Middleware('permission:Loan Application Reopen', only: ['reopen']),
             new Middleware('permission:Loan Application Offer Response', only: ['holdOffer', 'acceptOffer', 'declineOffer']),
             new Middleware('permission:Loan Application Disburse', only: ['disburse']),
             new Middleware('permission:Loan Application Cancel', only: ['cancel']),
@@ -120,10 +127,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            // A loan list only names the borrower and any co-borrowers, so both are
-            // loaded on summary columns — NIC, date of birth, address, income and
-            // employer/business details are never queried. show() is the credit
-            // file and does select them.
+
             $query = LoanApplication::with([
                 'application',
                 'customer:'.Customer::SUMMARY_COLUMNS,
@@ -149,10 +153,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 $query->where('interest_type', $request->interest_type);
             }
 
-            // Accepts one status or a comma-separated list. The document upload
-            // screen uses it to offer only applications still at Submitted --
-            // documents are collected before review, and listing a disbursed or
-            // closed loan there only invites uploading against the wrong one.
             if ($request->filled('status')) {
                 $statuses = array_filter(array_map('trim', explode(',', (string) $request->status)));
                 $query->whereIn('status', $statuses);
@@ -162,7 +162,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
             }
 
-            // A branch officer sees their own branch's rows only.
             $this->scopeToUserBranch($query);
 
             $loanApplications = $query->orderBy('created_at', 'desc')->paginate($perPage);
@@ -196,6 +195,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
         try {
             $data = $request->validated();
 
+            $data = Employee::mergeRecommenderSnapshot($data);
+
             if (empty($data['application_id'])) {
                 $branchName = !empty($data['branch_id'])
                     ? Branch::find($data['branch_id'])?->name
@@ -220,11 +221,18 @@ class LoanApplicationController extends Controller implements HasMiddleware
             }
             $data['status'] = LoanApplicationStatus::Submitted;
 
-            // monthly_installment is intentionally NOT calculated here — the customer's
-            // requested_amount is not necessarily what gets disbursed. Calculation happens
-            // at approve() using approved_amount, once that figure is actually known.
-
             $loanApplication = LoanApplication::create($data);
+
+            // The opening row of the trail. Creation does not go through the
+            // workflow service -- there is no previous status to transition
+            // from -- so the file would otherwise have no history until its
+            // first review, and the audit trail would start in the middle.
+            LoanApplicationStatusHistory::record(
+                $loanApplication,
+                LoanApplicationStatus::Submitted,
+                Auth::id(),
+                'Loan application submitted'
+            );
 
             if (!empty($data['joint_customer_ids'])) {
                 $allCustomerIds = array_unique(array_merge([$loanApplication->customer_id], $data['joint_customer_ids']));
@@ -237,6 +245,12 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 }
             }
 
+            // Index the file's documents now, so an existing customer's papers
+            // belong to this application from the moment it is submitted. Runs
+            // after the co-borrowers are attached, because their documents
+            // count towards the file too.
+            $this->loanDocumentService->syncForApplication($loanApplication);
+
             $this->logActivity('CREATE', 'LoanApplication', "Created loan application ID: {$loanApplication->id}", $data);
 
             $staffRole = Role::where('name', config('notifications.staff_role'))->first();
@@ -247,7 +261,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                         $this->notificationService->sendSms(
                             'application_submitted',
                             $staffPhone,
-                            'CDP Credix: New loan application pending for review.',
+                            'CDP Capital: New loan application pending for review.',
                             ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
                         );
                     }
@@ -306,6 +320,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'reviewedByUser:'.User::SUMMARY_COLUMNS,
                 'verifiedByUser:'.User::SUMMARY_COLUMNS,
                 'approvedByUser:'.User::SUMMARY_COLUMNS,
+                'offerRespondedByUser:'.User::SUMMARY_COLUMNS,
                 'loanApplicationGuarantors.guarantor',
                 'loanApplicationFixedAssets',
                 'loanApplicationMovingAssets',
@@ -365,7 +380,25 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 return $guard;
             }
 
+            // A rejected, cancelled or closed file is a finished record, not a
+            // draft. Nothing stopped it being edited before, so a rejected
+            // application could be quietly rewritten and its rejection left
+            // describing figures that were no longer there. Reopening is what
+            // makes one editable again, which is the whole point of the status.
+            if ($loanApplication->status->isTerminal()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "This loan application is {$loanApplication->status->value} and can no longer be edited."
+                        . ($loanApplication->status === LoanApplicationStatus::Rejected
+                            ? ' Reopen it first if it needs to be worked on again.'
+                            : ''),
+                    'errors'  => ['status' => $loanApplication->status->value],
+                ], 422);
+            }
+
             $data = $request->validated();
+
+            $data = Employee::mergeRecommenderSnapshot($data);
 
             $loanApplication->update($data);
 
@@ -413,8 +446,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 return $guard;
             }
 
-            // Toggling a finished loan back on would show it as "Active".
-            // Only block turning it ON — turning it off is always fine.
             if (!$loanApplication->is_active && ($terminal = $this->terminalStatusResponse($loanApplication))) {
                 return $terminal;
             }
@@ -563,32 +594,26 @@ class LoanApplicationController extends Controller implements HasMiddleware
      */
     private function markCheckedDocuments(LoanApplication $loanApplication, ?array $documentIds, string $byColumn, string $atColumn): void
     {
-        if ($documentIds === null) {
-            return;
-        }
-
-        try {
-            $ids = array_values(array_unique(array_filter(array_map('intval', $documentIds))));
-
-            $scope = Document::where('loan_application_id', $loanApplication->id);
-
-            (clone $scope)->whereNotIn('id', $ids ?: [0])
-                ->update([$byColumn => null, $atColumn => null]);
-
-            if ($ids) {
-                (clone $scope)->whereIn('id', $ids)
-                    ->update([$byColumn => Auth::id(), $atColumn => now()]);
-            }
-        } catch (\Throwable $th) {
-            Log::warning('Failed to mark checked documents', [
-                'loan_application_id' => $loanApplication->id,
-                'column' => $byColumn,
-                'error' => $th->getMessage(),
-            ]);
-        }
+        // Writes loan_documents, not documents. The stamp records this
+        // application's look at the file; the borrower's own papers are shared
+        // with every other loan they hold, so stamping the document row kept
+        // only the most recent loan's verdict and erased the previous one's.
+        $this->loanDocumentService->markChecked($loanApplication, $documentIds, $byColumn, $atColumn);
     }
 
+
     public function verify(Request $request, string $id)
+    {
+        return $this->runVerification($request, $id, false);
+    }
+
+    public function reverify(Request $request, string $id)
+    {
+        return $this->runVerification($request, $id, true);
+    }
+
+
+    private function runVerification(Request $request, string $id, bool $isReverification)
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -616,10 +641,33 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 return $guard;
             }
 
+            $awaitingReverification = $loanApplication->status === LoanApplicationStatus::Reverify;
+
+            if ($isReverification && !$awaitingReverification) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This loan application is not awaiting re-verification. Use the verify action instead.',
+                ], 422);
+            }
+
+            if (!$isReverification && $awaitingReverification) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This loan application failed verification and is awaiting re-verification. Use the re-verify action instead.',
+                ], 422);
+            }
+
             $extra = [
                 'verified_by' => Auth::id(),
                 'verified_at' => now(),
             ];
+
+            if ($awaitingReverification) {
+                $extra['verify_failure_reason'] = null;
+                $extra['verify_failed_at']      = null;
+                $extra['reverify_count']        = (int) $loanApplication->reverify_count + 1;
+            }
+
             if ($request->filled('remarks')) {
                 $extra['verified_remarks'] = $request->input('remarks');
             }
@@ -642,13 +690,17 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'verified_at'
             );
 
-            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} verified", [
+            $verb = $isReverification ? 're-verified' : 'verified';
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} {$verb}", [
                 'loan_application_id' => $loanApplication->id,
             ]);
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Loan application verified successfully',
+                'message' => $isReverification
+                    ? 'Loan application re-verified successfully'
+                    : 'Loan application verified successfully',
                 'data'    => $loanApplication,
             ], 200);
 
@@ -660,17 +712,104 @@ class LoanApplicationController extends Controller implements HasMiddleware
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Failed to verify loan application',
+                'message' => $isReverification
+                    ? 'Failed to re-verify loan application'
+                    : 'Failed to verify loan application',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
     }
 
-    /**
-     * Review a submitted loan application — the first of the three hands the
-     * file passes through. Records who reviewed it, then hands it on for
-     * verification by someone else.
-     */
+
+    public function verifyFail(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'reason' => 'required|string|min:5|max:1000',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
+            $reason = $request->input('reason');
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Reverify,
+                Auth::id(),
+                $reason,
+                [
+                    'verify_failure_reason' => $reason,
+                    'verify_failed_at'      => now(),
+                ]
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} failed verification", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                $message = "Your loan application verification is failed.\nReason: {$reason}";
+
+                if (!empty($notifyCustomer->phone_primary)) {
+                    $this->notificationService->sendSms(
+                        'application_verify_failed',
+                        $notifyCustomer->phone_primary,
+                        $message,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+
+                if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                    $this->notificationService->sendEmail(
+                        'application_verify_failed',
+                        $notifyCustomer->email,
+                        'Loan Application Verification Failed',
+                        $message,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application verification failed. It is now awaiting re-verification and the customer has been notified.',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to fail the verification of this loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+
     public function review(Request $request, string $id)
     {
         try {
@@ -749,6 +888,171 @@ class LoanApplicationController extends Controller implements HasMiddleware
         }
     }
 
+
+    public function reviewFail(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'reason' => 'required|string|min:5|max:1000',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
+            $reason = $request->input('reason');
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::ReviewFailed,
+                Auth::id(),
+                $reason,
+                [
+                    'review_failure_reason' => $reason,
+                    'review_failed_at'      => now(),
+                ]
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} failed review", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
+                $message = "Your loan application has been reviewed but it failed.\nReason: {$reason}\nPlease resubmit your loan application documents again.";
+
+                if (!empty($notifyCustomer->phone_primary)) {
+                    $this->notificationService->sendSms(
+                        'application_review_failed',
+                        $notifyCustomer->phone_primary,
+                        $message,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+
+                if ($loanApplication->isJointLoan() && !empty($notifyCustomer->email)) {
+                    $this->notificationService->sendEmail(
+                        'application_review_failed',
+                        $notifyCustomer->email,
+                        'Loan Application Review Failed',
+                        $message,
+                        ['loan_application_id' => $loanApplication->id, 'customer_id' => $notifyCustomer->id]
+                    );
+                }
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application review failed. The customer has been notified to resubmit documents.',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to fail the review of this loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    
+    public function resubmit(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
+            if (!Document::where('loan_application_id', $loanApplication->id)->exists()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Upload the requested documents before resubmitting this loan application.',
+                ], 422);
+            }
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Submitted,
+                Auth::id(),
+                // No fallback wording any more: remarks are required, so the
+                // trail records what the customer actually said rather than a
+                // sentence the server made up on their behalf.
+                $request->input('remarks'),
+                [
+                    'review_failure_reason' => null,
+                    'review_failed_at'      => null,
+                    'resubmitted_at'        => now(),
+                    'resubmission_count'    => (int) $loanApplication->resubmission_count + 1,
+                ]
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} resubmitted for review", [
+                'loan_application_id' => $loanApplication->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application resubmitted for review successfully',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to resubmit loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
     /**
      * Approve a loan application under review.
      */
@@ -768,11 +1072,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 return $guard;
             }
 
-            // You can approve less than was requested, never more: the
-            // requested amount is the ceiling. Validated here rather than in a
-            // FormRequest because the ceiling comes from the loan itself, and
-            // the method previously validated nothing at all — which is how a
-            // loan ended up approved for double what was requested.
+
             $validator = Validator::make($request->all(), [
                 'approved_amount' => [
                     'nullable',
@@ -780,10 +1080,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'min:0.01',
                     'max:' . (float) $loanApplication->requested_amount,
                 ],
-                // A negative fee would make net_disbursement_amount larger
-                // than the approved amount — cash out the door exceeding what
-                // was actually approved.
+
                 'processing_fee'  => 'nullable|numeric|min:0',
+                'remarks'         => 'required|string|min:3',
             ], [
                 'approved_amount.max' => 'The approved amount cannot be more than the requested amount of '
                     . number_format((float) $loanApplication->requested_amount, 2)
@@ -798,8 +1097,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 ], 422);
             }
 
-            // Approved amount defaults to what the customer requested unless the
-            // approver explicitly overrides it (e.g. approving a lower amount).
+
             $approvedAmount = $request->filled('approved_amount')
                 ? $request->input('approved_amount')
                 : $loanApplication->requested_amount;
@@ -809,21 +1107,13 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'approved_at' => now(),
                 'approved_amount' => $approvedAmount,
             ];
-            if ($request->filled('remarks')) {
-                $extra['approval_remarks'] = $request->input('remarks');
-            }
+            $extra['approval_remarks'] = $request->input('remarks');
 
-            // All financial figures are backend-calculated from approved_amount —
-            // never requested_amount — since that's the figure actually being lent.
             $interest = round($approvedAmount * $loanApplication->interest_rate / 100, 2);
             $totalRepayment = round($approvedAmount + $interest, 2);
             $extra['monthly_installment'] = round($totalRepayment / $loanApplication->term_months, 2);
 
-            // Processing fee defaults to the product's configured rule unless the
-            // approver explicitly overrides it. It is deducted from the cash the
-            // customer actually receives at disbursement (net_disbursement_amount) —
-            // it never changes what they owe: interest, installments and
-            // outstanding_balance all stay based on the full approved_amount.
+
             $processingFee = $request->filled('processing_fee')
                 ? round((float) $request->input('processing_fee'), 2)
                 : $this->calculateProcessingFee($loanApplication->loanProduct, $approvedAmount);
@@ -967,13 +1257,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
     private function respondToOffer(Request $request, string $id, LoanApplicationStatus $to)
     {
         try {
-            // Remarks are required on every answer: the status alone says what
-            // the borrower decided, never what they actually said, and that
-            // sentence is what the next officer to open the file reads.
+
             $rules = ['remarks' => 'required|string|min:3|max:1000'];
 
-            // A decline has to say why: "customers walked away from 12 offers
-            // last quarter" is only actionable with the reason beside it.
             if ($to === LoanApplicationStatus::Declined) {
                 $rules['decline_reason'] = 'required|string|in:' . implode(',', array_keys(LoanApplication::OFFER_DECLINE_REASONS));
             }
@@ -1018,10 +1304,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 $extra
             );
 
-            // A declined offer is the end of this application. Cancelling it
-            // here rather than leaving it for someone to notice keeps the
-            // pipeline honest -- and both steps land in the status history, so
-            // the reason stays readable after the file is closed.
             if ($to === LoanApplicationStatus::Declined) {
                 $loanApplication = $this->workflowService->transition(
                     $loanApplication,
@@ -1095,26 +1377,21 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 $loanApplication,
                 LoanApplicationStatus::Disbursed,
                 Auth::id(),
-                null,
+                'Loan disbursed to the customer',
                 ['disbursed_at' => now()]
             );
 
             $loanApplication = $this->workflowService->transition(
                 $loanApplication,
                 LoanApplicationStatus::Active,
-                Auth::id()
+                Auth::id(),
+                'Loan activated on disbursement'
             );
 
             $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} disbursed", [
                 'loan_application_id' => $loanApplication->id,
             ]);
 
-            // Deliberately no amounts here. Charges deducted at disbursement --
-            // the processing fee, and a group loan's service charge -- are not
-            // quoted to the customer in a notification; they belong on the
-            // disbursement voucher and the repayment schedule, where the customer
-            // sees them in context. Mirrors the group loan disbursed message,
-            // which has never carried them.
             $disbursedMessage = 'Congratulations! Your loan has been approved and successfully disbursed. Your repayment schedule is now available.';
 
             foreach ($loanApplication->notifiableCustomers() as $notifyCustomer) {
@@ -1159,11 +1436,129 @@ class LoanApplicationController extends Controller implements HasMiddleware
     }
 
     /**
+     * Put a rejected loan application back into play.
+     *
+     * The rejection is not undone and nothing about it is rewritten: it stays
+     * in loan_application_status_history as the row it always was, with the
+     * officer who rejected it, when, and why. This adds a row after it. Reading
+     * the trail in order tells the whole story, which is what an audit wants
+     * and what an edited record could never give.
+     *
+     * No new table and no new columns on the loan application: the history
+     * table already stores who changed a status, when, the reason, and a
+     * metadata bag for anything else -- which is exactly what "record the
+     * reopen action" asks for. The metadata here names the rejection being
+     * reversed, so the reopen row is readable on its own without walking back
+     * through the trail.
+     *
+     * is_active is restored explicitly. The workflow service forces it false on
+     * the way into a terminal status but has no rule for coming back out, so
+     * without this the reopened file would stay off every working list.
+     */
+    public function reopen(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $loanApplication = LoanApplication::find($id);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            if ($guard = $this->groupLoanGuardResponse($loanApplication)) {
+                return $guard;
+            }
+
+            // Read before the transition writes its own row, so this names the
+            // rejection being reversed rather than finding itself.
+            $rejection = LoanApplicationStatusHistory::where('loan_application_id', $loanApplication->id)
+                ->where('loan_application_status', LoanApplicationStatus::Rejected)
+                ->latest('id')
+                ->first();
+
+            $loanApplication = $this->workflowService->transition(
+                $loanApplication,
+                LoanApplicationStatus::Reopened,
+                Auth::id(),
+                $request->input('remarks'),
+                // is_active only. No reopened_at/reopened_by columns are
+                // added to the loan application: the history row below already
+                // records who and when, and a second copy on the row could
+                // only ever drift from it.
+                ['is_active' => true],
+                [
+                    'reopened_from'             => LoanApplicationStatus::Rejected->value,
+                    'reopened_by'               => Auth::id(),
+                    'reopened_at'               => now()->toDateTimeString(),
+                    // The rejection this reverses, copied so the reopen row
+                    // answers "what was overturned" without a second lookup.
+                    // rejection_reason is deliberately left on the loan
+                    // application untouched as well.
+                    'rejection_history_id'      => $rejection?->id,
+                    'previous_rejection_reason' => $loanApplication->rejection_reason ?? $rejection?->remarks,
+                    'previously_rejected_at'    => $rejection?->changed_at?->toDateTimeString(),
+                    'previously_rejected_by'    => $rejection?->changed_by,
+                ]
+            );
+
+            $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} reopened after rejection", [
+                'loan_application_id' => $loanApplication->id,
+                'reopened_by'         => Auth::id(),
+                'remarks'             => $request->input('remarks'),
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Loan application reopened successfully. It can be edited and sent for review again.',
+                'data'    => $loanApplication,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to reopen loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
      * Cancel a loan application that has not yet been approved.
      */
     public function cancel(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $loanApplication = LoanApplication::find($id);
 
             if (!$loanApplication) {
@@ -1252,7 +1647,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
      * Derive the processing fee from the loan product's configured rule
      * (fixed amount, or a percentage of the approved amount).
      */
-    private function calculateProcessingFee(?LoanProduct $product, $approvedAmount): float
+    private function calculateProcessingFee(?LoanProduct $product, float $approvedAmount): float
     {
         if (!$product || !$product->processing_fee_value) {
             return 0.0;

@@ -42,27 +42,6 @@ class GuarantorController extends Controller implements HasMiddleware
         ];
     }
 
-    /**
-     * HasMiddleware and Middleware were already imported here but the class
-     * never implemented the interface, so every /guarantors endpoint sat behind
-     * auth:api alone -- any signed-in user could list, create, edit or delete
-     * guarantors regardless of their permissions, even though the four
-     * permissions below have been seeded all along.
-     *
-     * toggleStatus is grouped under Update rather than given its own string:
-     * 'Guarantor Toggle Status' is not in PermissionsSeeder, and a permission
-     * name that does not exist denies everyone except Super Admin.
-     */
-    public static function middleware(): array
-    {
-        return [
-            new Middleware('permission:Guarantor Index',  only: ['index', 'show']),
-            new Middleware('permission:Guarantor Create', only: ['store']),
-            new Middleware('permission:Guarantor Update', only: ['update', 'toggleStatus']),
-            new Middleware('permission:Guarantor Delete', only: ['destroy']),
-        ];
-    }
-
      public function index(Request $request)
     {
         try {

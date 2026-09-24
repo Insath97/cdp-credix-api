@@ -14,10 +14,10 @@ return new class extends Migration
         Schema::create('activity_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
-            $table->string('action', 50);        // e.g. CREATE, UPDATE, DELETE, LOGIN, LOGOUT
-            $table->string('module', 100);       // e.g. Users, Leads, Roles
-            $table->text('description');         // Human readable text
-            $table->json('payload')->nullable();   // Context data (diff, parameters)
+            $table->string('action', 50);
+            $table->string('module', 100);
+            $table->text('description');
+            $table->json('payload')->nullable();
             $table->string('level', 20)->default('info'); // info, warning, error, critical
             $table->string('ip_address', 45)->nullable();
             $table->text('user_agent')->nullable();

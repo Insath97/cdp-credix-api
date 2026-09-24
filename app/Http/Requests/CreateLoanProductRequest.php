@@ -26,7 +26,7 @@ class CreateLoanProductRequest extends FormRequest
             'name' => 'required|string|max:255',
             'code' => 'nullable|string|max:50|unique:loan_products,code',
             'loan_type_id' => 'required|integer|exists:loan_types,id',
-            'loan_term_id' => 'nullable|integer|exists:loan_terms,id',
+            'loan_term_id' => 'required|integer|exists:loan_terms,id',
             'description' => 'nullable|string',
             // A Group Loan product has no interest rate at all — repayment is
             // derived from the service charge percentage in System Settings.

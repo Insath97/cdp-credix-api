@@ -17,10 +17,7 @@ return new class extends Migration
             $table->unsignedInteger('installments_counted')->default(0);
             $table->unsignedInteger('on_time_count')->default(0);
             $table->unsignedInteger('late_count')->default(0);
-            // The running point total for this (loan, customer): points earned
-            // on punctual installments less points lost on late ones. Signed --
-            // a borrower more often late than not sits below zero. Null until
-            // there is a repayment history to judge.
+           
             $table->decimal('final_score', 8, 2)->nullable();
             $table->timestamp('computed_at')->nullable();
             $table->timestamp('finalized_at')->nullable();

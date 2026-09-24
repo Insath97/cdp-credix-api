@@ -94,6 +94,20 @@ class UserController extends Controller implements HasMiddleware
         }
     }
 
+    /**
+     * Whether this payload is trying to hand someone the Super Admin role.
+     *
+     * Compared case-insensitively for the same reason User::isSuperAdmin() is:
+     * the role is seeded as 'SUPER ADMIN', so an exact match against the words
+     * 'Super Admin' is false, and a guard written that way would wave through
+     * the one request it exists to stop.
+     */
+    protected function grantsSuperAdmin(array $data): bool
+    {
+        return isset($data['role'])
+            && strcasecmp(trim((string) $data['role']), 'Super Admin') === 0;
+    }
+
     public function store(CreateUserRequest $request)
     {
         try {
@@ -108,6 +122,17 @@ class UserController extends Controller implements HasMiddleware
                         'message' => 'Only Super Admin can create admin users'
                     ], 403);
                 }
+            }
+
+            // The same rule update() applies: only a Super Admin hands out the
+            // Super Admin role. Without this the escalation just moves one step
+            // sideways -- a holder of "User Create" mints a brand new staff
+            // account carrying role Super Admin and signs in as it.
+            if ($this->grantsSuperAdmin($data) && (!$currentUser || !$currentUser->isSuperAdmin())) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only Super Admin can assign the Super Admin role'
+                ], 403);
             }
 
             // Create Employee first if user_type is staff
@@ -323,6 +348,37 @@ class UserController extends Controller implements HasMiddleware
                         'message' => 'Only Super Admin can manage admin users'
                     ], 403);
                 }
+            }
+
+            // Who may hand out the Super Admin role, and to whom.
+            //
+            // The guard above asks only what the TARGET is, never what the
+            // caller is entitled to grant. A staff account is not an admin, so
+            // a branch officer holding nothing but "User Update" could PUT
+            // their own id with {"role":"Super Admin"} and take over the
+            // system; the same request aimed at a colleague worked just as
+            // well. getAvailableRoles() hides Super Admin from the picker, but
+            // that is a dropdown, not an authorisation check, and the endpoint
+            // accepted the name regardless.
+            //
+            // Scoped to the Super Admin role rather than to roles in general:
+            // handing a new officer the Credit Officer role is exactly what a
+            // user manager is for, and blocking that would break the screen.
+            if ($this->grantsSuperAdmin($data) && (!$currentUser || !$currentUser->isSuperAdmin())) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only Super Admin can assign the Super Admin role'
+                ], 403);
+            }
+
+            // Nobody rewrites their own role, Super Admin included. Self-service
+            // is the shape every escalation here took, and an administrator who
+            // genuinely needs a different role can be given it by another one.
+            if (array_key_exists('role', $data) && (int) $currentUser?->id === (int) $user->id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You cannot change your own role'
+                ], 403);
             }
 
             if (isset($data['password'])) {

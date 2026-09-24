@@ -41,6 +41,19 @@ class EnsurePasswordChanged
             return $next($request);
         }
 
+        // Still on the password they were issued.
+        //
+        // A deadline means a temporary password with a grace period: a customer
+        // is let through until it lapses, because they are told to change it
+        // within three days and need the system working meanwhile. No deadline
+        // is the older staff case, where the issued password was never meant to
+        // be usable and the block applies from the first request.
+        $deadline = $user->password_expires_at;
+
+        if ($deadline !== null && $deadline->isFuture()) {
+            return $next($request);
+        }
+
         foreach (self::ALLOWED as $path) {
             if ($request->is($path)) {
                 return $next($request);
@@ -49,8 +62,13 @@ class EnsurePasswordChanged
 
         return response()->json([
             'status'  => 'error',
-            'message' => 'Set your own password before using the system.',
-            'errors'  => ['password_change_required' => true],
+            'message' => $deadline !== null
+                ? 'Your temporary password has expired. Set your own password to continue.'
+                : 'Set your own password before using the system.',
+            'errors'  => [
+                'password_change_required'   => true,
+                'temporary_password_expired' => $deadline !== null,
+            ],
         ], 403);
     }
 }

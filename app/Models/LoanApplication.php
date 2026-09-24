@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Enums\LoanApplicationStatus;
 use App\Enums\LoanRevisionStatus;
 
@@ -55,6 +56,17 @@ class LoanApplication extends Model
         'verified_remarks',
         'approval_remarks',
         'rejection_reason',
+        // Set when review sends the file back to the customer for better
+        // documents, cleared when they resubmit.
+        'review_failure_reason',
+        'review_failed_at',
+        'resubmitted_at',
+        'resubmission_count',
+        // Set when verification sends the file back for a second look.
+        'verify_failure_reason',
+        'verify_failed_at',
+        'reverify_count',
+        
         'applied_at',
         'reviewed_at',
         'verified_at',
@@ -103,6 +115,11 @@ class LoanApplication extends Model
         'reviewed_by'         => 'integer',
         'verified_by'         => 'integer',
         'approved_by'         => 'integer',
+        'review_failed_at'    => 'datetime',
+        'resubmitted_at'      => 'datetime',
+        'resubmission_count'  => 'integer',
+        'verify_failed_at'    => 'datetime',
+        'reverify_count'      => 'integer',
         'applied_at'          => 'datetime',
         'reviewed_at'         => 'datetime',
         'verified_at'         => 'datetime',
@@ -309,6 +326,20 @@ class LoanApplication extends Model
     {
         $this->loadMissing('loanProduct');
 
+        // KNOWN LIMITATION, left deliberately as it is.
+        //
+        // `?:` treats 0 as "not set", so a product whose grace period is 0 gets
+        // the installment_due_period_days setting (30) instead of no grace at
+        // all. There is therefore no way to configure a product that is chased
+        // from the day a payment is missed.
+        //
+        // Changing this to `??` is a one-word fix, but it is not only a fix: the
+        // column is NOT NULL DEFAULT 0, so every product left untouched reads as
+        // 0, and two live products here are in exactly that state. Making zero
+        // mean zero would start chasing their borrowers and charging late fees a
+        // month earlier than today, without anyone having asked for it. The
+        // change therefore needs the affected products given an explicit grace
+        // period first, which is a configuration decision rather than a code one.
         return (int) ($this->loanProduct?->grace_period_days
             ?: Setting::get('installment_due_period_days', 30));
     }
@@ -428,9 +459,34 @@ class LoanApplication extends Model
         return $this->hasMany(LegalDocument::class);
     }
 
+    /**
+     * Documents uploaded against this application specifically. Does NOT
+     * include the borrower's own papers, which carry only a customer_id --
+     * use loanDocuments()/checklistDocuments() for the application's whole file.
+     */
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
+    }
+
+    /** The document links for this application, carrying its review stamps. */
+    public function loanDocuments(): HasMany
+    {
+        return $this->hasMany(LoanDocument::class);
+    }
+
+    /**
+     * Every document that forms part of this application's file -- the ones
+     * uploaded for it and the borrower's own -- each carrying the review and
+     * verify stamp this application recorded against it.
+     *
+     * LoanDocumentService::syncForApplication() is what populates the link.
+     */
+    public function checklistDocuments(): BelongsToMany
+    {
+        return $this->belongsToMany(Document::class, 'loan_documents')
+            ->withPivot(['reviewed_by', 'reviewed_at', 'verified_by', 'verified_at'])
+            ->withTimestamps();
     }
 
     /**
@@ -452,7 +508,7 @@ class LoanApplication extends Model
      */
     public function statusHistory(): HasMany
     {
-        return $this->hasMany(LoanApplicationStatusHistory::class)->orderBy('created_at');
+        return $this->hasMany(LoanApplicationStatusHistory::class)->orderBy('changed_at')->orderBy('id');
     }
 
     /**

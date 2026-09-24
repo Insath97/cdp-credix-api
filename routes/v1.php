@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\V1\GlobalSearchController;
 use App\Http\Controllers\V1\AuthController;
 use App\Http\Controllers\V1\ActivityController;
 use App\Http\Controllers\V1\PermissionController;
@@ -29,6 +30,7 @@ use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LegalDocumentController;
 use App\Http\Controllers\V1\LegalDocumentTemplateController;
 use App\Http\Controllers\V1\LoanApplicationController;
+use App\Http\Controllers\V1\LoanApplicationStatusHistoryController;
 use App\Http\Controllers\V1\GroupLoanController;
 use App\Http\Controllers\V1\GroupLoanItemController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
@@ -62,7 +64,7 @@ use Illuminate\Support\Facades\Route;
 /* public routes */
 
 Route::prefix('v1')->group(function () {
-    Route::post('login', [AuthController::class, 'login']);
+    Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
     Route::post('login/verify-otp', [AuthController::class, 'verifyOtp'])->middleware('throttle:otp-verify');
     Route::post('forgot-password', [PasswordChangeController::class, 'forgotPassword'])->middleware('throttle:otp-request');
     Route::post('reset-forgot-password', [PasswordChangeController::class, 'resetForgotPassword'])->middleware('throttle:otp-verify');
@@ -75,20 +77,20 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
 
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
-    // Both verbs: the profile screen sends a partial update, and PUT is what
-    // it has always sent.
     Route::match(['put', 'patch'], 'me', [AuthController::class, 'updateProfile']);
 
     // Password
     Route::prefix('password')->group(function () {
         Route::post('request-change', [PasswordChangeController::class, 'requestChange'])->middleware('throttle:otp-request');
         Route::post('change-with-otp', [PasswordChangeController::class, 'changeWithOtp'])->middleware('throttle:otp-verify');
-        // Signed in and able to type the existing password: no OTP needed.
         Route::post('change', [PasswordChangeController::class, 'changeWithCurrentPassword'])->middleware('throttle:otp-verify');
     });
 
-    /*ActivityLog*/
-    // Before the resource, or 'filter-options' is read as an activity id.
+    // Global Search
+    Route::get('global-search/id-types', [GlobalSearchController::class, 'idTypes']);
+    Route::get('global-search', [GlobalSearchController::class, 'search']);
+
+    //ActivityLog
     Route::get('activities/filter-options', [ActivityController::class, 'filterOptions']);
     Route::apiResource('activities', ActivityController::class);
 
@@ -167,7 +169,6 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     Route::apiResource('groups', GroupController::class);
 
     // Customers
-    Route::apiResource('customers', CustomerController::class);
     Route::prefix('customers')->group(function () {
         Route::get('list', [CustomerController::class, 'index']);
         Route::get('list/public/{customer_code?}', [CustomerController::class, 'getPublicDetails']);
@@ -175,6 +176,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::post('{id}/restore', [CustomerController::class, 'restore']);
         Route::delete('{id}/force-delete', [CustomerController::class, 'forceDelete']);
     });
+    Route::apiResource('customers', CustomerController::class);
 
     // Customer Bank Details
     Route::prefix('customer-bank-details')->group(function () {
@@ -205,11 +207,8 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     });
 
     // Documents
-    //
-    // 'documents/applications' is registered BEFORE the apiResource, or
-    // documents/{document} swallows it and Laravel tries to look up a document
-    // with the id "applications".
     Route::get('documents/applications', [DocumentController::class, 'applications']);
+    Route::get('documents/file', [DocumentController::class, 'file']);
     Route::apiResource('documents', DocumentController::class);
 
     // Loan Terms
@@ -241,24 +240,30 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/activate', [LoanApplicationController::class, 'activate']);
         Route::patch('{id}/deactivate', [LoanApplicationController::class, 'deactivate']);
         Route::patch('{id}/review', [LoanApplicationController::class, 'review']);
+        Route::patch('{id}/review-fail', [LoanApplicationController::class, 'reviewFail']);
+        Route::patch('{id}/resubmit', [LoanApplicationController::class, 'resubmit']);
         Route::patch('{id}/verify', [LoanApplicationController::class, 'verify']);
+        Route::patch('{id}/verify-fail', [LoanApplicationController::class, 'verifyFail']);
+        Route::patch('{id}/reverify', [LoanApplicationController::class, 'reverify']);
         Route::patch('{id}/approve', [LoanApplicationController::class, 'approve']);
         Route::patch('{id}/reject', [LoanApplicationController::class, 'reject']);
         Route::patch('{id}/hold-offer', [LoanApplicationController::class, 'holdOffer']);
         Route::patch('{id}/accept-offer', [LoanApplicationController::class, 'acceptOffer']);
         Route::patch('{id}/decline-offer', [LoanApplicationController::class, 'declineOffer']);
+        Route::patch('{id}/reopen', [LoanApplicationController::class, 'reopen']);
         Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
     });
+
+    Route::prefix('loan-application-status-history')->group(function () {
+        Route::get('statuses', [LoanApplicationStatusHistoryController::class, 'statuses']);
+        Route::get('/', [LoanApplicationStatusHistoryController::class, 'index']);
+        Route::get('{loanApplicationId}', [LoanApplicationStatusHistoryController::class, 'show']);
+    });
+
     Route::apiResource('loan-applications', LoanApplicationController::class);
 
-    /*
-    |--------------------------------------------------------------------------
-    | Legal
-    |--------------------------------------------------------------------------
-    | Templates are the agreements registered per loan product; legal documents
-    | are the ones drawn up from them against a loan application.
-    */
+    // Legal
     Route::prefix('legal-document-templates')->group(function () {
         Route::get('list', [LegalDocumentTemplateController::class, 'getActiveList']);
         Route::patch('{id}/toggle-status', [LegalDocumentTemplateController::class, 'toggleStatus']);
@@ -280,7 +285,11 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/activate', [GroupLoanController::class, 'activate']);
         Route::patch('{id}/deactivate', [GroupLoanController::class, 'deactivate']);
         Route::patch('{id}/review', [GroupLoanController::class, 'review']);
+        Route::patch('{id}/review-fail', [GroupLoanController::class, 'reviewFail']);
+        Route::patch('{id}/resubmit', [GroupLoanController::class, 'resubmit']);
         Route::patch('{id}/verify', [GroupLoanController::class, 'verify']);
+        Route::patch('{id}/verify-fail', [GroupLoanController::class, 'verifyFail']);
+        Route::patch('{id}/reverify', [GroupLoanController::class, 'reverify']);
         Route::patch('{id}/approve', [GroupLoanController::class, 'approve']);
         Route::patch('{id}/reject', [GroupLoanController::class, 'reject']);
         Route::patch('{id}/hold-offer', [GroupLoanController::class, 'holdOffer']);
@@ -292,7 +301,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     Route::apiResource('group-loans', GroupLoanController::class);
 
     // Group Loan Items
-    Route::apiResource('group-loan-items', GroupLoanItemController::class)->only(['index', 'store', 'show', 'destroy']);
+    Route::apiResource('group-loan-items', GroupLoanItemController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
 
     // Loan Application Guarantors
     Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);
@@ -365,9 +374,6 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     // System Settings
     Route::prefix('settings')->group(function () {
         Route::get('list', [SettingController::class, 'list']);
-        // Before settings/{key} below, or 'flags' is read as a setting name.
-        // Feature switches only, and no Setting Index needed -- the roles that
-        // act on a switch have to be able to see it.
         Route::get('flags', [SettingController::class, 'flags']);
     });
     Route::get('settings', [SettingController::class, 'index']);

@@ -168,6 +168,17 @@ class GroupLoanWorkflowService
      */
     public function verify(GroupLoan $groupLoan, ?int $actorId, ?string $remarks, array $extra = []): GroupLoan
     {
+        // Verifying a file that was sent back clears the reason it was sent
+        // back for, and bumps the count of how many looks it has taken. Done
+        // here rather than in the controller so the group and individual paths
+        // cannot drift apart. The failure itself stays readable in
+        // loan_application_status_history.
+        if ($this->applicationFor($groupLoan)->status === LoanApplicationStatus::Reverify) {
+            $extra['verify_failure_reason'] = null;
+            $extra['verify_failed_at']      = null;
+            $extra['reverify_count']        = (int) $groupLoan->reverify_count + 1;
+        }
+
         return $this->advanceStage($groupLoan, LoanApplicationStatus::Verified, 'verify', $actorId, $remarks, $extra);
     }
 
@@ -179,6 +190,53 @@ class GroupLoanWorkflowService
     public function review(GroupLoan $groupLoan, ?int $actorId, ?string $remarks, array $extra = []): GroupLoan
     {
         return $this->advanceStage($groupLoan, LoanApplicationStatus::Reviewed, 'review', $actorId, $remarks, $extra);
+    }
+
+    /**
+     * Fail the verification of a group loan.
+     *
+     * Verification is where the flow forks: pass and the file goes on to
+     * approval, fail and it lands in Reverify for a second look. The header
+     * stays Available either way, exactly as review() and verify() leave it —
+     * a group loan waiting to be checked again is still an open file.
+     */
+    public function verifyFail(GroupLoan $groupLoan, ?int $actorId, ?string $reason, array $extra = []): GroupLoan
+    {
+        return $this->advanceStage($groupLoan, LoanApplicationStatus::Reverify, 'fail the verification of', $actorId, $reason, $extra);
+    }
+
+    /**
+     * Fail the review of a group loan and send it back to the group.
+     *
+     * The mirror of the individual loan's review-fail, and not a rejection:
+     * rejection ends the file, this says the paperwork was not good enough to
+     * check. The group is told by SMS, fixes its documents and resubmits.
+     *
+     * The header stays Available throughout, exactly as review() and verify()
+     * leave it — a group loan waiting on better documents is still an open
+     * file as far as the lifecycle tabs are concerned, and only the
+     * application underneath it actually moves. advanceStage() is reused
+     * because its guard ("the header must be Available") and its cascade are
+     * both the right ones here; only the direction of travel differs, and
+     * LoanApplicationStatus' own map is what decides that.
+     */
+    public function reviewFail(GroupLoan $groupLoan, ?int $actorId, ?string $reason, array $extra = []): GroupLoan
+    {
+        return $this->advanceStage($groupLoan, LoanApplicationStatus::ReviewFailed, 'fail the review of', $actorId, $reason, $extra);
+    }
+
+    /**
+     * Put a failed group loan back in the review queue once its documents have
+     * been reuploaded.
+     *
+     * Goes back to Submitted so the file re-enters review from the top rather
+     * than skipping the stage it failed, and bumps the resubmission count on
+     * both the header and the application — the count is what tells an officer
+     * they are looking at a file on its fourth attempt.
+     */
+    public function resubmit(GroupLoan $groupLoan, ?int $actorId, ?string $remarks, array $extra = []): GroupLoan
+    {
+        return $this->advanceStage($groupLoan, LoanApplicationStatus::Submitted, 'resubmit', $actorId, $remarks, $extra);
     }
 
     /**
@@ -405,14 +463,15 @@ class GroupLoanWorkflowService
                 $application,
                 LoanApplicationStatus::Disbursed,
                 $actorId,
-                null,
+                'Group loan disbursed to the group',
                 ['disbursed_at' => now()]
             );
 
             $this->loanApplicationWorkflowService->transition(
                 $application,
                 LoanApplicationStatus::Active,
-                $actorId
+                $actorId,
+                'Group loan activated on disbursement'
             );
 
             return $groupLoan->fresh(self::RESPONSE_RELATIONS);

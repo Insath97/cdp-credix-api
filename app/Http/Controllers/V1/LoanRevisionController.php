@@ -365,9 +365,12 @@ class LoanRevisionController extends Controller implements HasMiddleware
                 ], 404);
             }
 
-            $absolutePath = public_path($revision->document);
+            // Resolved and contained through FileUploadTrait, not public_path().
+            // Uploads now live outside the web root, and the resolver refuses a
+            // stored path that escapes its base directory.
+            $absolutePath = $this->resolveStoredFile($revision->document);
 
-            if (!is_file($absolutePath)) {
+            if ($absolutePath === null) {
                 return response()->json([
                     'status'  => 'error',
                     'message' => 'Document file is missing',

@@ -12,6 +12,7 @@ use App\Models\GroupLoanItem;
 use App\Services\GroupLoanWorkflowService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateGroupLoanItemRequest;
+use App\Http\Requests\UpdateGroupLoanItemRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
@@ -27,7 +28,7 @@ class GroupLoanItemController extends Controller implements HasMiddleware
     {
         return [
             new Middleware('permission:Group Loan Item Index', only: ['index', 'show']),
-            new Middleware('permission:Group Loan Item Create', only: ['store']),
+            new Middleware('permission:Group Loan Item Create', only: ['store', 'update']),
             new Middleware('permission:Group Loan Item Delete', only: ['destroy']),
         ];
     }
@@ -129,6 +130,57 @@ class GroupLoanItemController extends Controller implements HasMiddleware
                 'status'  => 'error',
                 'message' => 'Failed to retrieve group loan item',
                 'error'   => $th->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Update an existing line item on a group loan still in Submitted
+     * status, and recalculate the group loan's requested_amount — the loan
+     * amount is always backend-computed, never trusted from the client.
+     */
+    public function update(UpdateGroupLoanItemRequest $request, string $id)
+    {
+        try {
+            $item = GroupLoanItem::find($id);
+
+            if (!$item) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan item not found',
+                ], 404);
+            }
+
+            $groupLoan = $item->groupLoan;
+
+            if ($groupLoan->status !== GroupLoanStatus::Available) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "This group loan is {$groupLoan->status->value} and can no longer be changed. Items can only be edited while it is still Available (before approval).",
+                ], 422);
+            }
+
+            $data = $request->validated();
+            $data['line_total'] = round($data['quantity'] * $data['unit_price'], 2);
+
+            DB::transaction(function () use ($item, $groupLoan, $data) {
+                $item->update($data);
+                $this->recalculateRequestedAmount($groupLoan->id);
+            });
+
+            $this->logActivity('UPDATE', 'GroupLoanItem', "Updated item '{$item->item_name}' on group loan ID {$groupLoan->id}", $data);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Group loan item updated successfully',
+                'data'    => $item->fresh(['groupLoan']),
+            ], 200);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to update group loan item',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
     }

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Str;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Traits\HasRoles;
@@ -32,12 +33,30 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
      *
      * @var list<string>
      */
+    /**
+     * The username of the account that automated work is attributed to.
+     *
+     * The nightly schedulers move loan applications with nobody signed in.
+     * Their audit rows still have to name someone, so they name this account:
+     * it cannot log in and belongs to no person, which is exactly the point --
+     * "the system did this" rather than a real officer who did not.
+     */
+    public const SYSTEM_USERNAME = 'system';
+
     protected $fillable = [
         'name',
         'username',
         'email',
         'password',
         'password_changed_at',
+        'password_expires_at',
+        'password_locked_at',
+        // Absent from this list until now, while AuthController::verifyOtp()
+        // set it through a mass-assigning update(). The write was silently
+        // dropped every time, so no customer was ever recorded as having
+        // cleared two-factor and login() re-sent a fresh OTP on every single
+        // sign-in, forever.
+        'two_factor_verified_at',
         'user_type',
         'employee_id',
         'customer_id',
@@ -66,6 +85,8 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
         'created_at',
         'updated_at',
         'deleted_at',
+        'password_expires_at',
+        'password_locked_at',
     ];
 
     /**
@@ -80,6 +101,8 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
             'email_verification_token_expires_at' => 'datetime',
             'password' => 'hashed',
             'password_changed_at' => 'datetime',
+            'password_expires_at' => 'datetime',
+            'password_locked_at' => 'datetime',
             'last_login_at' => 'datetime',
             'is_active' => 'boolean',
             'can_login' => 'boolean',
@@ -118,6 +141,45 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
      * hasRole('Super Admin') is false -- a mismatch that silently locks the
      * Super Admin out of the very checks written to let them through.
      */
+    /**
+     * The id of the System account, creating it if it is not there yet.
+     *
+     * Audit rows may not be left unattributed now that changed_by is required,
+     * and the nightly schedulers have no signed-in user to name. This resolves
+     * that: a real row in users, so the foreign key holds, but one that cannot
+     * log in and has no password anyone could use.
+     *
+     * firstOrCreate rather than a plain lookup because this is reached from an
+     * audit write at 2am. A database that has not been seeded, or was seeded
+     * before this account existed, must not take the nightly job down -- it
+     * heals itself instead.
+     *
+     * Memoised per process: the schedulers call this once per loan application
+     * they move, and the answer cannot change while the process is running.
+     */
+    public static function systemUserId(): int
+    {
+        static $id = null;
+
+        if ($id !== null) {
+            return $id;
+        }
+
+        return $id = static::firstOrCreate(
+            ['username' => self::SYSTEM_USERNAME],
+            [
+                'name'      => 'System',
+                'email'     => null,
+                // Random and thrown away. The account is never signed in to;
+                // this exists only because the column is NOT NULL.
+                'password'  => bcrypt(Str::random(40)),
+                'user_type' => 'admin',
+                'is_active' => false,
+                'can_login' => false,
+            ]
+        )->id;
+    }
+
     public function isSuperAdmin(): bool
     {
         return $this->roles->contains(
@@ -183,6 +245,83 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
      * to send them to the change-password dialog instead of letting them walk
      * into a wall of 403s from EnsurePasswordChanged.
      */
+    /**
+     * How long a customer may keep the temporary password they were issued.
+     *
+     * A constant rather than a System Setting: it is quoted verbatim in the
+     * credentials message the customer receives, so the two cannot be allowed
+     * to drift apart by someone editing a settings screen.
+     */
+    public const TEMPORARY_PASSWORD_DAYS = 3;
+
+    /**
+     * A temporary password that is safe to send and realistic to type.
+     *
+     * Always contains an upper case letter, a lower case letter and a digit,
+     * built one class at a time rather than hoping a random draw covers all
+     * three -- otherwise the occasional password fails a mixed-case policy and
+     * the customer is told their own credentials are invalid.
+     *
+     * 0/O and 1/l/I are left out on purpose. This is read off an SMS and typed
+     * by hand, and those are the characters that turn into a support call.
+     *
+     * random_int() throughout, including the shuffle: shuffle() and rand() use
+     * Mt19937, which is predictable from a handful of outputs, and this is a
+     * live credential rather than a display value.
+     *
+     * Eight characters: short enough to read off a text and type, and the
+     * floor of the password rules elsewhere in the app (min:8). Three of the
+     * eight are spoken for by the one-per-class guarantee, so a shorter length
+     * than that would silently drop a class -- hence the guard below.
+     */
+    public static function generateTemporaryPassword(int $length = 8): string
+    {
+        $upper  = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+        $lower  = 'abcdefghijkmnopqrstuvwxyz';
+        $digits = '23456789';
+        $all    = $upper . $lower . $digits;
+
+        $pick = static fn (string $pool): string => $pool[random_int(0, strlen($pool) - 1)];
+
+        $chars = [$pick($upper), $pick($lower), $pick($digits)];
+
+        // Asking for fewer than one of each would return a password shorter
+        // than the caller requested, which is worse than refusing.
+        $length = max($length, count($chars));
+
+        for ($i = count($chars); $i < $length; $i++) {
+            $chars[] = $pick($all);
+        }
+
+        for ($i = count($chars) - 1; $i > 0; $i--) {
+            $j = random_int(0, $i);
+            [$chars[$i], $chars[$j]] = [$chars[$j], $chars[$i]];
+        }
+
+        return implode('', $chars);
+    }
+
+    /**
+     * Locked by passwords:lock-expired rather than by a person.
+     *
+     * Only such a lock is lifted when the owner finally sets their own
+     * password. An account an admin deactivated stays deactivated.
+     */
+    public function isLockedForExpiredPassword(): bool
+    {
+        return $this->password_locked_at !== null;
+    }
+
+    /**
+     * Still signed in with a password somebody else issued, past its deadline.
+     */
+    public function temporaryPasswordExpired(): bool
+    {
+        return $this->password_changed_at === null
+            && $this->password_expires_at !== null
+            && $this->password_expires_at->isPast();
+    }
+
     public function getPasswordChangeRequiredAttribute(): bool
     {
         // Only answer when the column was actually loaded. Plenty of endpoints
@@ -200,6 +339,9 @@ class User extends Authenticatable implements JWTSubject, MustVerifyEmail
     {
         $array = parent::toArray();
         $array['password_change_required'] = $this->password_change_required;
+        // So a client can count the days down rather than only discovering the
+        // deadline by being refused on the fourth morning.
+        $array['temporary_password_expired'] = $this->temporaryPasswordExpired();
 
         // If employee relationship is loaded, we can populate branch, zone, region, province
         if ($this->relationLoaded('employee') && $this->employee) {

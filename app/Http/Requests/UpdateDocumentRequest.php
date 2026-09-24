@@ -29,13 +29,8 @@ class UpdateDocumentRequest extends FormRequest
             'guarantor_id'        => 'nullable|integer|exists:guarantors,id',
             'document_type' => ['nullable', 'string', Rule::in(array_keys(Document::TYPES))],
             'is_mandatory'  => 'nullable|boolean',
-            // All optional on an update, unlike on create. Changing only a
-            // document's type must not force the caller to re-upload the file:
-            // update() leaves file_path untouched when no file is sent, so
-            // requiring one here rejected an edit the controller handles fine.
             'document_name' => 'nullable|string|max:255',
-            'file'          => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
-            'file_path'     => 'nullable|string|max:1000',
+            'file'          => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:15360',
             'remarks'       => 'nullable|string',
             'status'        => 'nullable|string|in:active,rejected,expired',
             'is_active'     => 'nullable|boolean',

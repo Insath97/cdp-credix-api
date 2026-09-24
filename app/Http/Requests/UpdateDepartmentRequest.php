@@ -25,8 +25,8 @@ class UpdateDepartmentRequest extends FormRequest
     {
         $id = $this->route('department');
         return [
-            'name' => 'sometimes|string|max:255',
-            'code' => 'sometimes|string|max:50|unique:departments,code,' . $id,
+            'name' => 'sometimes|required|string|max:255',
+            'code' => 'sometimes|required|string|max:50|unique:departments,code,' . $id,
             'description' => 'nullable|string',
             'is_active' => 'sometimes|boolean',
             'head_id' => 'nullable|exists:employees,id|unique:departments,head_id,' . $id,

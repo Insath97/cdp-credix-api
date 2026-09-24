@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Setting;
+use App\Services\GroupLoanWorkflowService;
 use Illuminate\Validation\Rule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
@@ -44,7 +45,7 @@ class UpdateGroupLoanRequest extends FormRequest
     {
         return [
             'branch_id'      => 'nullable|integer|exists:branches,id',
-            'group_name'     => 'nullable|string|max:255',
+            'group_name'     => 'sometimes|required|string|max:255',
             'term_months'    => 'nullable|integer|min:1',
 
             // The same three fields the create form collects, so the edit form
@@ -54,18 +55,24 @@ class UpdateGroupLoanRequest extends FormRequest
                 'nullable',
                 'integer',
                 Rule::exists('loan_products', 'id')->where(function ($query) {
-                    $query->where('is_active', true);
-
-                    // is_group_loan marks a product as belonging to the GROUP
-                    // tier of the Development Fund scheme. A single-borrower
-                    // Development Fund loan is submitted through this same
-                    // endpoint and takes an ordinary product of that loan
-                    // type, so demanding the flag from it rejected every
-                    // individual submission with "The selected loan product id
-                    // is invalid."
-                    // Exclusive: a group borrower may pick only flagged
-                    // products, a single borrower only unflagged ones.
-                    $query->where('is_group_loan', $this->borrowerCount() > 1);
+                    // The Development Fund scheme is item-based whether one
+                    // person takes the loan or a whole group, and both tiers
+                    // submit through this endpoint. A product is selectable
+                    // when it belongs to the Development Fund scheme; the
+                    // is_group_loan flag only tells the loan summary which
+                    // tier it is, it must not bar an individual borrower from
+                    // picking the scheme's own product. Requiring the
+                    // Development Fund loan type still keeps Standard
+                    // Borrowing products out.
+                    // whereNull('deleted_at') for the same reason as on create:
+                    // Rule::exists queries the table directly and never applies
+                    // the model's SoftDeletes scope, so a withdrawn product
+                    // stayed selectable.
+                    $query->where('is_active', true)
+                        ->whereNull('deleted_at')
+                        ->whereIn('loan_type_id', function ($sub) {
+                            $sub->select('id')->from('loan_types')->where('code', 'DEVELOPMENT_FUND');
+                        });
                 }),
             ],
             'competency' => ['nullable', 'string', function ($attribute, $value, $fail) {
@@ -75,12 +82,10 @@ class UpdateGroupLoanRequest extends FormRequest
                     $fail('The competency must be one of the configured options: ' . implode(', ', $allowed) . '.');
                 }
             }],
-            // Declared headcount, floored at one to match creation: a
-            // Development Fund loan for a single borrower comes through the
-            // same endpoint and would otherwise be uneditable. Dropping a
-            // group below two members is still refused by the member removal
-            // endpoint, which is where that rule belongs.
-            'number_of_members' => 'nullable|integer|min:1',
+            // Declared headcount, floored at two to match creation. An edit
+            // must not be a way round the floor the create request enforces;
+            // member removal refuses the same drop.
+            'number_of_members' => 'nullable|integer|min:' . GroupLoanWorkflowService::MIN_MEMBERS,
 
             // is_active is deliberately not accepted here: it has its own
             // activate/deactivate/toggle-status endpoints, which refuse to

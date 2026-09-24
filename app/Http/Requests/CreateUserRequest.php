@@ -26,7 +26,7 @@ class CreateUserRequest extends FormRequest
     {
         return [
             'name' => 'required|string|max:255',
-            'username' => 'required_if:user_type,admin|nullable|string|max:255|unique:users,username',
+            'username' => 'required_if:user_type,admin,customer|nullable|string|max:255|unique:users,username',
             'email' => 'nullable|email|max:255|unique:users,email',
             // Required for every kind of account, not just admins. A staff
             // account created without one used to fall back to the person's NIC

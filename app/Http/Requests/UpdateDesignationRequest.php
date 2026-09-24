@@ -25,10 +25,10 @@ class UpdateDesignationRequest extends FormRequest
     {
         $id = $this->route('designation');
         return [
-            'name' => 'sometimes|string|max:255',
-            'code' => 'sometimes|string|max:10|unique:designations,code,' . $id,
-            'department_id' => 'sometimes|exists:departments,id',
-            'level' => 'sometimes|in:entry,mid,senior,lead,executive,Manager,Director',
+            'name' => 'sometimes|required|string|max:255',
+            'code' => 'sometimes|required|string|max:10|unique:designations,code,' . $id,
+            'department_id' => 'sometimes|required|exists:departments,id',
+            'level' => 'sometimes|required|in:entry,mid,senior,lead,executive,Manager,Director',
             'description' => 'nullable|string',
             'is_active' => 'sometimes|boolean',
         ];

@@ -62,6 +62,14 @@ class PasswordChangeController extends Controller
             $user->update([
                 'password'            => Hash::make($request->password),
                 'password_changed_at' => now(),
+                // The temporary password is gone, so its deadline goes with it.
+                'password_expires_at' => null,
+                // And the lock that followed it, if the nightly command had
+                // already applied one. can_login is restored only for a lock
+                // this system applied -- password_locked_at is what says so, so
+                // an account an admin switched off by hand stays off.
+                'can_login' => $user->isLockedForExpiredPassword() ? true : $user->can_login,
+                'password_locked_at' => null,
             ]);
 
             Log::info('Password changed with current password', ['user_id' => $user->id]);
@@ -213,6 +221,14 @@ class PasswordChangeController extends Controller
             $user->update([
                 'password' => Hash::make($request->password),
                 'password_changed_at' => now(),
+                // The temporary password is gone, so its deadline goes with it.
+                'password_expires_at' => null,
+                // And the lock that followed it, if the nightly command had
+                // already applied one. can_login is restored only for a lock
+                // this system applied -- password_locked_at is what says so, so
+                // an account an admin switched off by hand stays off.
+                'can_login' => $user->isLockedForExpiredPassword() ? true : $user->can_login,
+                'password_locked_at' => null,
             ]);
 
             // Mark request as verified
@@ -353,6 +369,14 @@ class PasswordChangeController extends Controller
             $user->update([
                 'password' => Hash::make($request->password),
                 'password_changed_at' => now(),
+                // The temporary password is gone, so its deadline goes with it.
+                'password_expires_at' => null,
+                // And the lock that followed it, if the nightly command had
+                // already applied one. can_login is restored only for a lock
+                // this system applied -- password_locked_at is what says so, so
+                // an account an admin switched off by hand stays off.
+                'can_login' => $user->isLockedForExpiredPassword() ? true : $user->can_login,
+                'password_locked_at' => null,
             ]);
 
             // Mark request as verified

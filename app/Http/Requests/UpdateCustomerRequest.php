@@ -29,20 +29,36 @@ class UpdateCustomerRequest extends FormRequest
         'customer_id'=>'nullable|string|max:255',
         'full_name'=>'required|string|max:500',
         'name_with_initials'=>'required|string|max:255',
-        'customer_code' => 'nullable|string|max:255|unique:customers,customer_code',
+        // Ignoring the row being edited. $id was read above and never used, so
+        // this rule compared the record against itself: the edit screen posts
+        // the whole record back, customer_code included, and every save of an
+        // unchanged customer was refused with "already been taken".
+        'customer_code' => 'nullable|string|max:255|unique:customers,customer_code,' . $id,
         'id_type'=>'required',
-        'id_number'=>'required',
+        'id_number'=>[
+            'required',
+            
+            // Mirrors the NIC_REGEX the registration form applies. Without
+            // this the form rejected a malformed number and the API took it,
+            // so anything posting straight to the API skipped the check.
+            function ($attribute, $value, $fail) {
+                if (strtoupper(trim((string) $this->input('id_type'))) === 'NIC'
+                    && !preg_match('/^(\d{9}[vx]|\d{12})$/i', trim((string) $value))) {
+                    $fail('The NIC number must be 9 digits followed by V or X, or 12 digits (e.g. 980000111V or 199800001111).');
+                }
+            },
+        ],
         'address_line_1'=>'required',
         'address_line_2'=>'nullable',
         'landmark'=>'nullable|string|max:255',
-        'city'=>'nullable|string|max:255',
+        'city'=>'required|string|max:255',
         'state'=>'nullable|string|max:255',
         'country'=>'required|string|max:255',
         'postal_code'=>'nullable|string|max:255',
-        'gn_division'=>'nullable|string|max:255',
-        'ds_division'=>'nullable|string|max:255',
-        'district'=>'nullable|string|max:255',
-        'province'=>'nullable|string|max:255',
+        'gn_division'=>'required|string|max:255',
+        'ds_division'=>'required|string|max:255',
+        'district'=>'required|string|max:255',
+        'province'=>'required|string|max:255',
         // A birth date in the future is not a person. `date` alone let one through.
         'date_of_birth'=>'required|date|before:today',
         'phone_primary'=>'required|string|max:20',

@@ -176,6 +176,9 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Product Delete', 'group_name' => 'Loan Product Management Permissions'],
             ['name' => 'Loan Product Toggle Status', 'group_name' => 'Loan Product Management Permissions'],
 
+            /* Global Search */
+            ['name' => 'Global Search', 'group_name' => 'Global Search Permissions'],
+            
             /* Loan Application Management */
             ['name' => 'Loan Application Index', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Create', 'group_name' => 'Loan Application Management Permissions'],
@@ -183,10 +186,14 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Delete', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Toggle Status', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Review', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Resubmit', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Verify', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Reverify', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Approve', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Reject', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Reopen', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Offer Response', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Application Status History Index', 'group_name' => 'Loan Application Management Permissions'],
             /* Legal Management */
             ['name' => 'Legal Template Index', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Legal Template Create', 'group_name' => 'Legal Management Permissions'],
@@ -208,7 +215,9 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Group Loan Delete', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Toggle Status', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Review', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Resubmit', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Verify', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Reverify', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Approve', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Reject', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Offer Response', 'group_name' => 'Group Loan Management Permissions'],

@@ -13,7 +13,9 @@ use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\Application;
 use App\Models\Customer;
 use App\Models\Document;
+use App\Models\Employee;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationStatusHistory;
 use App\Models\User;
 use App\Enums\LoanApplicationStatus;
 use App\Services\NotificationService;
@@ -21,7 +23,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -97,6 +98,8 @@ class CustomerController extends Controller implements HasMiddleware
             $currentUser = Auth::guard('api')->user();
             $data = $request->validated();
 
+            $data = Employee::mergeRecommenderSnapshot($data);
+
             $customer = Customer::create($data);
 
             if (array_filter($data, fn ($key) => in_array($key, ['gn_division', 'ds_division', 'district', 'province']) && !empty($data[$key]), ARRAY_FILTER_USE_KEY)) {
@@ -132,45 +135,22 @@ class CustomerController extends Controller implements HasMiddleware
                 }
             }
 
-            if (!empty($data['create_user_account']) && !empty($data['user_username'])) {
-                $plainPassword = $data['user_password'] ?? Str::random(10);
-                $user = User::create([
-                    'name' => $customer->full_name,
-                    'username' => $data['user_username'],
-                    'email' => $customer->email,
-                    'password' => Hash::make($plainPassword),
-                    // Stamped at creation: the password was chosen for this
-                    // account on purpose, not defaulted to something guessable.
-                    // EnsurePasswordChanged holds accounts whose password
-                    // nobody deliberately picked -- and the customer portal has
-                    // no change-password screen, so leaving this null would
-                    // lock every new customer out of it with no way back.
-                    'password_changed_at' => now(),
-                    'user_type' => 'customer',
-                    'customer_id' => $customer->id,
-                    'is_active' => true,
-                    'can_login' => true,
-                ]);
-            } else {
-                $plainPassword = Str::random(10);
-                $user = User::create([
-                    'name' => $customer->full_name,
-                    'username' => $customer->customer_code,
-                    'email' => $customer->email,
-                    'password' => Hash::make($plainPassword),
-                    // Stamped at creation: the password was chosen for this
-                    // account on purpose, not defaulted to something guessable.
-                    // EnsurePasswordChanged holds accounts whose password
-                    // nobody deliberately picked -- and the customer portal has
-                    // no change-password screen, so leaving this null would
-                    // lock every new customer out of it with no way back.
-                    'password_changed_at' => now(),
-                    'user_type' => 'customer',
-                    'customer_id' => $customer->id,
-                    'is_active' => true,
-                    'can_login' => true,
-                ]);
-            }
+            $plainPassword = User::generateTemporaryPassword();
+            $user = User::create([
+                'name' => $customer->full_name,
+                'username' => !empty($data['create_user_account']) && !empty($data['user_username'])
+                    ? $data['user_username']
+                    : $customer->customer_code,
+                'email' => $customer->email,
+                'password' => Hash::make($plainPassword),
+                'password_changed_at' => null,
+                'password_expires_at' => now()->addDays(User::TEMPORARY_PASSWORD_DAYS),
+                'user_type' => 'customer',
+                'customer_id' => $customer->id,
+                'is_active' => true,
+                'can_login' => true,
+            ]);
+
             if (!empty($data['guarantors'])) {
                 foreach ($data['guarantors'] as $guarantorData) {
                     // Documents ride in on the guarantor payload but belong to
@@ -236,7 +216,7 @@ class CustomerController extends Controller implements HasMiddleware
                     'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
                 ]);
 
-                LoanApplication::create([
+                $loanApplication = LoanApplication::create([
                     'application_id' => $application->id,
                     'customer_id' => $customer->id,
                     'loan_product_id' => $data['loan_product_id'],
@@ -251,19 +231,29 @@ class CustomerController extends Controller implements HasMiddleware
                     'status' => LoanApplicationStatus::Submitted->value,
                     'is_active' => true,
                 ]);
+
+                LoanApplicationStatusHistory::record(
+                    $loanApplication,
+                    LoanApplicationStatus::Submitted,
+                    Auth::id(),
+                    'Loan application submitted at customer registration'
+                );
             }
 
             DB::commit();
 
             $customer->load(['customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
 
-            $credentialsMessage = "Welcome! Your CDP Credix account has been created.\nUsername: {$user->username}\nPassword: {$plainPassword}\nPlease keep this information secure and change your password after logging in.";
+            $credentialsMessage = "Welcome! Your account has been created.\n"
+                . "Username: {$user->username}\n"
+                . "Temporary Password: {$plainPassword}\n"
+                . 'This password must be changed within ' . User::TEMPORARY_PASSWORD_DAYS . ' days.';
 
             if (!empty($customer->email)) {
                 $emailNotification = $this->notificationService->sendEmail(
                     'customer_registration_credentials',
                     $customer->email,
-                    'Your CDP Credix Account Credentials',
+                    'Your CDP Capital Account Credentials',
                     $credentialsMessage,
                     ['customer_id' => $customer->id, 'user_id' => $user->id],
                     'Login credentials email sent to customer.'
@@ -366,18 +356,29 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function update(UpdateCustomerRequest $request, string $id)
     {
+        // The lookup happens BEFORE the transaction opens.
+        //
+        // Opening it first meant the not-found branch returned its 404 without
+        // ever rolling back, leaving an open transaction -- and its locks --
+        // held for the rest of the request. Nothing here needs a transaction in
+        // order to decide whether the row exists.
+        $customer = Customer::find($id);
+
+        if (!$customer) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Customer not found'
+            ], 404);
+        }
+
         DB::beginTransaction();
         try {
-            $customer = Customer::find($id);
-
-            if (!$customer) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Customer not found'
-                ], 404);
-            }
-
             $data = $request->validated();
+
+            // Keep the recommender snapshot in lock-step with the chosen
+            // employee (see Employee::mergeRecommenderSnapshot).
+            $data = Employee::mergeRecommenderSnapshot($data);
+
             $customer->update($data);
 
             if (array_filter($data, fn ($key) => in_array($key, ['gn_division', 'ds_division', 'district', 'province']) && !empty($data[$key]), ARRAY_FILTER_USE_KEY)) {
@@ -688,7 +689,12 @@ class CustomerController extends Controller implements HasMiddleware
             // If no customer_code, return all
             $perPage = request()->get('per_page', 15);
             $customers = Customer::with([
-                'bankDetails:id,customer_id,bank_name,branch_name,account_number,payment_method',
+                'bankDetails:id,
+                 customer_id,
+                 bank_name,
+                 branch_name,
+                 account_number,
+                 payment_method',
             ])
                 ->select('id', 'customer_code', 'full_name', 'email', 'phone_primary', 'id_type', 'id_number')
                 ->orderBy('id', 'asc')

@@ -47,6 +47,17 @@ return [
         'username' => env('DIALOG_SMS_USERNAME'),
         'password' => env('DIALOG_SMS_PASSWORD'),
         'mask' => env('DIALOG_SMS_MASK', 'CDP EMPIRE'),
+
+       
+        'allowed_numbers' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('SMS_ALLOWED_NUMBERS', ''))
+        ))),
+    ],
+
+    'giam' => [
+    'base_url' => env('GIAM_BASE_URL'),
+    'api_key' => env('GIAM_API_KEY'),
     ],
 
 ];

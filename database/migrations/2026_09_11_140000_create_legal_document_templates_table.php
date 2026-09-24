@@ -6,16 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * The legal paperwork a loan product is sold on.
-     *
-     * Per product, because the agreement a borrower signs is not the same
-     * document for every scheme -- a direct loan carries two guarantors and a
-     * collateral schedule, an investment-backed one surrenders a certificate.
-     * Which document belongs to which product is therefore DATA an officer
-     * configures, never a mapping hardcoded in the app: nobody outside the
-     * legal desk knows it, and it changes when a product does.
-     */
+    
     public function up(): void
     {
         Schema::create('legal_document_templates', function (Blueprint $table) {

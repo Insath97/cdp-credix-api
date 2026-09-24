@@ -15,6 +15,7 @@ use App\Traits\ActivityLogTrait;
 use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
@@ -31,12 +32,31 @@ class AuthController extends Controller
     public const LOGIN_OTP_TTL_SECONDS = 60;
 
     /**
-     * How long a login OTP stays valid, in seconds.
+     * How many failed sign-in attempts one account may collect from one
+     * address before it is made to wait, and how long that wait is.
      *
-     * The clock starts when the record is written, not when the SMS lands, so
-     * the gateway's own delivery delay is spent out of this window.
+     * Counted per account, not per address, because a branch office reaches
+     * the API from a single NAT address: a per-address count would let one
+     * officer's fat-fingered morning lock out the whole branch. The address
+     * is still part of the key so that an attacker elsewhere cannot lock a
+     * real user out of their own account by failing on purpose.
      */
-    public const LOGIN_OTP_TTL_SECONDS = 60;
+    public const LOGIN_MAX_ATTEMPTS = 5;
+
+    public const LOGIN_DECAY_SECONDS = 900;
+
+    /**
+     * The throttle key for one account seen from one address.
+     *
+     * Lower-cased so that `Admin` and `admin` share a counter instead of
+     * handing an attacker a fresh allowance per capitalisation.
+     */
+    private function loginThrottleKey(Request $request): string
+    {
+        $login = (string) ($request->input('login') ?? $request->input('email') ?? '');
+
+        return 'login:' . mb_strtolower(trim($login)) . '|' . $request->ip();
+    }
 
     /**
      * Admin / Customer Login
@@ -62,6 +82,28 @@ class AuthController extends Controller
                 ], 422);
             }
 
+            // Everything below this point is cheap to ask for and answers in
+            // constant wording, which is exactly what makes it worth guessing
+            // against. Refuse before touching the database, so a locked-out
+            // key costs an attacker a query as well as a wait.
+            $throttleKey = $this->loginThrottleKey($request);
+
+            if (RateLimiter::tooManyAttempts($throttleKey, self::LOGIN_MAX_ATTEMPTS)) {
+                $retryAfter = RateLimiter::availableIn($throttleKey);
+
+                Log::warning('Login throttled', [
+                    'ip' => $request->ip(),
+                    'retry_after' => $retryAfter,
+                ]);
+
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Too many failed login attempts. Please try again in '
+                        . ceil($retryAfter / 60) . ' minute(s).',
+                    'retry_after' => $retryAfter,
+                ], 429)->header('Retry-After', $retryAfter);
+            }
+
             $loginVal = $request->input('login');
             $passwordVal = $request->input('password');
 
@@ -79,16 +121,49 @@ class AuthController extends Controller
             }
 
             if (!$user || !Hash::check($passwordVal, $user->password)) {
+                RateLimiter::hit($throttleKey, self::LOGIN_DECAY_SECONDS);
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Invalid credentials'
                 ], 401);
             }
 
+            // The password was right. Everything that can still refuse this
+            // request below -- deactivated account, no role, missing phone --
+            // is a fact about the account, not a guess at it, so none of them
+            // should burn an attempt or leave the counter standing.
+            RateLimiter::clear($throttleKey);
+
             /** @var \PHPOpenSourceSaver\JWTAuth\JWTGuard $guard */
             $guard = Auth::guard('api');
             $token = $guard->login($user);
             $user = auth('api')->user();
+
+            // Checked before canLogin(), and computed from the deadline rather
+            // than from the lock the nightly command writes.
+            //
+            // Before the deadline: the customer signs in normally and changes
+            // the password in the portal. After it: no token is issued at all,
+            // so there is no session to hold at a password-change screen -- the
+            // way back in is forgot-password, which sends an OTP to the phone
+            // and does not require a login. Saying so here is the difference
+            // between a customer ringing the branch and a customer recovering
+            // on their own.
+            //
+            // Not left to passwords:lock-expired: that runs once a night, and
+            // the hours between the deadline passing and the job firing would
+            // otherwise still accept the password.
+            if ($user->temporaryPasswordExpired()) {
+                Auth::guard('api')->logout();
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Your temporary password has expired because it was not changed within '
+                        . \App\Models\User::TEMPORARY_PASSWORD_DAYS
+                        . ' days. Use "Forgot password" to request a new one.',
+                    'errors'  => ['temporary_password_expired' => true],
+                ], 403);
+            }
 
             if (!$user->canLogin()) {
                 Auth::guard('api')->logout();
@@ -160,7 +235,12 @@ class AuthController extends Controller
                     'data' => [
                         'otp_required' => true,
                         'reference' => $reference,
-                        'expires_in' => 1800,
+                        // The constant the record and the SMS both use. This
+                        // answered a hard-coded 1800 while the OTP expired
+                        // after 60 seconds, so the on-screen countdown kept
+                        // inviting a code the server had already rejected for
+                        // twenty-nine minutes.
+                        'expires_in' => self::LOGIN_OTP_TTL_SECONDS,
                     ]
                 ], 200);
             }

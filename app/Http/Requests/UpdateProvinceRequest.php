@@ -25,9 +25,9 @@ class UpdateProvinceRequest extends FormRequest
     {
         $id = $this->route('province');
         return [
-            'name' => 'sometimes|string|max:255',
-            'code' => 'sometimes|string|max:10|unique:provinces,code,' . $id,
-            'country_id' => 'sometimes|exists:countries,id',
+            'name' => 'sometimes|required|string|max:255',
+            'code' => 'sometimes|required|string|max:10|unique:provinces,code,' . $id,
+            'country_id' => 'sometimes|required|exists:countries,id',
             'is_active' => 'sometimes|boolean',
         ];
     }

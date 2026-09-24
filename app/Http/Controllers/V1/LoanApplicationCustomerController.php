@@ -85,6 +85,11 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     /**
      * Attach a customer to a loan application — a co-borrower, turning an
      * individual loan into a Joint Loan, or another member of a Group Loan.
+     *
+     * The member is usually an existing customer supplied by id. When the
+     * officer typed the member straight in (no customer_id), a Customer record
+     * is created from the snapshot detail fields so every member still points
+     * at a real customer record.
      */
     public function store(CreateLoanApplicationCustomerRequest $request)
     {
@@ -93,6 +98,10 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
 
             $record = DB::transaction(function () use ($data) {
                 $loanApplication = LoanApplication::with('groupLoan')->find($data['loan_application_id']);
+
+                if (empty($data['customer_id'])) {
+                    $data['customer_id'] = $this->createCustomerFromMember($data, $loanApplication)->id;
+                }
 
                 // First co-borrower ever added: bring the loan's own primary customer
                 // into the pivot too, so it always holds the complete borrower set.
@@ -104,6 +113,11 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 }
 
                 $record = LoanApplicationCustomer::create($data);
+
+                // The pivot holds a per-member snapshot of the customer's details
+                // so later edits from the loan never touch the shared record.
+                $record->setRelation('customer', Customer::find($data['customer_id']));
+                $record->snapshotFromCustomer();
 
                 // A group loan's header tracks how many members it has.
                 if ($loanApplication?->groupLoan) {
@@ -128,6 +142,33 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
+    }
+
+    /**
+     * Create a Customer record from a member's typed-in detail fields, so a
+     * member the officer enters by hand still points at a real customer.
+     *
+     * The member's single `address` line is stored as the customer's primary
+     * address line. GN/DS divisions go to the customer_detail row, mirroring
+     * the Customer module.
+     */
+    protected function createCustomerFromMember(array $member, $loanApplication): Customer
+    {
+        $customer = Customer::create([
+            'full_name'      => $member['member_name'] ?? null,
+            'id_type'        => 'NIC',
+            'id_number'      => $member['nic'] ?? null,
+            'address_line_1' => $member['address'] ?? null,
+            'phone_primary'  => $member['phone_number'] ?? null,
+            'branch_id'      => $loanApplication?->branch_id,
+        ]);
+
+        $customer->customerDetail()->create([
+            'gn_division' => $member['gn_division'] ?? null,
+            'ds_division' => $member['ds_division'] ?? null,
+        ]);
+
+        return $customer;
     }
 
     /**
@@ -161,11 +202,15 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     }
 
     /**
-     * Edit an attached customer's personal details.
+     * Edit an attached member's details.
      *
-     * These fields live on the shared `customers` record, so the edit is
-     * refused when that customer is attached to any other loan — the Customer
-     * module is the right place for that, where the wider effect is visible.
+     * Group Loan members carry a per-group snapshot on the pivot, so their
+     * details are edited from the loan freely — the shared customer record is
+     * never touched, which is why a member on other loans can still be edited
+     * here. Joint Loan co-borrowers have no snapshot: those fields live on the
+     * shared `customers` record, so the edit is refused when that customer is
+     * attached to any other loan — the Customer module is the right place for
+     * that, where the wider effect is visible.
      */
     public function updateCustomerDetails(UpdateLoanApplicationCustomerDetailsRequest $request, string $id)
     {
@@ -189,6 +234,12 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 ], 422);
             }
 
+            $data = $request->validated();
+
+            if ($loanApplication?->groupLoan) {
+                return $this->updateGroupMemberSnapshot($record, $data);
+            }
+
             $otherLoanCount = LoanApplication::forCustomer($record->customer_id)
                 ->where('id', '!=', $record->loan_application_id)
                 ->count();
@@ -206,8 +257,6 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                     ],
                 ], 422);
             }
-
-            $data = $request->validated();
 
             $detailKeys = ['gn_division', 'ds_division', 'district', 'province'];
             $detailData = array_intersect_key($data, array_flip($detailKeys));
@@ -242,6 +291,44 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
+    }
+
+    /**
+     * Write a Group Loan member's edited details onto the pivot snapshot.
+     * Accepts the group form's own field names and the legacy shared-customer
+     * names, mapping the latter onto the snapshot so old callers keep working.
+     */
+    private function updateGroupMemberSnapshot(LoanApplicationCustomer $record, array $data)
+    {
+        $map = [
+            'full_name'      => 'member_name',
+            'id_number'      => 'nic',
+            'phone_primary'  => 'phone_number',
+            'address_line_1' => 'address',
+        ];
+        $snapshotKeys = ['member_name', 'nic', 'address', 'phone_number', 'gn_division', 'ds_division'];
+
+        $snapshot = [];
+        foreach ($data as $key => $value) {
+            $target = $map[$key] ?? (in_array($key, $snapshotKeys, true) ? $key : null);
+            if ($target !== null) {
+                $snapshot[$target] = $value === '' ? null : $value;
+            }
+        }
+
+        $record->update($snapshot ?: []);
+
+        $this->logActivity('UPDATE', 'LoanApplicationCustomer', "Updated group member details for loan application customer ID {$record->id}", [
+            'loan_application_id' => $record->loan_application_id,
+            'customer_id'         => $record->customer_id,
+            'fields'              => array_keys($snapshot),
+        ]);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Member details updated successfully',
+            'data'    => $record->fresh(['customer.customerDetail', 'loanApplication.groupLoan']),
+        ], 200);
     }
 
     /**

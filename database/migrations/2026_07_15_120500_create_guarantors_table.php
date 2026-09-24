@@ -22,9 +22,6 @@ return new class extends Migration
             $table->date('date_of_birth')->nullable();
             $table->string('phone_primary')->nullable();
 
-            // Employed or Self-Employed. Which of the two blocks below carries
-            // the guarantor's income evidence depends on this, so it is asked
-            // for first and the rest is validated against it.
             $table->string('employment_status', 50)->nullable();
 
             // Employed

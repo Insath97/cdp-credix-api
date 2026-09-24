@@ -14,6 +14,42 @@ class UpdateSettingRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Normalise a boolean setting's value before anything else looks at it.
+     *
+     * Turning a switch off was impossible in two independent ways, and either
+     * one alone was enough to break it.
+     *
+     * A real JSON `false` never passed `in:0,1,true,false`, because that rule
+     * compares `(string) $value` against the list: `true` casts to "1" and is
+     * found, but `false` casts to "" and is not. So `{"value": true}` was
+     * accepted and `{"value": false}` was rejected as invalid.
+     *
+     * The string `"false"` did pass, and was then stored verbatim, because
+     * Setting::serialize() had no branch for it. Setting::get() casts a boolean
+     * setting with `(bool)`, and in PHP `(bool) "false"` is true -- so the API
+     * answered 200 and the feature stayed on.
+     *
+     * Coercing here, where the setting's declared type is known, fixes both:
+     * the rule below sees a genuine bool, and serialize() writes "1" or "0".
+     */
+    protected function prepareForValidation(): void
+    {
+        $setting = Setting::where('key', $this->route('key'))->first();
+
+        if ($setting?->type !== 'boolean' || ! $this->has('value')) {
+            return;
+        }
+
+        $coerced = filter_var($this->input('value'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        // Left alone when it is not boolean-ish at all, so the rule below still
+        // reports it as invalid rather than quietly reading it as false.
+        if ($coerced !== null) {
+            $this->merge(['value' => $coerced]);
+        }
+    }
+
     public function rules(): array
     {
         // Validated against the setting's own declared type. `required` alone
@@ -25,7 +61,16 @@ class UpdateSettingRequest extends FormRequest
 
         $rules = ['value' => ['required']];
 
-        switch ($setting?->type) {
+        // A key that does not exist is the controller's 404 to give, not a
+        // validation failure. Without this the switch fell through to its
+        // `string` default, so PUT /settings/no_such_key answered 422 "The
+        // value field must be a string" -- which says nothing about the only
+        // thing actually wrong with the request.
+        if (! $setting) {
+            return $rules;
+        }
+
+        switch ($setting->type) {
             case 'integer':
                 // No negative counts, days or point values: every integer
                 // setting in the table is a quantity.
@@ -34,7 +79,23 @@ class UpdateSettingRequest extends FormRequest
                 break;
 
             case 'boolean':
-                $rules['value'][] = 'in:0,1,true,false';
+                // `boolean`, not `in:0,1,true,false`. prepareForValidation()
+                // has already turned every spelling the frontend might send
+                // into a genuine bool, and this rule accepts one; the old `in`
+                // rule could not, because it compared the value as a string.
+                $rules['value'][] = 'boolean';
+                break;
+
+            case 'decimal':
+                // A percentage that is multiplied into what a group actually
+                // repays. It was declared `string`, which the switch had no
+                // case for, so it fell to the `string` default and accepted
+                // anything: 'ten percent' casts to 0.0 and silently waives the
+                // charge on every group loan approved afterwards, and a
+                // negative one makes the group owe less than it borrowed.
+                $rules['value'][] = 'numeric';
+                $rules['value'][] = 'min:0';
+                $rules['value'][] = 'max:100';
                 break;
 
             case 'json':
