@@ -26,7 +26,9 @@ use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
+use App\Exceptions\CustomerHasLiveLoanException;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
+use App\Services\CustomerLoanEligibilityService;
 use App\Services\GroupLoanWorkflowService;
 use App\Services\LoanDocumentService;
 use App\Services\NotificationService;
@@ -58,6 +60,7 @@ class GroupLoanController extends Controller implements HasMiddleware
             new Middleware('permission:Group Loan Reverify', only: ['reverify']),
             new Middleware('permission:Group Loan Approve', only: ['approve']),
             new Middleware('permission:Group Loan Reject', only: ['reject']),
+            new Middleware('permission:Group Loan Reopen', only: ['reopen']),
             new Middleware('permission:Group Loan Offer Response', only: ['holdOffer', 'acceptOffer', 'declineOffer']),
             new Middleware('permission:Group Loan Disburse', only: ['disburse']),
             new Middleware('permission:Group Loan Cancel', only: ['cancel']),
@@ -272,6 +275,16 @@ class GroupLoanController extends Controller implements HasMiddleware
                     ->pluck('customer_id')
                     ->values();
 
+                // One live loan per customer, re-checked under a row lock so
+                // two submissions racing for the same person cannot both pass.
+                // A typed-in member's new customer row is matched to any older
+                // row by NIC inside the service.
+                CustomerLoanEligibilityService::assertEligible(
+                    $resolvedMembers->mapWithKeys(fn ($m, $i) => [
+                        "members.{$i}." . (empty($data['members'][$i]['customer_id']) ? 'nic' : 'customer_id') => $m['customer_id'],
+                    ])->all()
+                );
+
                 $groupLoan = GroupLoan::create([
                     'loan_product_id'           => $data['loan_product_id'],
                     'branch_id'                 => $data['branch_id'] ?? null,
@@ -392,6 +405,8 @@ class GroupLoanController extends Controller implements HasMiddleware
                 ]),
             ], 201);
 
+        } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
@@ -1213,6 +1228,68 @@ class GroupLoanController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'error',
                 'message' => 'Failed to reject group loan',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Put a rejected group loan back into play.
+     *
+     * The group-loan counterpart of LoanApplicationController::reopen(). The
+     * individual endpoint refuses group loans (groupLoanGuardResponse), so
+     * this is the only way to reopen one. Every member is checked against the
+     * one-live-loan rule first -- see GroupLoanWorkflowService::reopen().
+     */
+    public function reopen(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $groupLoan = GroupLoan::find($id);
+
+            if (!$groupLoan) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan not found',
+                ], 404);
+            }
+
+            $groupLoan = $this->workflowService->reopen($groupLoan, $request->input('remarks'), Auth::id());
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} reopened after rejection", [
+                'group_loan_id' => $groupLoan->id,
+                'reopened_by'   => Auth::id(),
+                'remarks'       => $request->input('remarks'),
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Group loan reopened successfully. It can be edited and sent for review again.',
+                'data'    => $groupLoan,
+            ], 200);
+
+        } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to reopen group loan',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }

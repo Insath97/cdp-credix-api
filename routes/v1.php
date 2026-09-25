@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\V1\CdpCustomerVerificationController;
 use App\Http\Controllers\V1\GlobalSearchController;
 use App\Http\Controllers\V1\AuthController;
 use App\Http\Controllers\V1\ActivityController;
@@ -16,6 +17,9 @@ use App\Http\Controllers\V1\DesignationController;
 use App\Http\Controllers\V1\CountryController;
 use App\Http\Controllers\V1\GroupController;
 use App\Http\Controllers\V1\CustomerController;
+use App\Http\Controllers\V1\CustomerLoanEligibilityController;
+use App\Http\Controllers\V1\CustomerInvestmentController;
+use App\Http\Controllers\V1\External\CorePolicyHoldController;
 use App\Http\Controllers\V1\CustomerBankDetailController;
 use App\Http\Controllers\V1\GuarantorController;
 use App\Http\Controllers\V1\LiabilityController;
@@ -89,6 +93,11 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     // Global Search
     Route::get('global-search/id-types', [GlobalSearchController::class, 'idTypes']);
     Route::get('global-search', [GlobalSearchController::class, 'search']);
+
+    // CDP Connect verification 
+    Route::get('cdp/verify-customer', [CdpCustomerVerificationController::class, 'checkCustomer']);
+    Route::post('cdp/verify-customer', [CdpCustomerVerificationController::class, 'checkCustomer']);
+
 
     //ActivityLog
     Route::get('activities/filter-options', [ActivityController::class, 'filterOptions']);
@@ -171,6 +180,8 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     // Customers
     Route::prefix('customers')->group(function () {
         Route::get('list', [CustomerController::class, 'index']);
+        Route::get('loan-eligibility', [CustomerLoanEligibilityController::class, 'show']);
+        Route::get('{id}/investments', [CustomerInvestmentController::class, 'index']);
         Route::get('list/public/{customer_code?}', [CustomerController::class, 'getPublicDetails']);
         Route::patch('{id}/toggle-status', [CustomerController::class, 'toggleStatus']);
         Route::post('{id}/restore', [CustomerController::class, 'restore']);
@@ -292,6 +303,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/reverify', [GroupLoanController::class, 'reverify']);
         Route::patch('{id}/approve', [GroupLoanController::class, 'approve']);
         Route::patch('{id}/reject', [GroupLoanController::class, 'reject']);
+        Route::patch('{id}/reopen', [GroupLoanController::class, 'reopen']);
         Route::patch('{id}/hold-offer', [GroupLoanController::class, 'holdOffer']);
         Route::patch('{id}/accept-offer', [GroupLoanController::class, 'acceptOffer']);
         Route::patch('{id}/decline-offer', [GroupLoanController::class, 'declineOffer']);
@@ -399,6 +411,11 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::get('recovery/{id}', [ReportController::class, 'recoveryShow']);
     });
 
+});
+
+/* server-to-server routes for CDP Core (X-Core-Key, no JWT) */
+Route::middleware(['core.key', 'throttle:60,1'])->prefix('v1/external/core')->group(function () {
+    Route::get('policy-hold', [CorePolicyHoldController::class, 'index']);
 });
 
 /* customer dashboard routes */

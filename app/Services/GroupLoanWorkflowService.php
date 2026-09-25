@@ -7,6 +7,7 @@ use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Models\GroupLoan;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationStatusHistory;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -351,6 +352,85 @@ class GroupLoanWorkflowService
                     $actorId,
                     $rejectionReason,
                     ['rejection_reason' => $rejectionReason]
+                );
+            }
+
+            return $groupLoan->fresh(self::RESPONSE_RELATIONS);
+        });
+    }
+
+    /**
+     * Put a rejected group loan back into play.
+     *
+     * The mirror of LoanApplicationController::reopen() for a group. The
+     * header goes Rejected -> Available and the group's application goes
+     * Rejected -> Reopened, so the file re-enters review exactly where a new
+     * one does. The rejection is not rewritten: it stays in
+     * loan_application_status_history and the reopen is a new row after it.
+     *
+     * While the file sat rejected its members were free to take another loan.
+     * If any of them did, reopening would put them on two live loans at once,
+     * so every member is checked under a row lock first.
+     *
+     * @throws \App\Exceptions\CustomerHasLiveLoanException
+     * @throws InvalidLoanApplicationTransitionException
+     */
+    public function reopen(GroupLoan $groupLoan, string $remarks, int $actorId): GroupLoan
+    {
+        return DB::transaction(function () use ($groupLoan, $remarks, $actorId) {
+            $groupLoan = GroupLoan::lockForUpdate()->find($groupLoan->id);
+
+            if ($groupLoan->status !== GroupLoanStatus::Rejected) {
+                throw new InvalidLoanApplicationTransitionException(
+                    "Only a rejected group loan can be reopened; this one is '{$groupLoan->status->value}'."
+                );
+            }
+
+            $application = $this->applicationFor($groupLoan);
+
+            $members = [];
+            foreach ($application->loanApplicationCustomers()->pluck('customer_id') as $i => $customerId) {
+                $members["members.{$i}.customer_id"] = $customerId;
+            }
+            if ($members === []) {
+                $members['customer_id'] = $application->customer_id;
+            }
+
+            CustomerLoanEligibilityService::assertEligible($members, $application->id);
+
+            // Read before the transition writes its own row, so this names the
+            // rejection being reversed rather than finding itself.
+            $rejection = LoanApplicationStatusHistory::where('loan_application_id', $application->id)
+                ->where('loan_application_status', LoanApplicationStatus::Rejected)
+                ->latest('id')
+                ->first();
+
+            // transition() keeps is_active as it is for a non-terminal target,
+            // and reject() forced it false -- so it is restored explicitly, or
+            // the reopened group loan stays off every working list.
+            $groupLoan = $this->transition($groupLoan, GroupLoanStatus::Available, $actorId, $remarks);
+            $groupLoan->update(['is_active' => true]);
+
+            // A group rejected while its application was still Submitted never
+            // moved the application (Submitted cannot go to Rejected), so there
+            // is nothing to reverse on it -- only the header comes back.
+            if ($application->status === LoanApplicationStatus::Rejected) {
+                $this->loanApplicationWorkflowService->transition(
+                    $application,
+                    LoanApplicationStatus::Reopened,
+                    $actorId,
+                    $remarks,
+                    ['is_active' => true],
+                    [
+                        'reopened_from'             => LoanApplicationStatus::Rejected->value,
+                        'reopened_by'               => $actorId,
+                        'reopened_at'               => now()->toDateTimeString(),
+                        'group_loan_id'             => $groupLoan->id,
+                        'rejection_history_id'      => $rejection?->id,
+                        'previous_rejection_reason' => $groupLoan->rejection_reason ?? $rejection?->remarks,
+                        'previously_rejected_at'    => $rejection?->changed_at?->toDateTimeString(),
+                        'previously_rejected_by'    => $rejection?->changed_by,
+                    ]
                 );
             }
 

@@ -6,12 +6,21 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use App\Models\Setting;
 use App\Rules\GroupLoanMemberCountMatches;
+use App\Services\CustomerLoanEligibilityService;
 use App\Services\GroupLoanWorkflowService;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
 class CreateGroupLoanRequest extends FormRequest
 {
+    /**
+     * The first one-live-loan refusal raised in withValidator(), if any.
+     * failedValidation() shows it as the top-level message, so the officer
+     * reads why the loan was refused instead of "There is an issue with the
+     * input for customer_id."
+     */
+    private ?string $liveLoanRefusal = null;
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -49,19 +58,6 @@ class CreateGroupLoanRequest extends FormRequest
                 'required',
                 'integer',
                 Rule::exists('loan_products', 'id')->where(function ($query) {
-                    // The Development Fund scheme is item-based whether one
-                    // person takes the loan or a whole group, and both tiers
-                    // submit through this endpoint. A product is selectable
-                    // when it belongs to the Development Fund scheme; the
-                    // is_group_loan flag only tells the loan summary which
-                    // tier it is, it must not bar an individual borrower from
-                    // picking the scheme's own product. Requiring the
-                    // Development Fund loan type still keeps Standard
-                    // Borrowing products out.
-                    // whereNull('deleted_at') because Rule::exists queries the
-                    // table directly and never applies the model's SoftDeletes
-                    // scope. Deactivating a product stopped it being selectable;
-                    // deleting one did not, so a withdrawn product still lent.
                     $query->where('is_active', true)
                         ->whereNull('deleted_at')
                         ->whereIn('loan_type_id', function ($sub) {
@@ -71,13 +67,6 @@ class CreateGroupLoanRequest extends FormRequest
             ],
             'branch_id'         => 'nullable|integer|exists:branches,id',
             'group_name'        => 'required|string|max:255',
-            // A group is at least two people. Every submission through this
-            // endpoint is the group tier, so the floor is unconditional: the
-            // declared headcount may never be one.
-            //
-            // Member removal refuses to take a loan below the same
-            // GroupLoanWorkflowService::MIN_MEMBERS, so a group can neither
-            // start below two nor be dragged below two afterwards.
             'number_of_members' => 'required|integer|min:' . GroupLoanWorkflowService::MIN_MEMBERS,
             'competency'        => ['required', 'string', function ($attribute, $value, $fail) {
                 $allowed = Setting::get('group_loan_competency', []);
@@ -102,15 +91,7 @@ class CreateGroupLoanRequest extends FormRequest
             'items.*.quantity'   => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
 
-            // The floor as well as the count-match rule: the two guard
-            // different mistakes. Count-match only says the array agrees with
-            // the declared headcount, so a one-member submission that also
-            // declares one would satisfy it; the floor is what refuses it.
             'members'               => ['required', 'array', 'min:' . GroupLoanWorkflowService::MIN_MEMBERS, new GroupLoanMemberCountMatches((int) $this->input('number_of_members'))],
-            // A member is either an existing customer picked from the search (a
-            // customer_id arrives) or someone the officer typed straight in — in
-            // which case the detail fields below are required and the server
-            // creates the customer record from them.
             'members.*.customer_id' => 'nullable|integer|exists:customers,id',
             'members.*.member_name' => 'required|string|max:255',
             'members.*.nic'         => 'required|string|max:100',
@@ -119,11 +100,6 @@ class CreateGroupLoanRequest extends FormRequest
             'members.*.gn_division' => 'required|string|max:255',
             'members.*.ds_division' => 'required|string|max:255',
 
-            // Guarantors ride along on the same submission instead of a second
-            // round of API calls. An individual Development Fund loan carries
-            // its two guarantors here; a group tier submits none. The blocks
-            // mirror CreateGuarantorRequest so a guarantor proves income the
-            // same way whether it is typed here or on the dedicated endpoint.
             'guarantors' => 'sometimes|array|max:2',
             'guarantors.*.full_name' => 'required|string|max:255',
             'guarantors.*.type' => 'required|string|in:guarantor_1,guarantor_2',
@@ -157,10 +133,6 @@ class CreateGroupLoanRequest extends FormRequest
                 return;
             }
 
-            // Same customer picked for two rows is always a mistake — that is
-            // one person standing in twice, and the member count would claim
-            // more borrowers than there are. Nulls (typed-in members) are
-            // ignored; duplicates only count actual ids.
             $ids = array_values(array_filter(array_map(
                 fn ($m) => isset($m['customer_id']) ? (int) $m['customer_id'] : null,
                 $members
@@ -168,6 +140,43 @@ class CreateGroupLoanRequest extends FormRequest
 
             if (count($ids) !== count(array_unique($ids))) {
                 $validator->errors()->add('members', 'The same customer cannot be added as a member more than once.');
+            }
+
+            $seen = [];
+            foreach ($members as $i => $member) {
+                $nic = CustomerLoanEligibilityService::normalizeNic($member['nic'] ?? null);
+                if ($nic === '') {
+                    continue;
+                }
+                $variants = CustomerLoanEligibilityService::nicVariants($nic);
+                if (array_intersect($variants, $seen)) {
+                    $validator->errors()->add("members.{$i}.nic", 'This NIC is already entered for another member of this group.');
+                }
+                $seen = array_merge($seen, $variants);
+            }
+
+            $errors = $validator->errors();
+            foreach ($members as $i => $member) {
+                if (!is_array($member)) {
+                    continue;
+                }
+
+                if (!empty($member['customer_id'])) {
+                    $field = "members.{$i}.customer_id";
+                    if (!$errors->has($field) && is_numeric($member['customer_id'])
+                        && ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $member['customer_id']))) {
+                        $this->liveLoanRefusal ??= $refusal;
+                        $errors->add($field, $refusal);
+                    }
+                    continue;
+                }
+
+                $field = "members.{$i}.nic";
+                if (!$errors->has($field)
+                    && ($refusal = CustomerLoanEligibilityService::refusalForNic($member['nic'] ?? null, $member['member_name'] ?? null))) {
+                    $this->liveLoanRefusal ??= $refusal;
+                    $errors->add($field, $refusal);
+                }
             }
         });
     }
@@ -182,9 +191,10 @@ class CreateGroupLoanRequest extends FormRequest
             ];
         })->values();
 
-        $message = $fieldErrors->count() > 1
-            ? 'There are multiple validation errors. Please review the form and correct the issues.'
-            : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.';
+        $message = $this->liveLoanRefusal
+            ?? ($fieldErrors->count() > 1
+                ? 'There are multiple validation errors. Please review the form and correct the issues.'
+                : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.');
 
         throw new HttpResponseException(response()->json([
             'message' => $message,

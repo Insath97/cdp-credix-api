@@ -32,6 +32,11 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->boolean('is_islamic')->default(true);
             $table->boolean('is_group_loan')->default(false);
+            // Investment-backed loans (CDP Core policy as security).
+            $table->boolean('requires_investment_collateral')->default(false);
+            $table->decimal('max_loan_percentage', 5, 2)
+                ->nullable()
+                ->comment('Max loan as % of pledged investment value (LTV). Null when no collateral required.');
             $table->softDeletes();
             $table->timestamps();
         });

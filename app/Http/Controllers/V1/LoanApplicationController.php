@@ -5,6 +5,7 @@ namespace App\Http\Controllers\V1;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Models\Application;
 use App\Models\Branch;
@@ -23,7 +24,11 @@ use App\Http\Requests\UpdateLoanApplicationRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use App\Enums\LoanApplicationStatus;
+use App\Exceptions\CustomerHasLiveLoanException;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
+use App\Exceptions\InvestmentCollateralException;
+use App\Services\CustomerLoanEligibilityService;
+use App\Services\InvestmentCollateralService;
 use App\Services\LoanApplicationWorkflowService;
 use App\Services\LoanDocumentService;
 use App\Services\NotificationService;
@@ -38,6 +43,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
         protected LoanApplicationWorkflowService $workflowService,
         protected NotificationService $notificationService,
         protected LoanDocumentService $loanDocumentService,
+        protected InvestmentCollateralService $investmentCollateral,
     ) {
     }
 
@@ -197,58 +203,92 @@ class LoanApplicationController extends Controller implements HasMiddleware
 
             $data = Employee::mergeRecommenderSnapshot($data);
 
-            if (empty($data['application_id'])) {
-                $branchName = !empty($data['branch_id'])
-                    ? Branch::find($data['branch_id'])?->name
-                    : null;
-
-                $application = Application::create([
-                    'application_type' => 'loan',
-                    'branch' => $branchName,
-                    'requested_amount' => $data['requested_amount'],
-                    'repayment_period_months' => $data['term_months'] ?? null,
-                    'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
-                ]);
-
-                $data['application_id'] = $application->id;
-            }
-
-            if (empty($data['applied_by'])) {
-                $data['applied_by'] = Auth::id();
-            }
-            if (empty($data['applied_at'])) {
-                $data['applied_at'] = now();
-            }
-            $data['status'] = LoanApplicationStatus::Submitted;
-
-            $loanApplication = LoanApplication::create($data);
-
-            // The opening row of the trail. Creation does not go through the
-            // workflow service -- there is no previous status to transition
-            // from -- so the file would otherwise have no history until its
-            // first review, and the audit trail would start in the middle.
-            LoanApplicationStatusHistory::record(
-                $loanApplication,
-                LoanApplicationStatus::Submitted,
-                Auth::id(),
-                'Loan application submitted'
+            // Investment-backed product: the pledged CDP Core policy is checked
+            // against Core (ownership, approval, LTV, maturity) before anything
+            // is written. Outside the transaction because it is an HTTP call;
+            // the one-live-loan-per-policy rule is re-checked under the lock
+            // below. No-op for a product that takes no collateral.
+            $product = LoanProduct::findOrFail($data['loan_product_id']);
+            $this->investmentCollateral->validate(
+                $product,
+                Customer::findOrFail($data['customer_id']),
+                $data['collateral_policy_number'] ?? null,
+                (float) $data['requested_amount'],
+                (int) $data['term_months'],
+                !empty($data['applied_at']) ? \Carbon\Carbon::parse($data['applied_at']) : now()
             );
-
-            if (!empty($data['joint_customer_ids'])) {
-                $allCustomerIds = array_unique(array_merge([$loanApplication->customer_id], $data['joint_customer_ids']));
-
-                foreach ($allCustomerIds as $jointCustomerId) {
-                    LoanApplicationCustomer::create([
-                        'loan_application_id' => $loanApplication->id,
-                        'customer_id'         => $jointCustomerId,
-                    ]);
-                }
+            if (!$product->requires_investment_collateral) {
+                $data['collateral_policy_number'] = null;
             }
 
-            // Index the file's documents now, so an existing customer's papers
-            // belong to this application from the moment it is submitted. Runs
-            // after the co-borrowers are attached, because their documents
-            // count towards the file too.
+            $loanApplication = DB::transaction(function () use (&$data) {
+                $borrowers = ['customer_id' => $data['customer_id']];
+                foreach ($data['joint_customer_ids'] ?? [] as $i => $jointId) {
+                    $borrowers["joint_customer_ids.{$i}"] = $jointId;
+                }
+                CustomerLoanEligibilityService::assertEligible($borrowers);
+
+                if (!empty($data['collateral_policy_number'])) {
+                    // Two submissions for the same policy both passed the
+                    // HTTP-time check above; only one may get through here.
+                    $holder = LoanApplication::holdingPolicy($data['collateral_policy_number'])
+                        ->lockForUpdate()
+                        ->with('application')
+                        ->first();
+                    if ($holder) {
+                        throw new InvestmentCollateralException(
+                            "Policy {$data['collateral_policy_number']} was pledged against loan {$holder->reference()} a moment ago."
+                        );
+                    }
+                }
+
+                if (empty($data['application_id'])) {
+                    $branchName = !empty($data['branch_id'])
+                        ? Branch::find($data['branch_id'])?->name
+                        : null;
+
+                    $application = Application::create([
+                        'application_type' => 'loan',
+                        'branch' => $branchName,
+                        'requested_amount' => $data['requested_amount'],
+                        'repayment_period_months' => $data['term_months'] ?? null,
+                        'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
+                    ]);
+
+                    $data['application_id'] = $application->id;
+                }
+
+                if (empty($data['applied_by'])) {
+                    $data['applied_by'] = Auth::id();
+                }
+                if (empty($data['applied_at'])) {
+                    $data['applied_at'] = now();
+                }
+                $data['status'] = LoanApplicationStatus::Submitted;
+
+                $loanApplication = LoanApplication::create($data);
+
+                LoanApplicationStatusHistory::record(
+                    $loanApplication,
+                    LoanApplicationStatus::Submitted,
+                    Auth::id(),
+                    'Loan application submitted'
+                );
+
+                if (!empty($data['joint_customer_ids'])) {
+                    $allCustomerIds = array_unique(array_merge([$loanApplication->customer_id], $data['joint_customer_ids']));
+
+                    foreach ($allCustomerIds as $jointCustomerId) {
+                        LoanApplicationCustomer::create([
+                            'loan_application_id' => $loanApplication->id,
+                            'customer_id'         => $jointCustomerId,
+                        ]);
+                    }
+                }
+
+                return $loanApplication;
+            });
+
             $this->loanDocumentService->syncForApplication($loanApplication);
 
             $this->logActivity('CREATE', 'LoanApplication', "Created loan application ID: {$loanApplication->id}", $data);
@@ -283,6 +323,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 ]),
             ], 201);
 
+        } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
+        } catch (InvestmentCollateralException $e) {
+            return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
@@ -380,11 +424,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 return $guard;
             }
 
-            // A rejected, cancelled or closed file is a finished record, not a
-            // draft. Nothing stopped it being edited before, so a rejected
-            // application could be quietly rewritten and its rejection left
-            // describing figures that were no longer there. Reopening is what
-            // makes one editable again, which is the whole point of the status.
             if ($loanApplication->status->isTerminal()) {
                 return response()->json([
                     'status'  => 'error',
@@ -399,6 +438,13 @@ class LoanApplicationController extends Controller implements HasMiddleware
             $data = $request->validated();
 
             $data = Employee::mergeRecommenderSnapshot($data);
+
+
+            if (!empty($data['customer_id']) && (int) $data['customer_id'] !== (int) $loanApplication->customer_id) {
+                if ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $data['customer_id'], $loanApplication->id)) {
+                    return (new CustomerHasLiveLoanException($refusal, 'customer_id'))->toResponse();
+                }
+            }
 
             $loanApplication->update($data);
 
@@ -581,23 +627,9 @@ class LoanApplicationController extends Controller implements HasMiddleware
      */
     /**
      * Record which of the application's documents an officer ticked off.
-     *
-     * The list replaces whatever was marked before rather than adding to it,
-     * so unticking a document at a second attempt actually clears it. Ids that
-     * do not belong to this application are ignored — the checklist is built
-     * from the application's own documents, so anything else is a stale or
-     * forged id, not a document this officer looked at.
-     *
-     * Marking is deliberately outside the status transition: a failure to
-     * stamp a checklist must not roll back a workflow step that already
-     * happened, so it is logged and swallowed.
      */
     private function markCheckedDocuments(LoanApplication $loanApplication, ?array $documentIds, string $byColumn, string $atColumn): void
     {
-        // Writes loan_documents, not documents. The stamp records this
-        // application's look at the file; the borrower's own papers are shared
-        // with every other loan they hold, so stamping the document row kept
-        // only the most recent loan's verdict and erased the previous one's.
         $this->loanDocumentService->markChecked($loanApplication, $documentIds, $byColumn, $atColumn);
     }
 
@@ -977,7 +1009,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
         }
     }
 
-    
+
     public function resubmit(Request $request, string $id)
     {
         try {
@@ -1437,23 +1469,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
 
     /**
      * Put a rejected loan application back into play.
-     *
-     * The rejection is not undone and nothing about it is rewritten: it stays
-     * in loan_application_status_history as the row it always was, with the
-     * officer who rejected it, when, and why. This adds a row after it. Reading
-     * the trail in order tells the whole story, which is what an audit wants
-     * and what an edited record could never give.
-     *
-     * No new table and no new columns on the loan application: the history
-     * table already stores who changed a status, when, the reason, and a
-     * metadata bag for anything else -- which is exactly what "record the
-     * reopen action" asks for. The metadata here names the rejection being
-     * reversed, so the reopen row is readable on its own without walking back
-     * through the trail.
-     *
-     * is_active is restored explicitly. The workflow service forces it false on
-     * the way into a terminal status but has no rule for coming back out, so
-     * without this the reopened file would stay off every working list.
      */
     public function reopen(Request $request, string $id)
     {
@@ -1483,37 +1498,53 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 return $guard;
             }
 
-            // Read before the transition writes its own row, so this names the
-            // rejection being reversed rather than finding itself.
             $rejection = LoanApplicationStatusHistory::where('loan_application_id', $loanApplication->id)
                 ->where('loan_application_status', LoanApplicationStatus::Rejected)
                 ->latest('id')
                 ->first();
 
-            $loanApplication = $this->workflowService->transition(
-                $loanApplication,
-                LoanApplicationStatus::Reopened,
-                Auth::id(),
-                $request->input('remarks'),
-                // is_active only. No reopened_at/reopened_by columns are
-                // added to the loan application: the history row below already
-                // records who and when, and a second copy on the row could
-                // only ever drift from it.
-                ['is_active' => true],
-                [
-                    'reopened_from'             => LoanApplicationStatus::Rejected->value,
-                    'reopened_by'               => Auth::id(),
-                    'reopened_at'               => now()->toDateTimeString(),
-                    // The rejection this reverses, copied so the reopen row
-                    // answers "what was overturned" without a second lookup.
-                    // rejection_reason is deliberately left on the loan
-                    // application untouched as well.
-                    'rejection_history_id'      => $rejection?->id,
-                    'previous_rejection_reason' => $loanApplication->rejection_reason ?? $rejection?->remarks,
-                    'previously_rejected_at'    => $rejection?->changed_at?->toDateTimeString(),
-                    'previously_rejected_by'    => $rejection?->changed_by,
-                ]
-            );
+            $borrowers = ['customer_id' => $loanApplication->customer_id];
+            foreach ($loanApplication->loanApplicationCustomers()->pluck('customer_id') as $i => $memberId) {
+                if ((int) $memberId !== (int) $loanApplication->customer_id) {
+                    $borrowers["loan_application_customers.{$i}"] = $memberId;
+                }
+            }
+
+            $loanApplication = DB::transaction(function () use ($loanApplication, $borrowers, $request, $rejection) {
+                CustomerLoanEligibilityService::assertEligible($borrowers, $loanApplication->id);
+
+                // A rejected loan freed its policy; another loan may have taken
+                // it since. It cannot be reopened while that loan is live.
+                if ($loanApplication->collateral_policy_number) {
+                    $holder = LoanApplication::holdingPolicy($loanApplication->collateral_policy_number)
+                        ->where('id', '!=', $loanApplication->id)
+                        ->lockForUpdate()
+                        ->with('application')
+                        ->first();
+                    if ($holder) {
+                        throw new InvestmentCollateralException(
+                            "This loan cannot be reopened: its policy {$loanApplication->collateral_policy_number} now secures loan {$holder->reference()}. Create a new application with fresh collateral instead."
+                        );
+                    }
+                }
+
+                return $this->workflowService->transition(
+                    $loanApplication,
+                    LoanApplicationStatus::Reopened,
+                    Auth::id(),
+                    $request->input('remarks'),
+                    ['is_active' => true],
+                    [
+                        'reopened_from'             => LoanApplicationStatus::Rejected->value,
+                        'reopened_by'               => Auth::id(),
+                        'reopened_at'               => now()->toDateTimeString(),
+                        'rejection_history_id'      => $rejection?->id,
+                        'previous_rejection_reason' => $loanApplication->rejection_reason ?? $rejection?->remarks,
+                        'previously_rejected_at'    => $rejection?->changed_at?->toDateTimeString(),
+                        'previously_rejected_by'    => $rejection?->changed_by,
+                    ]
+                );
+            });
 
             $this->logActivity('UPDATE', 'LoanApplication', "Loan application ID: {$loanApplication->id} reopened after rejection", [
                 'loan_application_id' => $loanApplication->id,
@@ -1527,6 +1558,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'data'    => $loanApplication,
             ], 200);
 
+        } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
+        } catch (InvestmentCollateralException $e) {
+            return $e->toResponse();
         } catch (InvalidLoanApplicationTransitionException $e) {
             return response()->json([
                 'status'  => 'error',

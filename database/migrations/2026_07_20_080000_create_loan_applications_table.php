@@ -81,6 +81,9 @@ return new class extends Migration
 
             $table->boolean('is_active')->default(true);
 
+            // CDP Core policy number pledged as security (investment-backed products only).
+            $table->string('collateral_policy_number', 100)->nullable()->index();
+
             $table->softDeletes();
             $table->timestamps();
 

@@ -50,6 +50,11 @@ class UpdateLoanProductRequest extends FormRequest
             'is_active' => 'nullable|boolean',
             'is_islamic' => 'nullable|boolean',
             'is_group_loan' => 'nullable|boolean',
+            // Partial update: the flag/percentage pairing is checked in
+            // withValidator() against the stored product, since either field
+            // may arrive on its own.
+            'requires_investment_collateral' => 'nullable|boolean',
+            'max_loan_percentage' => 'nullable|numeric|gt:0|max:100',
         ];
     }
 
@@ -91,6 +96,31 @@ class UpdateLoanProductRequest extends FormRequest
                         "The {$band['label']} must be greater than or equal to {$band['floor']}.",
                     );
                 }
+            }
+
+            // Same merged-state idea for the collateral pair: the flag and the
+            // loan-to-value percentage go together. Turning the flag on needs
+            // a percentage (sent now or already stored); turning it off, or a
+            // product that never had it, must not carry one.
+            $requires = $this->has('requires_investment_collateral')
+                ? $this->boolean('requires_investment_collateral')
+                : (bool) $product->requires_investment_collateral;
+            $percentage = $this->has('max_loan_percentage')
+                ? $this->input('max_loan_percentage')
+                : $product->max_loan_percentage;
+
+            if ($requires && ($percentage === null || $percentage === '')) {
+                $validator->errors()->add(
+                    'max_loan_percentage',
+                    'The max loan percentage is required when the product requires investment collateral.',
+                );
+            }
+
+            if (!$requires && $this->filled('max_loan_percentage')) {
+                $validator->errors()->add(
+                    'max_loan_percentage',
+                    'The max loan percentage only applies to products that require investment collateral.',
+                );
             }
         });
     }

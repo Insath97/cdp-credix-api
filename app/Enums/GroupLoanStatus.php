@@ -46,6 +46,11 @@ enum GroupLoanStatus: string
             self::Available => [self::Locked, self::Rejected, self::Cancelled],
             self::Locked    => [self::Disbursed, self::Cancelled],
             self::Disbursed => [self::Closed],
+            // The single way out of a rejection, and only by the explicit
+            // reopen action. The header goes back to Available; the group's
+            // application goes Rejected -> Reopened, the same as an individual
+            // loan, so the audit trail shows the reversal.
+            self::Rejected  => [self::Available],
             default         => [],
         };
     }

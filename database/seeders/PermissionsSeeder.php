@@ -178,6 +178,8 @@ class PermissionsSeeder extends Seeder
 
             /* Global Search */
             ['name' => 'Global Search', 'group_name' => 'Global Search Permissions'],
+            /* CDP Connect */
+            ['name' => 'CDP Customer Verification', 'group_name' => 'CDP Connect Permissions'],
             
             /* Loan Application Management */
             ['name' => 'Loan Application Index', 'group_name' => 'Loan Application Management Permissions'],
@@ -220,6 +222,7 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Group Loan Reverify', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Approve', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Reject', 'group_name' => 'Group Loan Management Permissions'],
+            ['name' => 'Group Loan Reopen', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Offer Response', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Disburse', 'group_name' => 'Group Loan Management Permissions'],
             ['name' => 'Group Loan Cancel', 'group_name' => 'Group Loan Management Permissions'],

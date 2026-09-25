@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
 use App\Models\LoanApplication;
+use App\Services\CustomerLoanEligibilityService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
@@ -12,6 +13,14 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class CreateLoanApplicationCustomerRequest extends FormRequest
 {
+    /**
+     * The first one-live-loan refusal raised in withValidator(), if any.
+     * failedValidation() shows it as the top-level message, so the officer
+     * reads why the loan was refused instead of "There is an issue with the
+     * input for customer_id."
+     */
+    private ?string $liveLoanRefusal = null;
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -83,6 +92,37 @@ class CreateLoanApplicationCustomerRequest extends FormRequest
         ];
     }
 
+    /**
+     * One live loan per customer: a co-borrower or group member being added
+     * must not already be on another live loan. The loan they are being added
+     * to is left out of the count. A typed-in member is matched by NIC.
+     */
+    protected function withValidator(Validator $validator)
+    {
+        $validator->after(function ($validator) {
+            $errors = $validator->errors();
+
+            if ($errors->has('loan_application_id') || $errors->has('customer_id')) {
+                return;
+            }
+
+            $loanApplicationId = (int) $this->input('loan_application_id');
+
+            if ($this->filled('customer_id')) {
+                if ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $this->input('customer_id'), $loanApplicationId)) {
+                    $this->liveLoanRefusal ??= $refusal;
+                    $errors->add('customer_id', $refusal);
+                }
+                return;
+            }
+
+            if ($refusal = CustomerLoanEligibilityService::refusalForNic($this->input('nic'), $this->input('member_name'), $loanApplicationId)) {
+                $this->liveLoanRefusal ??= $refusal;
+                $errors->add('nic', $refusal);
+            }
+        });
+    }
+
     protected function failedValidation(Validator $validator)
     {
         $errorMessages = $validator->errors();
@@ -93,9 +133,10 @@ class CreateLoanApplicationCustomerRequest extends FormRequest
             ];
         })->values();
 
-        $message = $fieldErrors->count() > 1
-            ? 'There are multiple validation errors. Please review the form and correct the issues.'
-            : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.';
+        $message = $this->liveLoanRefusal
+            ?? ($fieldErrors->count() > 1
+                ? 'There are multiple validation errors. Please review the form and correct the issues.'
+                : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.');
 
         throw new HttpResponseException(response()->json([
             'message' => $message,
