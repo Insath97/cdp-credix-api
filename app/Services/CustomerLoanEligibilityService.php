@@ -195,18 +195,13 @@ class CustomerLoanEligibilityService
     {
         $who = trim((string) $name) !== '' ? trim($name) : 'This customer';
         $idPart = self::normalizeNic($nic) !== '' ? ' (NIC: ' . trim($nic) . ')' : '';
-        $status = Str::title(str_replace('_', ' ', $loan->status->value));
-        $loanRef = "{$loan->reference()}, status: {$status}";
-
-        // e.g. "Kamal Perera (NIC: 853400937V) already has an active loan
-        // (APP-BRCOL-2026092300000012, status: Approved)."
-        $first = match (self::roleOnLoan($loan, $customerIds)) {
-            'member'      => "{$who}{$idPart} is already a member of an active group loan ({$loanRef}).",
-            'co-borrower' => "{$who}{$idPart} is already a co-borrower on an active loan ({$loanRef}).",
-            default       => "{$who}{$idPart} already has an active loan ({$loanRef}).",
+        // Short and to the point, e.g.
+        // "Kamal Perera (NIC: 853400937V) is already a co-borrower on an active loan."
+        return match (self::roleOnLoan($loan, $customerIds)) {
+            'member'      => "{$who}{$idPart} is already a member of an active group loan.",
+            'co-borrower' => "{$who}{$idPart} is already a co-borrower on an active loan.",
+            default       => "{$who}{$idPart} already has an active loan.",
         };
-
-        return $first . ' A customer can have only one active loan at a time, so they cannot take another loan until the existing one is closed, rejected or cancelled.';
     }
 
     private static function roleOnLoan(LoanApplication $loan, array $customerIds): string

@@ -15,8 +15,8 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(PermissionsSeeder::class);
         $this->call(UserSeeder::class);
-        //$this->call(LocationHierarchySeeder::class);
-        //$this->call(LoanCatalogSeeder::class);
+       // $this->call(LocationHierarchySeeder::class);
+       // $this->call(LoanCatalogSeeder::class);
         // $this->call(DummyDataSeeder::class);
     }
 }
