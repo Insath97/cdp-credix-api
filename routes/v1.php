@@ -43,6 +43,7 @@ use App\Http\Controllers\V1\LoanApplicationFixedAssetController;
 use App\Http\Controllers\V1\LoanApplicationMovingAssetController;
 use App\Http\Controllers\V1\LoanApplicationLiabilityController;
 use App\Http\Controllers\V1\LoanApplicationBankDetailController;
+use App\Http\Controllers\V1\LoanSecurityController;
 use App\Http\Controllers\V1\LoanInstallmentController;
 use App\Http\Controllers\V1\LoanRevisionController;
 use App\Http\Controllers\V1\PaymentController;
@@ -273,6 +274,13 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     });
 
     Route::apiResource('loan-applications', LoanApplicationController::class);
+
+    // Loan Security -- the wizard step for secured products. The security
+    // itself is saved with the loan application (its `security` object).
+    Route::prefix('loan-securities')->group(function () {
+        Route::get('options', [LoanSecurityController::class, 'options']);
+        Route::post('investment-lookup', [LoanSecurityController::class, 'investmentLookup']);
+    });
 
     // Legal
     Route::prefix('legal-document-templates')->group(function () {

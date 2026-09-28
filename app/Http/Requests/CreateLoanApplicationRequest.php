@@ -5,14 +5,17 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use App\Enums\LoanApplicationStatus;
+use App\Enums\LoanSecurityType;
+use App\Models\LoanProduct;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use App\Traits\GuardsLoanWorkflowFields;
+use App\Traits\ValidatesLoanSecurity;
 use App\Services\CustomerLoanEligibilityService;
 
 class CreateLoanApplicationRequest extends FormRequest
 {
-    use GuardsLoanWorkflowFields;
+    use GuardsLoanWorkflowFields, ValidatesLoanSecurity;
 
     /**
      * The first one-live-loan refusal raised in withValidator(), if any.
@@ -41,9 +44,6 @@ class CreateLoanApplicationRequest extends FormRequest
             'joint_customer_ids'     => 'nullable|array',
             'joint_customer_ids.*'   => ['integer', 'distinct', 'exists:customers,id', Rule::notIn([$this->input('customer_id')])],
             'loan_product_id'        => 'required|integer|exists:loan_products,id',
-            // CDP Core policy pledged as security; required and verified against
-            // Core in the controller when the product requires collateral.
-            'collateral_policy_number' => 'nullable|string|max:100',
             'branch_id'              => 'nullable|integer|exists:branches,id',
             'requested_amount'       => 'required|numeric|min:0',
             'interest_rate'          => 'required|numeric|min:0|max:999.999',
@@ -69,7 +69,9 @@ class CreateLoanApplicationRequest extends FormRequest
             'resubmitted_at' => 'nullable|date',
             'resubmission_count' => 'nullable|integer|min:0',
 
-        ]);
+        // The Loan Security step: required on a secured product (checked in
+        // withValidator), each type's fields only for that type.
+        ], $this->loanSecurityRules());
     }
 
 
@@ -79,7 +81,12 @@ class CreateLoanApplicationRequest extends FormRequest
      */
     public function messages(): array
     {
-        return $this->workflowOwnedMessages();
+        return array_merge($this->workflowOwnedMessages(), $this->loanSecurityMessages());
+    }
+
+    public function attributes(): array
+    {
+        return $this->loanSecurityAttributes();
     }
 
     /**
@@ -102,12 +109,16 @@ class CreateLoanApplicationRequest extends FormRequest
                 }
             }
 
-            // Investment-backed products are individual loans only.
-            if ($this->filled('loan_product_id') && !empty($this->input('joint_customer_ids'))) {
-                $product = \App\Models\LoanProduct::find($this->input('loan_product_id'));
-                if ($product?->requires_investment_collateral) {
-                    $errors->add('joint_customer_ids', 'An investment-backed loan is an individual loan; joint co-borrowers cannot be added.');
-                }
+            // A secured product must carry a loan security; any other must not.
+            if ($this->filled('loan_product_id')) {
+                $this->checkSecurityAgainstProduct($validator, LoanProduct::find($this->input('loan_product_id')));
+            }
+
+            // A CDP Investment secures only its owner's own loan, so the loan
+            // is an individual one.
+            if ($this->input('security.security_type') === LoanSecurityType::CdpInvestment->value
+                && !empty($this->input('joint_customer_ids'))) {
+                $errors->add('joint_customer_ids', 'A loan secured by a CDP Investment is an individual loan; joint co-borrowers cannot be added.');
             }
 
             foreach ((array) $this->input('joint_customer_ids', []) as $i => $jointId) {

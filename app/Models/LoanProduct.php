@@ -32,7 +32,7 @@ class LoanProduct extends Model
         'is_active',
         'is_islamic',
         'is_group_loan',
-        'requires_investment_collateral',
+        'requires_security',
         'max_loan_percentage',
     ];
 
@@ -56,7 +56,7 @@ class LoanProduct extends Model
         'is_active'            => 'boolean',
         'is_islamic'           => 'boolean',
         'is_group_loan'        => 'boolean',
-        'requires_investment_collateral' => 'boolean',
+        'requires_security'    => 'boolean',
         'max_loan_percentage'  => 'decimal:2',
     ];
 
@@ -85,24 +85,25 @@ class LoanProduct extends Model
     }
 
     /**
-     * Scope for products secured by a CDP Core investment.
+     * Scope for secured products -- those whose applications must carry a
+     * loan security (CDP Investment, Property Mortgage or Vehicle).
      */
-    public function scopeInvestmentBacked(Builder $query): Builder
+    public function scopeSecured(Builder $query): Builder
     {
-        return $query->where('requires_investment_collateral', true);
+        return $query->where('requires_security', true);
     }
 
     /**
-     * The most this product will lend against a pledged investment.
+     * The most this product will lend against a pledged CDP investment.
      *
      *   1,000,000 investment at max_loan_percentage 80 -> 800,000.
      *
-     * Null when the product takes no collateral, so callers can tell "no
-     * ceiling applies" from "ceiling is zero".
+     * Null when the product takes no security or has no percentage set, so
+     * callers can tell "no ceiling applies" from "ceiling is zero".
      */
     public function maxLoanAgainst(float $investmentValue): ?float
     {
-        if (!$this->requires_investment_collateral || $this->max_loan_percentage === null) {
+        if (!$this->requires_security || $this->max_loan_percentage === null) {
             return null;
         }
 

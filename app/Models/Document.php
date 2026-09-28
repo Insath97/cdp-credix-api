@@ -30,6 +30,10 @@ class Document extends Model
         'salary_assignment_letter'        => 'Salary Assignment Letter',
         'employer_letter'                 => 'Employer Letter',
         'photo'                           => 'Photo',
+        // Loan security papers -- see LoanSecurityType::documentType().
+        'investment_document'             => 'Investment Document',
+        'property_deed'                   => 'Property Deed',
+        'vehicle_cr'                      => 'Vehicle CR (Certificate of Registration)',
         'other'                           => 'Other',
     ];
 

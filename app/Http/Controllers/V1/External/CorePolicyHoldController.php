@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\V1\External;
 
+use App\Enums\LoanSecurityType;
 use App\Http\Controllers\Controller;
 use App\Models\LoanApplication;
 use App\Services\CustomerLoanEligibilityService;
@@ -33,14 +34,13 @@ class CorePolicyHoldController extends Controller
 
         $query = LoanApplication::query()
             ->live()
-            ->whereNotNull('collateral_policy_number')
-            ->with(['application', 'customer:id,full_name,id_number']);
+            ->whereHas('security', fn ($q) => $q
+                ->where('security_type', LoanSecurityType::CdpInvestment->value)
+                ->whereNotNull('policy_number'))
+            ->with(['application', 'customer:id,full_name,id_number', 'security']);
 
         if (!empty($data['policy_number'])) {
-            $query->whereRaw(
-                'UPPER(TRIM(collateral_policy_number)) = ?',
-                [strtoupper(trim($data['policy_number']))]
-            );
+            $query->holdingPolicy($data['policy_number']);
         }
 
         if (!empty($data['id_number'])) {
@@ -58,7 +58,7 @@ class CorePolicyHoldController extends Controller
             'data'   => [
                 'held'  => $loans->isNotEmpty(),
                 'loans' => $loans->map(fn (LoanApplication $loan) => [
-                    'policy_number' => $loan->collateral_policy_number,
+                    'policy_number' => $loan->security?->policy_number,
                     'reference'     => $loan->reference(),
                     'status'        => $loan->status->value,
                     'amount'        => (float) ($loan->approved_amount ?? $loan->requested_amount),

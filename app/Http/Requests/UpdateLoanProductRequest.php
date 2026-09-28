@@ -53,7 +53,7 @@ class UpdateLoanProductRequest extends FormRequest
             // Partial update: the flag/percentage pairing is checked in
             // withValidator() against the stored product, since either field
             // may arrive on its own.
-            'requires_investment_collateral' => 'nullable|boolean',
+            'requires_security' => 'nullable|boolean',
             'max_loan_percentage' => 'nullable|numeric|gt:0|max:100',
         ];
     }
@@ -98,13 +98,14 @@ class UpdateLoanProductRequest extends FormRequest
                 }
             }
 
-            // Same merged-state idea for the collateral pair: the flag and the
-            // loan-to-value percentage go together. Turning the flag on needs
-            // a percentage (sent now or already stored); turning it off, or a
-            // product that never had it, must not carry one.
-            $requires = $this->has('requires_investment_collateral')
-                ? $this->boolean('requires_investment_collateral')
-                : (bool) $product->requires_investment_collateral;
+            // Same merged-state idea for the security pair: the flag and the
+            // loan-to-value percentage a CDP Investment security is held to go
+            // together. Turning the flag on needs a percentage (sent now or
+            // already stored); turning it off, or a product that never had
+            // it, must not carry one.
+            $requires = $this->has('requires_security')
+                ? $this->boolean('requires_security')
+                : (bool) $product->requires_security;
             $percentage = $this->has('max_loan_percentage')
                 ? $this->input('max_loan_percentage')
                 : $product->max_loan_percentage;
@@ -112,14 +113,14 @@ class UpdateLoanProductRequest extends FormRequest
             if ($requires && ($percentage === null || $percentage === '')) {
                 $validator->errors()->add(
                     'max_loan_percentage',
-                    'The max loan percentage is required when the product requires investment collateral.',
+                    'The max loan percentage is required when the product requires security. It caps a loan secured by a CDP Investment.',
                 );
             }
 
             if (!$requires && $this->filled('max_loan_percentage')) {
                 $validator->errors()->add(
                     'max_loan_percentage',
-                    'The max loan percentage only applies to products that require investment collateral.',
+                    'The max loan percentage only applies to products that require security.',
                 );
             }
         });

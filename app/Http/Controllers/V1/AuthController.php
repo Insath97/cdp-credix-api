@@ -160,7 +160,7 @@ class AuthController extends Controller
                     'status'  => 'error',
                     'message' => 'Your temporary password has expired because it was not changed within '
                         . \App\Models\User::TEMPORARY_PASSWORD_DAYS
-                        . ' days. Use "Forgot password" to request a new one.',
+                        . ' days. Use Forgot password to request a new one.',
                     'errors'  => ['temporary_password_expired' => true],
                 ], 403);
             }

@@ -15,7 +15,7 @@ class InvestmentCollateralException extends Exception
 {
     public function __construct(
         string $message,
-        public readonly string $field = 'collateral_policy_number',
+        public readonly string $field = 'security.policy_number',
         public readonly int $status = 422
     ) {
         parent::__construct($message);
