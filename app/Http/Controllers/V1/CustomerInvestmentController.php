@@ -19,7 +19,7 @@ use Illuminate\Routing\Controllers\Middleware;
  * Lists the customer's approved CDP Core policies, live from Core, with the
  * most the product would lend against each and whether another live Credix
  * loan already holds it. Nothing is stored; the officer picks one and the
- * policy number goes up with the application as collateral_policy_number.
+ * policy number goes up with the application as security.policy_number.
  */
 class CustomerInvestmentController extends Controller implements HasMiddleware
 {
@@ -60,8 +60,8 @@ class CustomerInvestmentController extends Controller implements HasMiddleware
                 'status'  => 'success',
                 'message' => 'Investments retrieved successfully',
                 'data'    => $data + [
-                    'requires_investment_collateral' => (bool) $product?->requires_investment_collateral,
-                    'max_loan_percentage'            => $product?->max_loan_percentage,
+                    'requires_security'   => (bool) $product?->requires_security,
+                    'max_loan_percentage' => $product?->max_loan_percentage,
                 ],
             ], 200);
         } catch (InvestmentCollateralException $e) {

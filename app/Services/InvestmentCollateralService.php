@@ -9,18 +9,20 @@ use App\Models\LoanProduct;
 use Carbon\Carbon;
 
 /**
- * Investment-backed loans: a CDP Core investment policy pledged as security.
+ * CDP Investment as a loan security: a CDP Core investment policy pledged
+ * against a loan on a secured product (loan_products.requires_security).
  *
- * Credix keeps only the policy number (loan_applications.collateral_policy_number).
- * Everything about the investment -- amount, plan, maturity, whose it is --
- * is read from CDP Core live, here, every time it matters. So a figure typed
- * into the wizard is never the figure the loan is secured on.
+ * The officer types the NIC and the policy number into the Loan Security
+ * step. Credix keeps those on loan_application_securities, plus a snapshot of
+ * what CDP Core reported at that moment (investment_details) for reviewers to
+ * read. Every rule below is checked against Core live, so a figure typed into
+ * the wizard is never the figure the loan is secured on.
  *
- * Rules for a product with requires_investment_collateral (individual loans
- * only, one policy per loan):
+ * Rules for a CDP Investment security (individual loans only, one policy per
+ * loan):
  *   1. a policy number is given
- *   2. the policy belongs to the borrower (looked up by their NIC in Core)
- *   3. it is approved in Core (not pending, cancelled, terminated)
+ *   2. the NIC given is the borrower's own (old and new NIC formats match)
+ *   3. the policy is approved in Core under that NIC (not pending, cancelled, terminated)
  *   4. no other LIVE Credix loan is secured by it
  *   5. requested_amount <= investment_amount x max_loan_percentage / 100
  *   6. investment maturity (reservation_date + duration) >= loan end date
@@ -38,69 +40,104 @@ class InvestmentCollateralService
     /**
      * The borrower's approved policies as CDP Core reports them, plus what
      * this product would lend against each and whether Credix already holds
-     * it. This is what the wizard's picker shows; nothing here is stored.
+     * it. This is what the customer investment picker shows; nothing here is
+     * stored.
      *
      * @return array{customer: ?array, summary: ?array, investments: array<int, array>}
      */
     public function investmentsFor(Customer $customer, ?LoanProduct $product = null): array
     {
-        $payload = $this->fetch($customer);
+        return $this->approvedInvestments(
+            (string) $customer->id_number,
+            $this->cdpIdType($customer),
+            $product,
+            'id_number'
+        );
+    }
 
-        $investments = collect($this->items($payload))
-            ->map(fn ($raw) => self::normalise((array) $raw))
-            ->filter(fn ($inv) => $inv['eligible'] && $inv['policy_number'] !== '')
-            ->map(function ($inv) use ($product) {
-                $holder = LoanApplication::holdingPolicy($inv['policy_number'])
-                    ->with('application')
-                    ->first();
+    /**
+     * One policy, by the NIC and policy number typed into the Loan Security
+     * step -- what the wizard displays before the application is submitted.
+     * Nothing is stored. Given the borrower, rule 2 is checked here as well,
+     * so a wrong NIC is caught before the officer reaches the end.
+     *
+     * @return array{customer: ?array, investment: array}
+     *
+     * @throws InvestmentCollateralException
+     */
+    public function lookup(
+        string $nic,
+        string $policyNumber,
+        ?LoanProduct $product = null,
+        ?Customer $borrower = null,
+        ?int $excludeLoanApplicationId = null
+    ): array {
+        $policy = self::normalisePolicy($policyNumber);
 
-                $inv['max_loan']  = $product?->maxLoanAgainst((float) $inv['investment_amount']);
-                $inv['in_use']    = $holder !== null;
-                $inv['in_use_by'] = $holder?->reference();
+        if ($borrower) {
+            $this->assertBorrowersNic($borrower, $nic, 'nic');
+        }
 
-                return $inv;
-            })
-            ->values()
-            ->all();
+        $result = $this->approvedInvestments(
+            CustomerLoanEligibilityService::normalizeNic($nic),
+            $borrower ? $this->cdpIdType($borrower) : 'nic',
+            $product,
+            'nic',
+            $excludeLoanApplicationId
+        );
+
+        $inv = collect($result['investments'])->firstWhere('policy_number', $policy);
+
+        if (!$inv) {
+            throw new InvestmentCollateralException(
+                "Policy {$policy} was not found among the approved CDP Core investments for NIC " . trim($nic) . '.',
+                'policy_number'
+            );
+        }
 
         return [
-            'customer'    => $payload['customer'] ?? null,
-            'summary'     => $payload['summary'] ?? null,
-            'investments' => $investments,
+            'customer'   => $result['customer'],
+            'investment' => $inv,
         ];
     }
 
     /**
-     * Check one policy against the rules above and return it normalised.
+     * Check a CDP Investment security against the rules above and return the
+     * investment as Core reports it -- the caller keeps it as the security's
+     * investment_details.
      *
      * @throws InvestmentCollateralException
      */
     public function validate(
         LoanProduct $product,
         Customer $customer,
+        ?string $nic,
         ?string $policyNumber,
         float $requestedAmount,
         int $termMonths,
         ?Carbon $appliedAt = null,
         ?int $excludeLoanApplicationId = null
-    ): ?array {
-        if (!$product->requires_investment_collateral) {
-            return null;
-        }
-
-        $policy = strtoupper(trim((string) $policyNumber));
+    ): array {
+        $policy = self::normalisePolicy($policyNumber);
 
         // Rule 1
         if ($policy === '') {
             throw new InvestmentCollateralException(
-                "The {$product->name} product must be secured by a CDP Core investment. Select the customer's investment policy."
+                'Enter the investment policy number that secures this loan.'
             );
         }
 
-        // Rule 2 + 3: Core is asked for THIS customer's approved policies, so
-        // anything not in the list is either not theirs or not approved.
-        $inv = collect($this->investmentsFor($customer, $product)['investments'])
-            ->first(fn ($i) => $i['policy_number'] === $policy);
+        // Rule 2
+        $this->assertBorrowersNic($customer, $nic, 'security.investment_nic');
+
+        // Rule 3: Core is asked for THIS NIC's approved policies, so anything
+        // not in the list is either not theirs or not approved.
+        $inv = collect($this->approvedInvestments(
+            CustomerLoanEligibilityService::normalizeNic($nic),
+            $this->cdpIdType($customer),
+            $product,
+            'security.investment_nic'
+        )['investments'])->firstWhere('policy_number', $policy);
 
         if (!$inv) {
             throw new InvestmentCollateralException(
@@ -160,6 +197,12 @@ class InvestmentCollateralService
         return $inv;
     }
 
+    /** Trimmed and upper-cased: the one form policy numbers are compared in. */
+    public static function normalisePolicy(?string $policyNumber): string
+    {
+        return strtoupper(trim((string) $policyNumber));
+    }
+
     // ------------------------------------------------------------------
 
     /**
@@ -195,7 +238,7 @@ class InvestmentCollateralService
             && empty($raw['deleted_at']);
 
         return [
-            'policy_number'      => strtoupper(trim((string) ($raw['policy_number'] ?? ''))),
+            'policy_number'      => self::normalisePolicy($raw['policy_number'] ?? ''),
             'application_number' => $raw['application_number'] ?? null,
             'investment_amount'  => round((float) ($raw['investment_amount'] ?? 0), 2),
             'product_name'       => $product['name'] ?? null,
@@ -209,20 +252,91 @@ class InvestmentCollateralService
         ];
     }
 
-    private function fetch(Customer $customer): array
+    /**
+     * Rule 2: a CDP Investment secures only its owner's own loan. The NIC is
+     * compared in every spelling, so 853400937V and 198534000937 match.
+     *
+     * @throws InvestmentCollateralException
+     */
+    private function assertBorrowersNic(Customer $customer, ?string $nic, string $field): void
     {
-        $result = $this->cdp->getCustomerInvestments(
-            (string) $customer->id_number,
-            $this->cdpIdType($customer),
-            'approved'
-        );
+        $variants = CustomerLoanEligibilityService::nicVariants($customer->id_number);
+
+        if (!in_array(CustomerLoanEligibilityService::normalizeNic($nic), $variants, true)) {
+            throw new InvestmentCollateralException(
+                sprintf(
+                    "NIC %s is not the NIC of %s (%s). A CDP Investment can only secure its owner's own loan.",
+                    trim((string) $nic),
+                    $this->who($customer),
+                    trim((string) $customer->id_number) !== '' ? trim((string) $customer->id_number) : 'no ID number on record'
+                ),
+                $field
+            );
+        }
+    }
+
+    /**
+     * The approved, pledgeable policies Core holds under one ID number, each
+     * with what the product would lend against it and whether a live Credix
+     * loan already holds it.
+     *
+     * @return array{customer: ?array, summary: ?array, investments: array<int, array>}
+     */
+    private function approvedInvestments(
+        string $idNumber,
+        ?string $idType,
+        ?LoanProduct $product,
+        string $field,
+        ?int $excludeLoanApplicationId = null
+    ): array {
+        $payload = $this->fetch($idNumber, $idType, $field);
+
+        $investments = collect($this->items($payload))
+            ->map(fn ($raw) => self::normalise((array) $raw))
+            ->filter(fn ($inv) => $inv['eligible'] && $inv['policy_number'] !== '')
+            ->map(function ($inv) use ($product, $excludeLoanApplicationId) {
+                $holder = LoanApplication::holdingPolicy($inv['policy_number'])
+                    ->when($excludeLoanApplicationId, fn ($q) => $q->where('id', '!=', $excludeLoanApplicationId))
+                    ->with('application')
+                    ->first();
+
+                $inv['max_loan']  = $product?->maxLoanAgainst((float) $inv['investment_amount']);
+                $inv['in_use']    = $holder !== null;
+                $inv['in_use_by'] = $holder?->reference();
+
+                return $inv;
+            })
+            ->values()
+            ->all();
+
+        return [
+            'customer'    => $payload['customer'] ?? null,
+            'summary'     => $payload['summary'] ?? null,
+            'investments' => $investments,
+        ];
+    }
+
+    private function fetch(string $idNumber, ?string $idType, string $field): array
+    {
+        $result = $this->cdp->getCustomerInvestments($idNumber, $idType, 'approved');
 
         if (!$result['success']) {
-            throw new InvestmentCollateralException(
-                $result['message'],
-                'collateral_policy_number',
-                $result['status_code'] ?: 502
-            );
+            $code = (int) $result['status_code'];
+
+            // Core's status is not handed back as-is. Its 401 means Credix's
+            // own API key was refused; passed through, the frontend reads it
+            // as the officer's session having expired and signs them out.
+            $status = match ($code) {
+                404, 422 => 422,
+                503      => 503,
+                default  => 502,
+            };
+
+            $message = $code === 404
+                ? 'No CDP Core investments were found for ' . trim($idNumber) . '.'
+                : $result['message'];
+
+            throw new InvestmentCollateralException($message, $field, $status);
         }
 
         return is_array($result['data'] ?? null) ? $result['data'] : [];

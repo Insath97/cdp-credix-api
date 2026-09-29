@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
+use App\Models\Document;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationStatusHistory;
 use App\Models\Setting;
@@ -50,6 +51,10 @@ class LoanApplicationWorkflowService
             throw new InvalidLoanApplicationTransitionException(
                 'At least one guarantor is required before this loan application can be verified.'
             );
+        }
+
+        if (in_array($to, [LoanApplicationStatus::Reviewed, LoanApplicationStatus::Verified], true)) {
+            $this->assertSecurityReady($loanApplication, $to === LoanApplicationStatus::Reviewed ? 'reviewed' : 'verified');
         }
 
         return DB::transaction(function () use ($loanApplication, $from, $to, $actorId, $remarks, $extra, $metadata) {
@@ -112,6 +117,43 @@ class LoanApplicationWorkflowService
                 'installments',
             ]);
         });
+    }
+
+    /**
+     * A secured product's loan is not ready for review without its security,
+     * nor without the security's paper where that paper is required (the
+     * Vehicle CR). The security details travel with the application, but its
+     * papers are uploaded separately through POST /documents, so review is
+     * the first point at which both can be checked together. Checked again
+     * at verification: the security can still be switched after review, and
+     * a document can still be removed.
+     */
+    protected function assertSecurityReady(LoanApplication $loanApplication, string $stage): void
+    {
+        if (!$loanApplication->requiresSecurity()) {
+            return;
+        }
+
+        $security = $loanApplication->security;
+
+        if (!$security) {
+            throw new InvalidLoanApplicationTransitionException(
+                "{$loanApplication->loanProduct->name} is a secured product. Add the loan security (CDP Investment, Property Mortgage or Vehicle) before this loan application can be {$stage}."
+            );
+        }
+
+        $type = $security->security_type;
+
+        if ($type->documentRequired()
+            && !$loanApplication->documents()
+                ->where('document_type', $type->documentType())
+                ->where('status', 'active')
+                ->where('is_active', true)
+                ->exists()) {
+            throw new InvalidLoanApplicationTransitionException(
+                'Upload the ' . Document::TYPES[$type->documentType()] . " before this loan application can be {$stage}."
+            );
+        }
     }
 
     /**

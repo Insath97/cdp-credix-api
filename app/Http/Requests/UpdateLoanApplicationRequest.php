@@ -5,11 +5,31 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use App\Enums\LoanApplicationStatus;
+use App\Enums\LoanSecurityType;
+use App\Models\LoanApplication;
+use App\Models\LoanProduct;
 use App\Traits\GuardsLoanWorkflowFields;
+use App\Traits\ValidatesLoanSecurity;
 
 class UpdateLoanApplicationRequest extends FormRequest
 {
-    use GuardsLoanWorkflowFields;
+    use GuardsLoanWorkflowFields, ValidatesLoanSecurity;
+
+    /**
+     * The statuses in which the loan security may still be changed: up to
+     * approval. Approval is a lending decision taken on that security, so
+     * from then on it is part of the record, the way the documents become
+     * part of it at disbursement.
+     */
+    public const SECURITY_EDITABLE_STATUSES = [
+        LoanApplicationStatus::Submitted,
+        LoanApplicationStatus::Reviewed,
+        LoanApplicationStatus::ReviewFailed,
+        LoanApplicationStatus::Verified,
+        LoanApplicationStatus::Reverify,
+        LoanApplicationStatus::Reopened,
+    ];
 
     /**
      * Refused on update but legitimately accepted on create.
@@ -77,7 +97,10 @@ class UpdateLoanApplicationRequest extends FormRequest
             // that guards the transition, checks segregation of duties and
             // writes the audit row. Setting it here would move a loan with
             // none of that happening.
-        ]);
+
+        // The loan security, sent whole to replace it. Left out, the one the
+        // loan already has stays as it is.
+        ], $this->loanSecurityRules());
     }
 
 
@@ -87,7 +110,61 @@ class UpdateLoanApplicationRequest extends FormRequest
      */
     public function messages(): array
     {
-        return $this->workflowOwnedMessages(self::REFUSED_ON_UPDATE);
+        return array_merge($this->workflowOwnedMessages(self::REFUSED_ON_UPDATE), $this->loanSecurityMessages());
+    }
+
+    public function attributes(): array
+    {
+        return $this->loanSecurityAttributes();
+    }
+
+    /**
+     * The loan security against the loan as it will stand after this edit.
+     *
+     * The product is the loan's own unless this edit changes it, so a
+     * security is required when the edit moves the loan onto a secured
+     * product and refused when it moves it off one. Changing the security --
+     * replacing it, or dropping it along with the product that needed it -- is
+     * allowed only until approval.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            $loanApplication = LoanApplication::with(['loanProduct', 'security'])->find($this->route('loan_application'));
+
+            // Not found, or a group loan: the controller answers both.
+            if (!$loanApplication || $loanApplication->isGroupLoan()) {
+                return;
+            }
+
+            $product = $this->filled('loan_product_id')
+                ? LoanProduct::find($this->input('loan_product_id'))
+                : $loanApplication->loanProduct;
+
+            $hasSecurity = $loanApplication->security !== null;
+
+            $this->checkSecurityAgainstProduct($validator, $product, $hasSecurity);
+
+            $sent = !empty($this->input('security'));
+            $drops = $product && !$product->requires_security && $hasSecurity;
+
+            if (($sent || $drops)
+                && !in_array($loanApplication->status, self::SECURITY_EDITABLE_STATUSES, true)) {
+                $validator->errors()->add(
+                    'security',
+                    "The loan security can no longer be changed: this loan application is {$loanApplication->status->value}, and the security is part of what it was approved on."
+                );
+            }
+
+            if ($sent
+                && $this->input('security.security_type') === LoanSecurityType::CdpInvestment->value
+                && $loanApplication->loanApplicationCustomers()->where('customer_id', '!=', $loanApplication->customer_id)->exists()) {
+                $validator->errors()->add(
+                    'security.security_type',
+                    'A CDP Investment can only secure an individual loan, and this loan has joint co-borrowers.'
+                );
+            }
+        });
     }
 
     protected function failedValidation(Validator $validator)

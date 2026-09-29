@@ -8,9 +8,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Enums\LoanApplicationStatus;
 use App\Enums\LoanRevisionStatus;
+use App\Enums\LoanSecurityType;
 
 class LoanApplication extends Model
 {
@@ -37,7 +39,6 @@ class LoanApplication extends Model
         'application_id',
         'customer_id',
         'loan_product_id',
-        'collateral_policy_number',
         'branch_id',
         'group_loan_id',
         'requested_amount',
@@ -282,6 +283,28 @@ class LoanApplication extends Model
     public function loanApplicationBankDetails(): HasMany
     {
         return $this->hasMany(LoanApplicationBankDetail::class);
+    }
+
+    /**
+     * The security pledged against this application (CDP Investment,
+     * Property Mortgage or Vehicle). Present on products with
+     * requires_security, null otherwise.
+     */
+    public function security(): HasOne
+    {
+        return $this->hasOne(LoanApplicationSecurity::class);
+    }
+
+    /**
+     * Whether this application must carry a loan security: its product is a
+     * secured one. Group loans never do -- they are created through their own
+     * endpoint, which takes no security.
+     */
+    public function requiresSecurity(): bool
+    {
+        $this->loadMissing('loanProduct');
+
+        return !$this->isGroupLoan() && (bool) $this->loanProduct?->requires_security;
     }
 
     /**
@@ -576,7 +599,9 @@ class LoanApplication extends Model
     public function scopeHoldingPolicy(Builder $query, string $policyNumber): Builder
     {
         return $query->live()
-            ->whereRaw('UPPER(TRIM(collateral_policy_number)) = ?', [strtoupper(trim($policyNumber))]);
+            ->whereHas('security', fn (Builder $q) => $q
+                ->where('security_type', LoanSecurityType::CdpInvestment->value)
+                ->whereRaw('UPPER(TRIM(policy_number)) = ?', [strtoupper(trim($policyNumber))]));
     }
 
     public function scopeLive(Builder $query): Builder

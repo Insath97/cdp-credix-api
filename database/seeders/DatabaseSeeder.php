@@ -17,6 +17,8 @@ class DatabaseSeeder extends Seeder
         $this->call(UserSeeder::class);
         // $this->call(LocationHierarchySeeder::class);
         //$this->call(LoanCatalogSeeder::class);
+        // $this->call(LoanCatalogSeeder::class);
         // $this->call(DummyDataSeeder::class);
+
     }
 }
