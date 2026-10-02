@@ -166,6 +166,31 @@ class LoanProduct extends Model
         return $this->belongsTo(LoanTerm::class);
     }
 
+    /** The legal documents this product's loans are drawn up with. */
+    public function legalDocuments(): HasMany
+    {
+        return $this->hasMany(LoanProductLegalDocument::class);
+    }
+
+    /** @return array<int, string> the LegalDocumentType values this product uses */
+    public function legalDocumentTypes(): array
+    {
+        return $this->legalDocuments->map(fn (LoanProductLegalDocument $document) => $document->document_type->value)->all();
+    }
+
+    /** Replace this product's legal documents with the given types. */
+    public function syncLegalDocuments(array $types): void
+    {
+        $types = array_values(array_unique($types));
+
+        $this->legalDocuments()->whereNotIn('document_type', $types)->delete();
+        foreach ($types as $type) {
+            $this->legalDocuments()->firstOrCreate(['document_type' => $type]);
+        }
+
+        $this->unsetRelation('legalDocuments');
+    }
+
     public function scopeSearch(Builder $query, ?string $search): Builder
     {
         return $query->where(function ($q) use ($search) {

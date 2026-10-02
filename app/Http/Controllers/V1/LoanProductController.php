@@ -10,6 +10,7 @@ use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanProductRequest;
 use App\Http\Requests\UpdateLoanProductRequest;
 use App\Models\LoanType;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -45,7 +46,7 @@ class LoanProductController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
-            $query = LoanProduct::with(['loanType', 'loanTerm']);
+            $query = LoanProduct::with(['loanType', 'loanTerm', 'legalDocuments']);
 
             if ($request->has('search')) {
                 $query->search($request->search);
@@ -99,8 +100,18 @@ class LoanProductController extends Controller implements HasMiddleware
             // independently-supplied value. This keeps term/type consistent.
             $data['loan_term_id'] = $this->resolveTermForType($data['loan_type_id']);
 
-            $loanProduct = LoanProduct::create($data);
-            $loanProduct->load(['loanType', 'loanTerm']);
+            $legalDocumentTypes = $data['legal_document_types'] ?? null;
+            unset($data['legal_document_types']);
+
+            $loanProduct = DB::transaction(function () use ($data, $legalDocumentTypes) {
+                $loanProduct = LoanProduct::create($data);
+                if ($legalDocumentTypes !== null) {
+                    $loanProduct->syncLegalDocuments($legalDocumentTypes);
+                }
+
+                return $loanProduct;
+            });
+            $loanProduct->load(['loanType', 'loanTerm', 'legalDocuments']);
 
             $this->logActivity('CREATE', 'LoanProduct', "Created loan product: {$loanProduct->name}", $data);
 
@@ -125,7 +136,7 @@ class LoanProductController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $loanProduct = LoanProduct::with(['loanType', 'loanTerm'])->find($id);
+            $loanProduct = LoanProduct::with(['loanType', 'loanTerm', 'legalDocuments'])->find($id);
 
             if (!$loanProduct) {
                 return response()->json([
@@ -171,14 +182,23 @@ class LoanProductController extends Controller implements HasMiddleware
                 $data['loan_term_id'] = $this->resolveTermForType($data['loan_type_id']);
             }
 
-            $loanProduct->update($data);
+            // Not sent: the product keeps its legal documents. [] clears them.
+            $legalDocumentTypes = $data['legal_document_types'] ?? null;
+            unset($data['legal_document_types']);
+
+            DB::transaction(function () use ($loanProduct, $data, $legalDocumentTypes) {
+                $loanProduct->update($data);
+                if ($legalDocumentTypes !== null) {
+                    $loanProduct->syncLegalDocuments($legalDocumentTypes);
+                }
+            });
 
             $this->logActivity('UPDATE', 'LoanProduct', "Updated loan product: {$loanProduct->name}", $data);
 
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Loan product updated successfully',
-                'data'    => $loanProduct->fresh(['loanType', 'loanTerm']),
+                'data'    => $loanProduct->fresh(['loanType', 'loanTerm', 'legalDocuments']),
             ], 200);
 
         } catch (\Throwable $th) {

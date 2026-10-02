@@ -32,6 +32,7 @@ use App\Http\Controllers\V1\LoanTermController;
 use App\Http\Controllers\V1\LoanTypeController;
 use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LegalDocumentController;
+use App\Http\Controllers\V1\LegalDocumentSignatureController;
 use App\Http\Controllers\V1\LegalDocumentTemplateController;
 use App\Http\Controllers\V1\LoanApplicationController;
 use App\Http\Controllers\V1\LoanApplicationStatusHistoryController;
@@ -285,6 +286,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     // Legal
     Route::prefix('legal-document-templates')->group(function () {
         Route::get('list', [LegalDocumentTemplateController::class, 'getActiveList']);
+        Route::get('application/{loanApplicationId}', [LegalDocumentTemplateController::class, 'forApplication']);
         Route::patch('{id}/toggle-status', [LegalDocumentTemplateController::class, 'toggleStatus']);
     });
     Route::apiResource('legal-document-templates', LegalDocumentTemplateController::class);
@@ -293,6 +295,9 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::get('applications', [LegalDocumentController::class, 'applications']);
         Route::patch('{id}/record-print', [LegalDocumentController::class, 'recordPrint']);
         Route::patch('{id}/toggle-status', [LegalDocumentController::class, 'toggleStatus']);
+        Route::get('{id}/signatures', [LegalDocumentSignatureController::class, 'index']);
+        Route::post('{id}/signatures', [LegalDocumentSignatureController::class, 'store']);
+        Route::post('{id}/signatures/clear', [LegalDocumentSignatureController::class, 'clear']);
     });
     Route::apiResource('legal-documents', LegalDocumentController::class);
 

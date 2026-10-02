@@ -12,7 +12,9 @@ return new class extends Migration
         Schema::create('legal_document_templates', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('loan_product_id')->constrained('loan_products')->cascadeOnDelete();
+            // A loan application's legal paperwork follows its loan type
+            // (application -> product -> loan type), not the product.
+            $table->foreignId('loan_type_id')->constrained('loan_types')->cascadeOnDelete();
             $table->string('document_type', 60)->index();
 
             $table->string('language', 5)->default('en')->index();
@@ -31,8 +33,8 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(
-                ['loan_product_id', 'document_type', 'language'],
-                'legal_templates_product_type_language_unique'
+                ['loan_type_id', 'document_type', 'language'],
+                'legal_templates_loan_type_document_language_unique'
             );
         });
     }

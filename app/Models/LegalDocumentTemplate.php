@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\LegalDocumentType;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -13,19 +14,6 @@ class LegalDocumentTemplate extends Model
 {
     use HasFactory, SoftDeletes;
 
-    /**
-     * The agreements the legal desk has drafted.
-     *
-     * Keys are what the API validates and stores; the labels are what a screen
-     * prints. Kept here rather than in a database enum so adding the next
-     * agreement is a one-line change, not an ALTER.
-     */
-    public const TYPES = [
-        'direct_loan_agreement'            => 'Direct Loan Agreement With Two Guarantors',
-        'loan_agreement_investment'        => 'Loan Agreement Against Investment',
-        'loan_application_acknowledgement' => 'Loan Application & Acknowledgement Against Investment',
-    ];
-
     /** The languages an agreement may be approved in. */
     public const LANGUAGES = [
         'en' => 'English',
@@ -34,7 +22,7 @@ class LegalDocumentTemplate extends Model
     ];
 
     protected $fillable = [
-        'loan_product_id',
+        'loan_type_id',
         'document_type',
         'language',
         'title',
@@ -49,16 +37,16 @@ class LegalDocumentTemplate extends Model
     protected $hidden = ['deleted_at'];
 
     protected $casts = [
-        'loan_product_id' => 'integer',
-        'created_by'      => 'integer',
-        'is_active'       => 'boolean',
+        'loan_type_id' => 'integer',
+        'created_by'   => 'integer',
+        'is_active'    => 'boolean',
     ];
 
     protected $appends = ['document_type_label', 'language_label'];
 
     public function getDocumentTypeLabelAttribute(): string
     {
-        return self::TYPES[$this->document_type] ?? (string) $this->document_type;
+        return LegalDocumentType::labelFor($this->document_type);
     }
 
     public function getLanguageLabelAttribute(): string
@@ -66,9 +54,22 @@ class LegalDocumentTemplate extends Model
         return self::LANGUAGES[$this->language] ?? (string) $this->language;
     }
 
-    public function loanProduct(): BelongsTo
+    /** The loan type whose applications are drawn up on this template. */
+    public function loanType(): BelongsTo
     {
-        return $this->belongsTo(LoanProduct::class);
+        return $this->belongsTo(LoanType::class);
+    }
+
+    /**
+     * Active templates of a loan application's loan type
+     * (application -> product -> loan type).
+     */
+    public function scopeForLoanApplication(Builder $query, LoanApplication $loanApplication): Builder
+    {
+        $loanApplication->loadMissing('loanProduct');
+
+        return $query->where('is_active', true)
+            ->where('loan_type_id', $loanApplication->loanProduct?->loan_type_id);
     }
 
     public function creator(): BelongsTo
@@ -92,7 +93,7 @@ class LegalDocumentTemplate extends Model
                 ->orWhere('description', 'like', "%{$term}%")
                 ->orWhere('document_type', 'like', "%{$term}%")
                 ->orWhere('source_file_name', 'like', "%{$term}%")
-                ->orWhereHas('loanProduct', fn (Builder $p) => $p->where('name', 'like', "%{$term}%"));
+                ->orWhereHas('loanType', fn (Builder $t) => $t->where('title', 'like', "%{$term}%"));
         });
     }
 }

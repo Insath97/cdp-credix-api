@@ -207,6 +207,8 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Legal Document Update', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Legal Document Delete', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Legal Document Toggle Status', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Sign', 'group_name' => 'Legal Management Permissions'],
+            ['name' => 'Legal Document Clear Signatures', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Loan Application Disburse', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Cancel', 'group_name' => 'Loan Application Management Permissions'],
 

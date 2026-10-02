@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\LegalDocumentStatus;
+use App\Enums\LegalDocumentType;
 use App\Models\LegalDocumentTemplate;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -25,7 +26,7 @@ class UpdateLegalDocumentRequest extends FormRequest
             'updated_at'                 => 'nullable|date',
             'loan_application_id'        => 'sometimes|required|integer|exists:loan_applications,id',
             'legal_document_template_id' => 'nullable|integer|exists:legal_document_templates,id',
-            'document_type'              => ['sometimes', 'required', 'string', Rule::in(array_keys(LegalDocumentTemplate::TYPES))],
+            'document_type'              => ['sometimes', 'required', 'string', Rule::in(LegalDocumentType::values())],
             'language'                   => ['nullable', 'string', Rule::in(array_keys(LegalDocumentTemplate::LANGUAGES))],
             'status'                     => ['nullable', 'string', Rule::in(LegalDocumentStatus::values())],
             'created_at'                 => 'nullable|date',

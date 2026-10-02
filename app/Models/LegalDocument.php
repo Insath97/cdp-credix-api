@@ -3,10 +3,12 @@
 namespace App\Models;
 
 use App\Enums\LegalDocumentStatus;
+use App\Enums\LegalDocumentType;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class LegalDocument extends Model
@@ -37,6 +39,7 @@ class LegalDocument extends Model
         'created_by'                  => 'integer',
         'status'                      => LegalDocumentStatus::class,
         'legal_document_created_date' => 'datetime',
+        'signed_at'                   => 'datetime',
         'details'                     => 'array',
         'printed_count'               => 'integer',
         'last_printed_at'             => 'datetime',
@@ -47,7 +50,7 @@ class LegalDocument extends Model
 
     public function getDocumentTypeLabelAttribute(): string
     {
-        return LegalDocumentTemplate::TYPES[$this->document_type] ?? (string) $this->document_type;
+        return LegalDocumentType::labelFor($this->document_type);
     }
 
     public function getStatusLabelAttribute(): ?string
@@ -68,6 +71,12 @@ class LegalDocument extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** The signatures standing on this document; cleared ones are voided. */
+    public function signatures(): HasMany
+    {
+        return $this->hasMany(LegalDocumentSignature::class)->whereNull('voided_at');
     }
 
     public function scopeSearch(Builder $query, ?string $term): Builder

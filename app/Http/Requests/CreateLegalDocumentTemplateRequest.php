@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\LegalDocumentType;
 use App\Models\LegalDocumentTemplate;
+use App\Models\LoanProduct;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -15,20 +17,36 @@ class CreateLegalDocumentTemplateRequest extends FormRequest
         return true;
     }
 
+    /**
+     * Templates belong to a loan type. A caller still sending loan_product_id
+     * (templates used to be per product) gets that product's loan type.
+     */
+    protected function prepareForValidation(): void
+    {
+        if (!$this->filled('loan_type_id') && $this->filled('loan_product_id')) {
+            $loanTypeId = LoanProduct::whereKey($this->input('loan_product_id'))->value('loan_type_id');
+
+            if ($loanTypeId) {
+                $this->merge(['loan_type_id' => $loanTypeId]);
+            }
+        }
+    }
+
     public function rules(): array
     {
         return [
-            'loan_product_id'  => 'required|integer|exists:loan_products,id',
-            // One template per product per type per language. Declared on a
-            // field the caller always submits: a closure rule hung on a field
-            // that is never sent is skipped by the validator entirely.
+            'loan_type_id'     => 'required|integer|exists:loan_types,id',
+            'loan_product_id'  => 'nullable|integer|exists:loan_products,id',
+            // One template per loan type per document type per language.
+            // Declared on a field the caller always submits: a closure rule
+            // hung on a field that is never sent is skipped entirely.
             'document_type'    => [
                 'required',
                 'string',
-                Rule::in(array_keys(LegalDocumentTemplate::TYPES)),
+                Rule::in(LegalDocumentType::values()),
                 Rule::unique('legal_document_templates', 'document_type')
                     ->where(fn ($query) => $query
-                        ->where('loan_product_id', $this->input('loan_product_id'))
+                        ->where('loan_type_id', $this->input('loan_type_id'))
                         ->where('language', $this->input('language', 'en'))
                         ->whereNull('deleted_at')),
             ],
@@ -43,6 +61,14 @@ class CreateLegalDocumentTemplateRequest extends FormRequest
             'content'          => 'nullable|string',
             'is_active'        => 'nullable|boolean',
 
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'loan_type_id.required' => 'Choose the loan type this template is for.',
+            'document_type.unique'  => 'This loan type already has a template for this document type and language.',
         ];
     }
 
