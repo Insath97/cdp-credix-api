@@ -14,8 +14,9 @@ use Illuminate\Validation\Rule;
  * One security per application, of one of three types. A type's fields are
  * required only when that type is chosen and refused when another one is, so
  * a Property Mortgage payload cannot carry a stray policy number into the row.
- * Whether a security is wanted at all is the product's call
- * (loan_products.requires_security) -- see checkSecurityAgainstProduct().
+ * Whether a security is wanted at all follows the loan type: Standard
+ * Borrowing under the General term (LoanProduct::requiresSecurity()) -- see
+ * checkSecurityAgainstProduct().
  */
 trait ValidatesLoanSecurity
 {
@@ -56,11 +57,13 @@ trait ValidatesLoanSecurity
             'security.evaluated_by'       => [...$for($property, false), 'string', 'max:255'],
             'security.evaluation_remarks' => [...$for($property, false), 'string', 'max:2000'],
 
-            // Vehicle -- the CR itself is uploaded as a document (vehicle_cr).
-            'security.vehicle_make'         => [...$for($vehicle), 'string', 'max:100'],
-            'security.vehicle_model'        => [...$for($vehicle), 'string', 'max:100'],
-            'security.year_of_manufacture'  => [...$for($vehicle), 'integer', 'min:1900', "max:{$thisYear}"],
-            'security.year_of_registration' => [...$for($vehicle), 'integer', 'min:1900', "max:{$thisYear}", 'gte:security.year_of_manufacture'],
+            // Vehicle -- the CR and the valuation report are uploaded as documents.
+            'security.vehicle_make'          => [...$for($vehicle), 'string', 'max:100'],
+            'security.vehicle_model'         => [...$for($vehicle), 'string', 'max:100'],
+            'security.year_of_manufacture'   => [...$for($vehicle), 'integer', 'min:1900', "max:{$thisYear}"],
+            'security.year_of_registration'  => [...$for($vehicle), 'integer', 'min:1900', "max:{$thisYear}", 'gte:security.year_of_manufacture'],
+            'security.registration_number'   => [...$for($vehicle), 'string', 'max:50'],
+            'security.chassis_engine_number' => [...$for($vehicle, false), 'string', 'max:100'],
         ];
     }
 
@@ -88,6 +91,8 @@ trait ValidatesLoanSecurity
             'security.vehicle_model'        => 'vehicle model',
             'security.year_of_manufacture'  => 'year of manufacture',
             'security.year_of_registration' => 'year of registration',
+            'security.registration_number'  => 'registration number',
+            'security.chassis_engine_number' => 'chassis / engine number',
         ];
     }
 
@@ -120,10 +125,10 @@ trait ValidatesLoanSecurity
     }
 
     /**
-     * The product decides whether a security is wanted: missing on a secured
-     * product, or sent for one that takes none, is an error on `security`.
-     * $alreadySecured lets an update to a loan that has its security leave it
-     * out of the payload.
+     * The product's loan type decides whether a security is wanted: missing on
+     * a Standard Borrowing loan, or sent for any other, is an error on
+     * `security`. $alreadySecured lets an update to a loan that has its
+     * security leave it out of the payload.
      */
     protected function checkSecurityAgainstProduct(Validator $validator, ?LoanProduct $product, bool $alreadySecured = false): void
     {
@@ -132,18 +137,19 @@ trait ValidatesLoanSecurity
         }
 
         $sent = !empty($this->input('security'));
+        $secured = $product->requiresSecurity();
 
-        if ($product->requires_security && !$sent && !$alreadySecured) {
+        if ($secured && !$sent && !$alreadySecured) {
             $validator->errors()->add(
                 'security',
-                "{$product->name} is a secured product. Add the loan security: CDP Investment, Property Mortgage or Vehicle."
+                "{$product->name} is a Standard Borrowing loan, so it must be secured. Add the loan security: CDP Investment, Property Mortgage or Vehicle."
             );
         }
 
-        if (!$product->requires_security && $sent) {
+        if (!$secured && $sent) {
             $validator->errors()->add(
                 'security',
-                "{$product->name} does not take a loan security. Remove the security section, or choose a secured product."
+                "{$product->name} does not take a loan security. Only Standard Borrowing loans under the General term are secured."
             );
         }
     }

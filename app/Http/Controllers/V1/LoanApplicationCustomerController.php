@@ -11,6 +11,7 @@ use App\Models\LoanApplicationCustomer;
 use App\Models\Customer;
 use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
+use App\Enums\LoanSecurityType;
 use App\Exceptions\CustomerHasLiveLoanException;
 use App\Services\CustomerLoanEligibilityService;
 use App\Services\GroupLoanWorkflowService;
@@ -348,7 +349,7 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     public function destroy(string $id)
     {
         try {
-            $record = LoanApplicationCustomer::with('loanApplication.groupLoan')->find($id);
+            $record = LoanApplicationCustomer::with(['customer', 'loanApplication.groupLoan', 'loanApplication.security'])->find($id);
 
             if (!$record) {
                 return $this->notFoundResponse();
@@ -359,6 +360,23 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
 
             if ($locked = $this->membersLockedResponse($loanApplication, 'Members can only be removed')) {
                 return $locked;
+            }
+
+            // A CDP Investment secures only a loan its owner is borrowing on,
+            // so its owner cannot leave while it does.
+            $security = $loanApplication?->security;
+            if ($security?->security_type === LoanSecurityType::CdpInvestment
+                && in_array(
+                    CustomerLoanEligibilityService::normalizeNic($security->investment_nic),
+                    CustomerLoanEligibilityService::nicVariants($record->customer?->id_number),
+                    true
+                )) {
+                $name = $record->customer?->full_name ?: 'This customer';
+
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "{$name}'s CDP Investment (policy {$security->policy_number}) secures this loan, so they cannot be removed from it. Change the loan security first.",
+                ], 422);
             }
 
             // A group loan must keep enough members to still be a group.

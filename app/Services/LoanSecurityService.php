@@ -7,7 +7,6 @@ use App\Exceptions\InvestmentCollateralException;
 use App\Models\Customer;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationSecurity;
-use App\Models\LoanProduct;
 use Carbon\Carbon;
 
 /**
@@ -33,12 +32,14 @@ class LoanSecurityService
      * transaction; assertPolicyStillFree() repeats the one check that can
      * race, under the lock.
      *
+     * @param iterable<int, Customer> $borrowers everyone borrowing on the loan, primary first;
+     *                                           a CDP Investment must belong to one of them
+     *
      * @throws InvestmentCollateralException
      */
     public function prepare(
         array $security,
-        LoanProduct $product,
-        Customer $borrower,
+        iterable $borrowers,
         float $requestedAmount,
         int $termMonths,
         ?Carbon $appliedAt = null,
@@ -56,8 +57,7 @@ class LoanSecurityService
 
         if ($type === LoanSecurityType::CdpInvestment) {
             $investment = $this->investmentCollateral->validate(
-                $product,
-                $borrower,
+                $borrowers,
                 $security['investment_nic'] ?? null,
                 $security['policy_number'] ?? null,
                 $requestedAmount,

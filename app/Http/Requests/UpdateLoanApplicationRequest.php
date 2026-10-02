@@ -6,7 +6,6 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use App\Enums\LoanApplicationStatus;
-use App\Enums\LoanSecurityType;
 use App\Models\LoanApplication;
 use App\Models\LoanProduct;
 use App\Traits\GuardsLoanWorkflowFields;
@@ -86,17 +85,7 @@ class UpdateLoanApplicationRequest extends FormRequest
             // record of something that already happened.
             'assigned_reviewer_id'   => 'nullable|integer|exists:users,id',
 
-            // is_active is deliberately not accepted here: it has its own
-            // activate/deactivate/toggle-status endpoints, which refuse to
-            // reactivate a cancelled, rejected or closed loan. Allowing it
-            // through a generic update would bypass that guard and let a
-            // finished loan display as "Active" again.
-            //
-            // status is not accepted either, for the same reason and a
-            // stronger one: every status change belongs to a workflow endpoint
-            // that guards the transition, checks segregation of duties and
-            // writes the audit row. Setting it here would move a loan with
-            // none of that happening.
+
 
         // The loan security, sent whole to replace it. Left out, the one the
         // loan already has stays as it is.
@@ -146,22 +135,13 @@ class UpdateLoanApplicationRequest extends FormRequest
             $this->checkSecurityAgainstProduct($validator, $product, $hasSecurity);
 
             $sent = !empty($this->input('security'));
-            $drops = $product && !$product->requires_security && $hasSecurity;
+            $drops = $product && !$product->requiresSecurity() && $hasSecurity;
 
             if (($sent || $drops)
                 && !in_array($loanApplication->status, self::SECURITY_EDITABLE_STATUSES, true)) {
                 $validator->errors()->add(
                     'security',
                     "The loan security can no longer be changed: this loan application is {$loanApplication->status->value}, and the security is part of what it was approved on."
-                );
-            }
-
-            if ($sent
-                && $this->input('security.security_type') === LoanSecurityType::CdpInvestment->value
-                && $loanApplication->loanApplicationCustomers()->where('customer_id', '!=', $loanApplication->customer_id)->exists()) {
-                $validator->errors()->add(
-                    'security.security_type',
-                    'A CDP Investment can only secure an individual loan, and this loan has joint co-borrowers.'
                 );
             }
         });

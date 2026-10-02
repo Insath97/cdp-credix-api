@@ -8,7 +8,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Document;
 use App\Models\LoanApplicationSecurity;
-use App\Models\LoanProduct;
 use App\Services\InvestmentCollateralService;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Http\Request;
@@ -18,8 +17,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * The Loan Security step of the loan wizard, for secured products
- * (loan_products.requires_security).
+ * The Loan Security step of the loan wizard, for secured loans -- Standard
+ * Borrowing under the General term (LoanProduct::requiresSecurity()).
  *
  *   GET  /loan-securities/options             the security and property types
  *   POST /loan-securities/investment-lookup   NIC + policy number -> the investment, live from CDP Core
@@ -57,13 +56,23 @@ class LoanSecurityController extends Controller implements HasMiddleware
                 'security_types' => array_map(fn (LoanSecurityType $type) => [
                     'value'             => $type->value,
                     'label'             => $type->label(),
+                    // The main paper, as before; `documents` lists them all.
                     'document_type'     => $type->documentType(),
                     'document_label'    => Document::TYPES[$type->documentType()],
-                    'document_required' => $type->documentRequired(),
+                    'document_required' => $type->documents()[$type->documentType()],
+                    'documents'         => collect($type->documents())
+                        ->map(fn (bool $required, string $documentType) => [
+                            'document_type'  => $documentType,
+                            'document_label' => Document::TYPES[$documentType],
+                            'required'       => $required,
+                        ])
+                        ->values(),
                 ], LoanSecurityType::cases()),
                 'property_types' => collect(LoanApplicationSecurity::PROPERTY_TYPES)
                     ->map(fn (string $label, string $value) => ['value' => $value, 'label' => $label])
                     ->values(),
+                // System Setting: the most a CDP Investment can secure, as a % of its value.
+                'cdp_investment_max_loan_percentage' => InvestmentCollateralService::maxLoanPercentage(),
             ],
         ], 200);
     }
@@ -73,9 +82,10 @@ class LoanSecurityController extends Controller implements HasMiddleware
      * policy number typed into the step. Nothing is stored; the same checks
      * run again, against Core, when the application is submitted.
      *
-     * customer_id checks the NIC is the borrower's up front, loan_product_id
-     * adds the product's max_loan, and loan_application_id stops an edit
-     * seeing its own loan as the one holding the policy.
+     * customer_id / customer_ids (the borrower, or every borrower on a joint
+     * loan) check up front that the NIC belongs to one of them, and
+     * loan_application_id stops an edit seeing its own loan as the one
+     * holding the policy. max_loan comes from the System Setting.
      */
     public function investmentLookup(Request $request)
     {
@@ -83,7 +93,8 @@ class LoanSecurityController extends Controller implements HasMiddleware
             'nic'                 => 'required|string|max:20',
             'policy_number'       => 'required|string|max:100',
             'customer_id'         => 'nullable|integer|exists:customers,id',
-            'loan_product_id'     => 'nullable|integer|exists:loan_products,id',
+            'customer_ids'        => 'nullable|array',
+            'customer_ids.*'      => 'integer|distinct|exists:customers,id',
             'loan_application_id' => 'nullable|integer|exists:loan_applications,id',
         ]);
 
@@ -95,19 +106,25 @@ class LoanSecurityController extends Controller implements HasMiddleware
             ], 422);
         }
 
+        $borrowerIds = collect([$request->input('customer_id')])
+            ->merge((array) $request->input('customer_ids', []))
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
         try {
             $result = $this->investmentCollateral->lookup(
                 (string) $request->input('nic'),
                 (string) $request->input('policy_number'),
-                $request->filled('loan_product_id') ? LoanProduct::find($request->integer('loan_product_id')) : null,
-                $request->filled('customer_id') ? Customer::find($request->integer('customer_id')) : null,
+                $borrowerIds->isEmpty() ? [] : Customer::whereIn('id', $borrowerIds)->get(),
                 $request->filled('loan_application_id') ? $request->integer('loan_application_id') : null
             );
 
             $this->logActivity('Index', 'LoanSecurity', 'CDP investment looked up for a loan security', [
                 'user_id'       => Auth::id(),
                 'policy_number' => $result['investment']['policy_number'],
-                'customer_id'   => $request->input('customer_id'),
+                'customer_ids'  => $borrowerIds->all(),
             ]);
 
             return response()->json([

@@ -5,7 +5,6 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use App\Enums\LoanApplicationStatus;
-use App\Enums\LoanSecurityType;
 use App\Models\LoanProduct;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -109,16 +108,12 @@ class CreateLoanApplicationRequest extends FormRequest
                 }
             }
 
-            // A secured product must carry a loan security; any other must not.
+            // A Standard Borrowing loan must carry a loan security; any other
+            // must not. Individual and Joint alike -- a joint loan's CDP
+            // Investment may be any of its borrowers' (checked against Core
+            // in the controller).
             if ($this->filled('loan_product_id')) {
                 $this->checkSecurityAgainstProduct($validator, LoanProduct::find($this->input('loan_product_id')));
-            }
-
-            // A CDP Investment secures only its owner's own loan, so the loan
-            // is an individual one.
-            if ($this->input('security.security_type') === LoanSecurityType::CdpInvestment->value
-                && !empty($this->input('joint_customer_ids'))) {
-                $errors->add('joint_customer_ids', 'A loan secured by a CDP Investment is an individual loan; joint co-borrowers cannot be added.');
             }
 
             foreach ((array) $this->input('joint_customer_ids', []) as $i => $jointId) {

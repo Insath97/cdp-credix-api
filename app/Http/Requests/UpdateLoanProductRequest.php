@@ -32,13 +32,6 @@ class UpdateLoanProductRequest extends FormRequest
             'description' => 'nullable|string',
             'interest_rate' => 'nullable|numeric|min:0|max:999.999',
             'interest_type' => 'nullable|string|in:flat,reducing',
-            // The band is checked in withValidator() below rather than with
-            // gte:min_amount here. Every field in this request is nullable, so
-            // this is a partial update, and gte resolves its other operand out
-            // of the payload alone: on a body carrying only max_amount there is
-            // no min_amount to compare against, and the rule then fails for
-            // every value, however large. Raising a product's ceiling is the
-            // commonest edit there is, and it was impossible.
             'min_amount' => 'sometimes|required|numeric|min:0',
             'max_amount' => 'sometimes|required|numeric|min:0|gte:min_amount',
             'min_term_months' => 'sometimes|required|integer|min:1',
@@ -50,11 +43,6 @@ class UpdateLoanProductRequest extends FormRequest
             'is_active' => 'nullable|boolean',
             'is_islamic' => 'nullable|boolean',
             'is_group_loan' => 'nullable|boolean',
-            // Partial update: the flag/percentage pairing is checked in
-            // withValidator() against the stored product, since either field
-            // may arrive on its own.
-            'requires_security' => 'nullable|boolean',
-            'max_loan_percentage' => 'nullable|numeric|gt:0|max:100',
         ];
     }
 
@@ -96,32 +84,6 @@ class UpdateLoanProductRequest extends FormRequest
                         "The {$band['label']} must be greater than or equal to {$band['floor']}.",
                     );
                 }
-            }
-
-            // Same merged-state idea for the security pair: the flag and the
-            // loan-to-value percentage a CDP Investment security is held to go
-            // together. Turning the flag on needs a percentage (sent now or
-            // already stored); turning it off, or a product that never had
-            // it, must not carry one.
-            $requires = $this->has('requires_security')
-                ? $this->boolean('requires_security')
-                : (bool) $product->requires_security;
-            $percentage = $this->has('max_loan_percentage')
-                ? $this->input('max_loan_percentage')
-                : $product->max_loan_percentage;
-
-            if ($requires && ($percentage === null || $percentage === '')) {
-                $validator->errors()->add(
-                    'max_loan_percentage',
-                    'The max loan percentage is required when the product requires security. It caps a loan secured by a CDP Investment.',
-                );
-            }
-
-            if (!$requires && $this->filled('max_loan_percentage')) {
-                $validator->errors()->add(
-                    'max_loan_percentage',
-                    'The max loan percentage only applies to products that require security.',
-                );
             }
         });
     }
