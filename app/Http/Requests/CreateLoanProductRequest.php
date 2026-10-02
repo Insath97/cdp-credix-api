@@ -47,26 +47,6 @@ class CreateLoanProductRequest extends FormRequest
             'is_active' => 'nullable|boolean',
             'is_islamic' => 'nullable|boolean',
             'is_group_loan' => 'nullable|boolean',
-            // Secured product (e.g. Mortgage Loan): every application carries a
-            // loan security. max_loan_percentage is the LTV a CDP Investment
-            // security is held to, so it goes with the flag.
-            'requires_security' => 'nullable|boolean',
-            'max_loan_percentage' => [
-                'nullable',
-                'numeric',
-                'gt:0',
-                'max:100',
-                Rule::requiredIf(fn () => $this->boolean('requires_security')),
-                Rule::prohibitedIf(fn () => $this->has('requires_security') && !$this->boolean('requires_security')),
-            ],
-        ];
-    }
-
-    public function messages(): array
-    {
-        return [
-            'max_loan_percentage.required'   => 'The max loan percentage is required when the product requires security. It caps a loan secured by a CDP Investment.',
-            'max_loan_percentage.prohibited' => 'The max loan percentage only applies to products that require security.',
         ];
     }
 

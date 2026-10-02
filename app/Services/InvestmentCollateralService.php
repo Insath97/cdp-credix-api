@@ -5,12 +5,13 @@ namespace App\Services;
 use App\Exceptions\InvestmentCollateralException;
 use App\Models\Customer;
 use App\Models\LoanApplication;
-use App\Models\LoanProduct;
+use App\Models\Setting;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * CDP Investment as a loan security: a CDP Core investment policy pledged
- * against a loan on a secured product (loan_products.requires_security).
+ * against a secured loan (LoanProduct::requiresSecurity()).
  *
  * The officer types the NIC and the policy number into the Loan Security
  * step. Credix keeps those on loan_application_securities, plus a snapshot of
@@ -18,13 +19,15 @@ use Carbon\Carbon;
  * read. Every rule below is checked against Core live, so a figure typed into
  * the wizard is never the figure the loan is secured on.
  *
- * Rules for a CDP Investment security (individual loans only, one policy per
- * loan):
+ * Rules for a CDP Investment security (one policy per loan, Individual or
+ * Joint):
  *   1. a policy number is given
- *   2. the NIC given is the borrower's own (old and new NIC formats match)
+ *   2. the NIC given belongs to a borrower on the loan -- the primary borrower
+ *      or a joint co-borrower (old and new NIC formats match)
  *   3. the policy is approved in Core under that NIC (not pending, cancelled, terminated)
  *   4. no other LIVE Credix loan is secured by it
- *   5. requested_amount <= investment_amount x max_loan_percentage / 100
+ *   5. requested_amount <= investment_amount x the cdp_investment_max_loan_percentage
+ *      System Setting / 100
  *   6. investment maturity (reservation_date + duration) >= loan end date
  *
  * "Held" is derived from the loan's status: LoanApplication::holdingPolicy()
@@ -33,24 +36,37 @@ use Carbon\Carbon;
  */
 class InvestmentCollateralService
 {
+    public const MAX_LOAN_PERCENTAGE_SETTING = 'cdp_investment_max_loan_percentage';
+
     public function __construct(protected CdpConnectService $cdp)
     {
     }
 
+    /** The System Setting rule 5 lends up to; 80 when the row is missing. */
+    public static function maxLoanPercentage(): float
+    {
+        return (float) Setting::get(self::MAX_LOAN_PERCENTAGE_SETTING, 80);
+    }
+
+    /** The most a loan can be against an investment: 1,000,000 at 80% -> 800,000. */
+    public static function maxLoanAgainst(float $investmentValue): float
+    {
+        return round($investmentValue * self::maxLoanPercentage() / 100, 2);
+    }
+
     /**
-     * The borrower's approved policies as CDP Core reports them, plus what
-     * this product would lend against each and whether Credix already holds
-     * it. This is what the customer investment picker shows; nothing here is
+     * The borrower's approved policies as CDP Core reports them, plus the
+     * most a loan could be against each and whether Credix already holds it.
+     * This is what the customer investment picker shows; nothing here is
      * stored.
      *
      * @return array{customer: ?array, summary: ?array, investments: array<int, array>}
      */
-    public function investmentsFor(Customer $customer, ?LoanProduct $product = null): array
+    public function investmentsFor(Customer $customer): array
     {
         return $this->approvedInvestments(
             (string) $customer->id_number,
             $this->cdpIdType($customer),
-            $product,
             'id_number'
         );
     }
@@ -58,9 +74,10 @@ class InvestmentCollateralService
     /**
      * One policy, by the NIC and policy number typed into the Loan Security
      * step -- what the wizard displays before the application is submitted.
-     * Nothing is stored. Given the borrower, rule 2 is checked here as well,
+     * Nothing is stored. Given the borrowers, rule 2 is checked here as well,
      * so a wrong NIC is caught before the officer reaches the end.
      *
+     * @param iterable<int, Customer> $borrowers
      * @return array{customer: ?array, investment: array}
      *
      * @throws InvestmentCollateralException
@@ -68,20 +85,17 @@ class InvestmentCollateralService
     public function lookup(
         string $nic,
         string $policyNumber,
-        ?LoanProduct $product = null,
-        ?Customer $borrower = null,
+        iterable $borrowers = [],
         ?int $excludeLoanApplicationId = null
     ): array {
         $policy = self::normalisePolicy($policyNumber);
+        $borrowers = collect($borrowers)->filter()->values();
 
-        if ($borrower) {
-            $this->assertBorrowersNic($borrower, $nic, 'nic');
-        }
+        $owner = $borrowers->isNotEmpty() ? $this->ownerAmong($borrowers, $nic, 'nic') : null;
 
         $result = $this->approvedInvestments(
             CustomerLoanEligibilityService::normalizeNic($nic),
-            $borrower ? $this->cdpIdType($borrower) : 'nic',
-            $product,
+            $owner ? $this->cdpIdType($owner) : 'nic',
             'nic',
             $excludeLoanApplicationId
         );
@@ -106,11 +120,12 @@ class InvestmentCollateralService
      * investment as Core reports it -- the caller keeps it as the security's
      * investment_details.
      *
+     * @param iterable<int, Customer> $borrowers everyone borrowing on the loan, primary first
+     *
      * @throws InvestmentCollateralException
      */
     public function validate(
-        LoanProduct $product,
-        Customer $customer,
+        iterable $borrowers,
         ?string $nic,
         ?string $policyNumber,
         float $requestedAmount,
@@ -128,20 +143,19 @@ class InvestmentCollateralService
         }
 
         // Rule 2
-        $this->assertBorrowersNic($customer, $nic, 'security.investment_nic');
+        $owner = $this->ownerAmong(collect($borrowers)->filter()->values(), $nic, 'security.investment_nic');
 
         // Rule 3: Core is asked for THIS NIC's approved policies, so anything
         // not in the list is either not theirs or not approved.
         $inv = collect($this->approvedInvestments(
             CustomerLoanEligibilityService::normalizeNic($nic),
-            $this->cdpIdType($customer),
-            $product,
+            $this->cdpIdType($owner),
             'security.investment_nic'
         )['investments'])->firstWhere('policy_number', $policy);
 
         if (!$inv) {
             throw new InvestmentCollateralException(
-                "Policy {$policy} was not found among {$this->who($customer)}'s approved investments in CDP Core."
+                "Policy {$policy} was not found among {$this->who($owner)}'s approved investments in CDP Core."
             );
         }
 
@@ -159,13 +173,13 @@ class InvestmentCollateralService
         }
 
         // Rule 5
-        $ceiling = $product->maxLoanAgainst((float) $inv['investment_amount']);
-        if ($ceiling !== null && $requestedAmount > $ceiling) {
+        $ceiling = self::maxLoanAgainst((float) $inv['investment_amount']);
+        if ($requestedAmount > $ceiling) {
             throw new InvestmentCollateralException(
                 sprintf(
                     'Requested amount Rs. %s exceeds %s%% of the investment value. The most this loan can be against policy %s (Rs. %s) is Rs. %s.',
                     number_format($requestedAmount, 2),
-                    rtrim(rtrim((string) $product->max_loan_percentage, '0'), '.'),
+                    rtrim(rtrim(number_format(self::maxLoanPercentage(), 2, '.', ''), '0'), '.'),
                     $policy,
                     number_format((float) $inv['investment_amount'], 2),
                     number_format($ceiling, 2)
@@ -207,31 +221,38 @@ class InvestmentCollateralService
 
     /**
      * One shape for a CDP Core investment record (the item of
-     * GET /api/v1/investments and /external/customer-investments):
+     * /external/customer-investments):
      *
      *   policy_number                         (null until approved)
      *   investment_amount
-     *   investment_product.name / .code / .roi_percentage
-     *   reservation_date + duration_months -> maturity_date
-     *   status === 'approved' && !cancelled/terminated/rejected -> eligible
+     *   product.name / .code / .roi_percentage / .duration_months
+     *   maturity_date (else reservation_date + duration_months)
+     *   status === 'approved' && !expired/cancelled/terminated/rejected -> eligible
      */
     public static function normalise(array $raw): array
     {
-        $product = is_array($raw['investment_product'] ?? null) ? $raw['investment_product'] : [];
+        // Core sends the plan as `product`; `investment_product` is the older name.
+        $product = $raw['product'] ?? $raw['investment_product'] ?? null;
+        $product = is_array($product) ? $product : [];
 
         $startedAt = $raw['reservation_date'] ?? null;
         $months    = (int) ($product['duration_months'] ?? 0);
-        $maturity  = null;
-        if ($startedAt && $months > 0) {
-            try {
+
+        // Core's own maturity date when it sends one; otherwise start + duration.
+        $maturity = null;
+        try {
+            if (!empty($raw['maturity_date'])) {
+                $maturity = Carbon::parse($raw['maturity_date'])->toDateString();
+            } elseif ($startedAt && $months > 0) {
                 $maturity = Carbon::parse($startedAt)->addMonths($months)->toDateString();
-            } catch (\Throwable) {
-                $maturity = null;
             }
+        } catch (\Throwable) {
+            $maturity = null;
         }
 
         $status   = strtolower(trim((string) ($raw['status'] ?? '')));
         $eligible = $status === 'approved'
+            && empty($raw['is_expired'])
             && empty($raw['cancelled_at'])
             && empty($raw['terminated_at'])
             && empty($raw['rejected_at'])
@@ -253,39 +274,50 @@ class InvestmentCollateralService
     }
 
     /**
-     * Rule 2: a CDP Investment secures only its owner's own loan. The NIC is
-     * compared in every spelling, so 853400937V and 198534000937 match.
+     * Rule 2: a CDP Investment secures only a loan its owner is borrowing on,
+     * as the primary borrower or a joint co-borrower. The NIC is compared in
+     * every spelling, so 853400937V and 198534000937 match. Returns the owner.
+     *
+     * @param Collection<int, Customer> $borrowers
      *
      * @throws InvestmentCollateralException
      */
-    private function assertBorrowersNic(Customer $customer, ?string $nic, string $field): void
+    private function ownerAmong(Collection $borrowers, ?string $nic, string $field): Customer
     {
-        $variants = CustomerLoanEligibilityService::nicVariants($customer->id_number);
+        $typed = CustomerLoanEligibilityService::normalizeNic($nic);
 
-        if (!in_array(CustomerLoanEligibilityService::normalizeNic($nic), $variants, true)) {
-            throw new InvestmentCollateralException(
-                sprintf(
-                    "NIC %s is not the NIC of %s (%s). A CDP Investment can only secure its owner's own loan.",
-                    trim((string) $nic),
-                    $this->who($customer),
-                    trim((string) $customer->id_number) !== '' ? trim((string) $customer->id_number) : 'no ID number on record'
-                ),
-                $field
-            );
+        $owner = $typed === '' ? null : $borrowers->first(
+            fn (Customer $borrower) => in_array($typed, CustomerLoanEligibilityService::nicVariants($borrower->id_number), true)
+        );
+
+        if ($owner) {
+            return $owner;
         }
+
+        $named = $borrowers->map(fn (Customer $borrower) => sprintf(
+            '%s (%s)',
+            $this->who($borrower),
+            trim((string) $borrower->id_number) !== '' ? trim((string) $borrower->id_number) : 'no ID number on record'
+        ));
+
+        throw new InvestmentCollateralException(
+            $borrowers->count() === 1
+                ? sprintf('NIC %s is not the NIC of %s. A CDP Investment can only secure a loan its owner is borrowing on.', trim((string) $nic), $named->first())
+                : sprintf('NIC %s does not belong to any borrower on this loan%s. A CDP Investment can only secure a loan its owner is borrowing on.', trim((string) $nic), $named->isEmpty() ? '' : ' (' . $named->implode(', ') . ')'),
+            $field
+        );
     }
 
     /**
      * The approved, pledgeable policies Core holds under one ID number, each
-     * with what the product would lend against it and whether a live Credix
-     * loan already holds it.
+     * with the most a loan could be against it and whether a live Credix loan
+     * already holds it.
      *
      * @return array{customer: ?array, summary: ?array, investments: array<int, array>}
      */
     private function approvedInvestments(
         string $idNumber,
         ?string $idType,
-        ?LoanProduct $product,
         string $field,
         ?int $excludeLoanApplicationId = null
     ): array {
@@ -294,13 +326,13 @@ class InvestmentCollateralService
         $investments = collect($this->items($payload))
             ->map(fn ($raw) => self::normalise((array) $raw))
             ->filter(fn ($inv) => $inv['eligible'] && $inv['policy_number'] !== '')
-            ->map(function ($inv) use ($product, $excludeLoanApplicationId) {
+            ->map(function ($inv) use ($excludeLoanApplicationId) {
                 $holder = LoanApplication::holdingPolicy($inv['policy_number'])
                     ->when($excludeLoanApplicationId, fn ($q) => $q->where('id', '!=', $excludeLoanApplicationId))
                     ->with('application')
                     ->first();
 
-                $inv['max_loan']  = $product?->maxLoanAgainst((float) $inv['investment_amount']);
+                $inv['max_loan']  = self::maxLoanAgainst((float) $inv['investment_amount']);
                 $inv['in_use']    = $holder !== null;
                 $inv['in_use_by'] = $holder?->reference();
 

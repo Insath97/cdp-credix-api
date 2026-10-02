@@ -36,11 +36,13 @@ return new class extends Migration
             $table->string('evaluated_by')->nullable();
             $table->text('evaluation_remarks')->nullable();
 
-            // Vehicle. The CR itself is uploaded as a document (document_type vehicle_cr).
+            // Vehicle. The CR and the valuation report are uploaded as documents.
             $table->string('vehicle_make', 100)->nullable();
             $table->string('vehicle_model', 100)->nullable();
             $table->unsignedSmallInteger('year_of_manufacture')->nullable();
             $table->unsignedSmallInteger('year_of_registration')->nullable();
+            $table->string('registration_number', 50)->nullable()->index();
+            $table->string('chassis_engine_number', 100)->nullable();
 
             $table->timestamps();
         });

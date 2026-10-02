@@ -206,18 +206,17 @@ class LoanApplicationController extends Controller implements HasMiddleware
 
             $data = Employee::mergeRecommenderSnapshot($data);
 
-            // Secured product: the loan security is prepared before anything is
-            // written. The request has already made sure a secured product
-            // carries one and any other product does not. For a CDP Investment
-            // this asks CDP Core (ownership, approval, LTV, maturity) -- an
-            // HTTP call, so outside the transaction; the one-live-loan-per-
-            // policy rule is re-checked under the lock below.
+            // Secured loan: the loan security is prepared before anything is
+            // written. The request has already made sure a Standard Borrowing
+            // loan carries one and any other loan does not. For a CDP
+            // Investment this asks CDP Core (ownership, approval, LTV,
+            // maturity) -- an HTTP call, so outside the transaction; the
+            // one-live-loan-per-policy rule is re-checked under the lock below.
             $securityRow = null;
             if (!empty($data['security'])) {
                 $securityRow = $this->loanSecurityService->prepare(
                     $data['security'],
-                    LoanProduct::findOrFail($data['loan_product_id']),
-                    Customer::findOrFail($data['customer_id']),
+                    $this->borrowersOf((int) $data['customer_id'], $data['joint_customer_ids'] ?? []),
                     (float) $data['requested_amount'],
                     (int) $data['term_months'],
                     !empty($data['applied_at']) ? Carbon::parse($data['applied_at']) : now()
@@ -465,7 +464,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
             $securityRow = null;
             $dropSecurity = false;
 
-            if ($product?->requires_security) {
+            if ($product?->requiresSecurity()) {
                 if (!$securityPayload
                     && $existingSecurity?->security_type === LoanSecurityType::CdpInvestment
                     && $this->changesSecurityTerms($loanApplication, $data)) {
@@ -475,8 +474,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 if ($securityPayload) {
                     $securityRow = $this->loanSecurityService->prepare(
                         $securityPayload,
-                        $product,
-                        Customer::findOrFail($data['customer_id'] ?? $loanApplication->customer_id),
+                        $this->borrowersOf(
+                            (int) ($data['customer_id'] ?? $loanApplication->customer_id),
+                            $loanApplication->loanApplicationCustomers()->pluck('customer_id')
+                        ),
                         (float) ($data['requested_amount'] ?? $loanApplication->requested_amount),
                         (int) ($data['term_months'] ?? $loanApplication->term_months),
                         !empty($data['applied_at']) ? Carbon::parse($data['applied_at']) : $loanApplication->applied_at,
@@ -1741,13 +1742,31 @@ class LoanApplicationController extends Controller implements HasMiddleware
     }
 
     /**
+     * The customers borrowing on a loan, primary first: the people whose CDP
+     * Investment may secure it.
+     */
+    private function borrowersOf(int $primaryId, iterable $coBorrowerIds = []): \Illuminate\Support\Collection
+    {
+        $ids = collect([$primaryId])
+            ->merge($coBorrowerIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $customers = Customer::whereIn('id', $ids)->get()->keyBy('id');
+
+        return $ids->map(fn (int $id) => $customers->get($id))->filter()->values();
+    }
+
+    /**
      * Whether an edit moves anything a CDP Investment security was measured
-     * against: the borrower (whose NIC it must be), the product (whose LTV
-     * applies), the amount, the term or the start date (maturity).
+     * against: the borrower (whose NIC it must be), the amount (LTV), the
+     * term or the start date (maturity).
      */
     private function changesSecurityTerms(LoanApplication $loanApplication, array $data): bool
     {
-        foreach (['customer_id', 'loan_product_id', 'term_months'] as $field) {
+        foreach (['customer_id', 'term_months'] as $field) {
             if (array_key_exists($field, $data) && (int) $data[$field] !== (int) $loanApplication->{$field}) {
                 return true;
             }

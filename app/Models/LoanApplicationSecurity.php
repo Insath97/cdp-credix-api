@@ -3,13 +3,15 @@
 namespace App\Models;
 
 use App\Enums\LoanSecurityType;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * The security pledged against one loan application -- a CDP Investment, a
- * Property Mortgage or a Vehicle. Required on products with requires_security.
+ * Property Mortgage or a Vehicle. Required on every Standard Borrowing loan
+ * under the General term, Individual or Joint (LoanProduct::requiresSecurity()).
  *
  * Its supporting papers are ordinary documents rows on the same application,
  * so they sit in the review/verify checklist and freeze at disbursement like
@@ -44,6 +46,8 @@ class LoanApplicationSecurity extends Model
         'vehicle_model',
         'year_of_manufacture',
         'year_of_registration',
+        'registration_number',
+        'chassis_engine_number',
     ];
 
     protected $hidden = [
@@ -69,17 +73,18 @@ class LoanApplicationSecurity extends Model
     }
 
     /**
-     * The application's security papers: its documents whose type is one of
-     * the security document types (investment_document, property_deed,
-     * vehicle_cr). All three types rather than just this security's own, so
-     * the relation behaves the same whether it is eager-loaded or not.
+     * The application's security papers: its documents of any security
+     * document type (LoanSecurityType::allDocumentTypes()), not just this
+     * security's own, so the relation behaves the same whether it is
+     * eager-loaded or not.
      */
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class, 'loan_application_id', 'loan_application_id')
-            ->whereIn('document_type', array_map(
-                fn (LoanSecurityType $type) => $type->documentType(),
-                LoanSecurityType::cases()
-            ));
+            ->where(function (Builder $query) {
+                foreach (LoanSecurityType::allDocumentTypes() as $type) {
+                    $query->orWhere(fn (Builder $one) => $one->ofDocumentType($type));
+                }
+            });
     }
 }

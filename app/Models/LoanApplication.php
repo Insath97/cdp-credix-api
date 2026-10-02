@@ -68,7 +68,7 @@ class LoanApplication extends Model
         'verify_failure_reason',
         'verify_failed_at',
         'reverify_count',
-        
+
         'applied_at',
         'reviewed_at',
         'verified_at',
@@ -147,13 +147,6 @@ class LoanApplication extends Model
     /**
      * The reference a person should be shown for this loan: the application_no
      * off the parent Application row.
-     *
-     * Notifications and any other customer- or staff-facing text must use this
-     * rather than the primary key. The two are close enough to be mistaken for
-     * each other -- loan 353 carries application_id 354, and loan 354 exists as
-     * well -- so quoting the id sends people to the wrong file. Falls back to
-     * "#id" only for a loan with no application attached, which nothing in the
-     * normal flow creates.
      */
     public function reference(): string
     {
@@ -287,8 +280,8 @@ class LoanApplication extends Model
 
     /**
      * The security pledged against this application (CDP Investment,
-     * Property Mortgage or Vehicle). Present on products with
-     * requires_security, null otherwise.
+     * Property Mortgage or Vehicle). Present on secured loans -- see
+     * requiresSecurity() -- null otherwise.
      */
     public function security(): HasOne
     {
@@ -296,15 +289,16 @@ class LoanApplication extends Model
     }
 
     /**
-     * Whether this application must carry a loan security: its product is a
-     * secured one. Group loans never do -- they are created through their own
-     * endpoint, which takes no security.
+     * Whether this application must carry a loan security: a Standard
+     * Borrowing loan under the General term (LoanProduct::requiresSecurity()),
+     * Individual or Joint. Group loans never do -- they are created through
+     * their own endpoint, which takes no security.
      */
     public function requiresSecurity(): bool
     {
         $this->loadMissing('loanProduct');
 
-        return !$this->isGroupLoan() && (bool) $this->loanProduct?->requires_security;
+        return !$this->isGroupLoan() && (bool) $this->loanProduct?->requiresSecurity();
     }
 
     /**

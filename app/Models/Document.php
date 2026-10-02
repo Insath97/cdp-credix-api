@@ -30,10 +30,11 @@ class Document extends Model
         'salary_assignment_letter'        => 'Salary Assignment Letter',
         'employer_letter'                 => 'Employer Letter',
         'photo'                           => 'Photo',
-        // Loan security papers -- see LoanSecurityType::documentType().
+        // Loan security papers -- see LoanSecurityType::documents().
         'investment_document'             => 'Investment Document',
         'property_deed'                   => 'Property Deed',
         'vehicle_cr'                      => 'Vehicle CR (Certificate of Registration)',
+        'valuation_report'                => 'Valuation Report',
         'other'                           => 'Other',
     ];
 
@@ -129,6 +130,24 @@ class Document extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
+    }
+
+    /**
+     * Documents of one type. A valuation report also counts when it arrives
+     * the way the loan wizard uploads it today: as 'other', named
+     * "... Valuation Report".
+     */
+    public function scopeOfDocumentType(Builder $query, string $type): Builder
+    {
+        return $query->where(function (Builder $q) use ($type) {
+            $q->where('document_type', $type);
+
+            if ($type === 'valuation_report') {
+                $q->orWhere(fn (Builder $other) => $other
+                    ->where('document_type', 'other')
+                    ->where('document_name', 'like', '%valuation report%'));
+            }
+        });
     }
 
     /**

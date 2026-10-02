@@ -120,13 +120,12 @@ class LoanApplicationWorkflowService
     }
 
     /**
-     * A secured product's loan is not ready for review without its security,
-     * nor without the security's paper where that paper is required (the
-     * Vehicle CR). The security details travel with the application, but its
-     * papers are uploaded separately through POST /documents, so review is
-     * the first point at which both can be checked together. Checked again
-     * at verification: the security can still be switched after review, and
-     * a document can still be removed.
+     * A secured (Standard Borrowing) loan is not ready for review without its
+     * security, nor without the security's required papers
+     * (LoanSecurityType::documents()). The papers are uploaded separately
+     * through POST /documents, so review is the first point at which both can
+     * be checked together. Checked again at verification: the security can
+     * still be switched after review, and a document can still be removed.
      */
     protected function assertSecurityReady(LoanApplication $loanApplication, string $stage): void
     {
@@ -138,20 +137,23 @@ class LoanApplicationWorkflowService
 
         if (!$security) {
             throw new InvalidLoanApplicationTransitionException(
-                "{$loanApplication->loanProduct->name} is a secured product. Add the loan security (CDP Investment, Property Mortgage or Vehicle) before this loan application can be {$stage}."
+                "{$loanApplication->loanProduct->name} is a Standard Borrowing loan, so it must be secured. Add the loan security (CDP Investment, Property Mortgage or Vehicle) before this loan application can be {$stage}."
             );
         }
 
-        $type = $security->security_type;
-
-        if ($type->documentRequired()
-            && !$loanApplication->documents()
-                ->where('document_type', $type->documentType())
+        $missing = collect($security->security_type->documents())
+            ->filter()
+            ->keys()
+            ->reject(fn (string $documentType) => $loanApplication->documents()
+                ->ofDocumentType($documentType)
                 ->where('status', 'active')
                 ->where('is_active', true)
-                ->exists()) {
+                ->exists())
+            ->map(fn (string $documentType) => Document::TYPES[$documentType]);
+
+        if ($missing->isNotEmpty()) {
             throw new InvalidLoanApplicationTransitionException(
-                'Upload the ' . Document::TYPES[$type->documentType()] . " before this loan application can be {$stage}."
+                'Upload the ' . $missing->join(', the ', ' and the ') . " before this loan application can be {$stage}."
             );
         }
     }

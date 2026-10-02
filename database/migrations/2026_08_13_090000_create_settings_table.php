@@ -215,6 +215,15 @@ return new class extends Migration
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'key' => 'cdp_investment_max_loan_percentage',
+                'value' => '50',
+                'type' => 'decimal',
+                'group' => 'loan_security',
+                'description' => 'The most a loan secured by a CDP Investment can be, as a percentage of the investment value. At 80, an investment of 1,000,000 secures a loan of up to 800,000.',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 

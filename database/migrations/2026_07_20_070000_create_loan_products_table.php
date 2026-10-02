@@ -32,12 +32,6 @@ return new class extends Migration
             $table->boolean('is_active')->default(true);
             $table->boolean('is_islamic')->default(true);
             $table->boolean('is_group_loan')->default(false);
-            // Secured products (e.g. Mortgage Loan): every application must carry
-            // a loan security -- CDP Investment, Property Mortgage or Vehicle.
-            $table->boolean('requires_security')->default(false);
-            $table->decimal('max_loan_percentage', 5, 2)
-                ->nullable()
-                ->comment('Max loan as % of a pledged CDP investment value (LTV). Null when the product takes no security.');
             $table->softDeletes();
             $table->timestamps();
         });
