@@ -5,10 +5,14 @@ namespace App\Http\Controllers\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateLegalDocumentTemplateRequest;
 use App\Http\Requests\UpdateLegalDocumentTemplateRequest;
+use App\Enums\LegalDocumentType;
 use App\Models\LegalDocumentTemplate;
+use App\Models\LoanApplication;
+use App\Models\LoanProduct;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
 use App\Traits\FileUploadTrait;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -16,20 +20,23 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 /**
- * The legal paperwork registered against each loan product.
+ * The legal paperwork registered against each loan type.
  *
- * Which agreement a product is sold on is configuration, not code: the legal
- * desk decides it, it differs per product and per language, and it changes
- * when a product does.
+ * Which agreement a loan is drawn up on is configuration, not code: the legal
+ * desk decides it per loan type and per language, and a loan application's
+ * documents follow its loan type (application -> product -> loan type).
  */
 class LegalDocumentTemplateController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait, FileUploadTrait;
 
+    private const WITH_LOAN_TYPE = 'loanType:id,code,title';
+
     public static function middleware(): array
     {
         return [
             new Middleware('permission:Legal Template Index',  only: ['index', 'show', 'getActiveList']),
+            new Middleware('permission:Legal Template Index|Legal Document Index|Legal Document Create', only: ['forApplication']),
             new Middleware('permission:Legal Template Create', only: ['store']),
             new Middleware('permission:Legal Template Update', only: ['update']),
             new Middleware('permission:Legal Template Toggle Status', only: ['toggleStatus']),
@@ -43,7 +50,7 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
             $perPage = $request->get('per_page', 15);
 
             $query = LegalDocumentTemplate::with([
-                'loanProduct:id,name,code,loan_type_id,loan_term_id',
+                self::WITH_LOAN_TYPE,
                 'creator:' . User::SUMMARY_COLUMNS,
             ]);
 
@@ -51,9 +58,7 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
                 $query->search($request->search);
             }
 
-            if ($request->filled('loan_product_id')) {
-                $query->where('loan_product_id', $request->loan_product_id);
-            }
+            $this->filterByLoanType($query, $request);
 
             if ($request->filled('document_type')) {
                 $query->where('document_type', $request->document_type);
@@ -67,11 +72,11 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
                 $query->where('is_active', filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN));
             }
 
-            $templates = $query->orderBy('loan_product_id')->orderBy('document_type')->paginate($perPage);
+            $templates = $query->orderBy('loan_type_id')->orderBy('document_type')->paginate($perPage);
 
             $this->logActivity('Index', 'LegalDocumentTemplate', 'Legal document templates index accessed', [
                 'user_id' => Auth::id(),
-                'filters' => $request->only(['search', 'loan_product_id', 'document_type', 'language', 'is_active']),
+                'filters' => $request->only(['search', 'loan_type_id', 'loan_product_id', 'document_type', 'language', 'is_active']),
             ]);
 
             return response()->json([
@@ -81,7 +86,7 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
                 // The screens build their type and language pickers from these
                 // rather than keeping their own copy that can drift.
                 'meta'    => [
-                    'document_types' => LegalDocumentTemplate::TYPES,
+                    'document_types' => LegalDocumentType::options(),
                     'languages'      => LegalDocumentTemplate::LANGUAGES,
                 ],
             ], 200);
@@ -96,17 +101,15 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
 
     /**
      * Every active template, unpaginated — for the preparation screen, which
-     * has to offer whatever the chosen product actually has.
+     * has to offer whatever the loan's loan type actually has.
      */
     public function getActiveList(Request $request)
     {
         try {
             $query = LegalDocumentTemplate::where('is_active', true)
-                ->with('loanProduct:id,name,code');
+                ->with(self::WITH_LOAN_TYPE);
 
-            if ($request->filled('loan_product_id')) {
-                $query->where('loan_product_id', $request->loan_product_id);
-            }
+            $this->filterByLoanType($query, $request);
 
             return response()->json([
                 'status'  => 'success',
@@ -122,6 +125,92 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
         }
     }
 
+    /**
+     * A loan application's legal paperwork: the documents its product needs,
+     * each with the active templates of its loan type
+     * (application -> product -> loan type).
+     *
+     *   GET /legal-document-templates/application/{loanApplicationId}?language=ta
+     */
+    public function forApplication(Request $request, string $loanApplicationId)
+    {
+        try {
+            $loanApplication = LoanApplication::with([
+                'application:id,application_no',
+                'loanProduct:id,name,code,loan_type_id',
+                'loanProduct.loanType:id,code,title',
+                'loanProduct.legalDocuments',
+            ])->find($loanApplicationId);
+
+            if (!$loanApplication) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Loan application not found',
+                ], 404);
+            }
+
+            $product = $loanApplication->loanProduct;
+            $productTypes = $product?->legalDocumentTypes() ?? [];
+
+            $templates = LegalDocumentTemplate::forLoanApplication($loanApplication)
+                ->whereIn('document_type', $productTypes)
+                ->with(self::WITH_LOAN_TYPE)
+                ->when($request->filled('language'), fn ($q) => $q->where('language', $request->language))
+                ->orderBy('document_type')
+                ->orderBy('language')
+                ->get();
+
+            // The product's documents in the enum's order, each with the
+            // languages it has a template in.
+            $documentTypes = collect(LegalDocumentType::cases())
+                ->filter(fn (LegalDocumentType $type) => in_array($type->value, $productTypes, true))
+                ->map(fn (LegalDocumentType $type) => [
+                    'value'     => $type->value,
+                    'label'     => $type->label(),
+                    'languages' => $templates->where('document_type', $type->value)->pluck('language')->values(),
+                ])
+                ->values();
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => $productTypes
+                    ? 'Legal document templates for the loan application retrieved successfully'
+                    : 'No legal documents are set up for ' . ($product?->name ?? 'this loan product') . '. Choose them on the loan product first.',
+                'data'    => [
+                    'loan_application_id' => (int) $loanApplication->id,
+                    'application_no'      => $loanApplication->application?->application_no,
+                    'loan_product'        => $product?->only(['id', 'name', 'code']),
+                    'loan_type'           => $product?->loanType?->only(['id', 'code', 'title']),
+                    'document_types'      => $documentTypes,
+                    'templates'           => $templates,
+                ],
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to retrieve the legal document templates for the loan application',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * ?loan_type_id=, or the loan type of ?loan_product_id= -- the filter the
+     * screens sent when templates were per product.
+     */
+    private function filterByLoanType(Builder $query, Request $request): void
+    {
+        $loanTypeId = $request->filled('loan_type_id')
+            ? $request->integer('loan_type_id')
+            : ($request->filled('loan_product_id')
+                ? LoanProduct::whereKey($request->integer('loan_product_id'))->value('loan_type_id')
+                : null);
+
+        if ($request->filled('loan_type_id') || $request->filled('loan_product_id')) {
+            $query->where('loan_type_id', $loanTypeId);
+        }
+    }
+
     public function store(CreateLegalDocumentTemplateRequest $request)
     {
         try {
@@ -134,6 +223,8 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
             }
             unset($data['file']);
 
+            unset($data['loan_product_id']);   // only ever a stand-in for its loan type
+
             $data['language'] = $data['language'] ?? 'en';
             $data['created_by'] = Auth::id();
 
@@ -144,7 +235,7 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Legal document template created successfully',
-                'data'    => $template->load(['loanProduct:id,name,code', 'creator:' . User::SUMMARY_COLUMNS]),
+                'data'    => $template->load([self::WITH_LOAN_TYPE, 'creator:' . User::SUMMARY_COLUMNS]),
             ], 201);
         } catch (\Throwable $th) {
             return response()->json([
@@ -159,7 +250,7 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
     {
         try {
             $template = LegalDocumentTemplate::with([
-                'loanProduct:id,name,code,loan_type_id,loan_term_id',
+                self::WITH_LOAN_TYPE,
                 'creator:' . User::SUMMARY_COLUMNS,
             ])->find($id);
 
@@ -205,7 +296,7 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
                 $data['file_path'] = $filePath;
                 $data['source_file_name'] = $request->file('file')->getClientOriginalName();
             }
-            unset($data['file']);
+            unset($data['file'], $data['loan_product_id']);
 
             $template->update($data);
 
@@ -214,7 +305,7 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Legal document template updated successfully',
-                'data'    => $template->fresh(['loanProduct:id,name,code', 'creator:' . User::SUMMARY_COLUMNS]),
+                'data'    => $template->fresh([self::WITH_LOAN_TYPE, 'creator:' . User::SUMMARY_COLUMNS]),
             ], 200);
         } catch (\Throwable $th) {
             return response()->json([
@@ -302,7 +393,7 @@ class LegalDocumentTemplateController extends Controller implements HasMiddlewar
                 'message' => 'Legal document template ' . ($template->is_active ? 'activated' : 'deactivated') . ' successfully',
                 // Every action on this controller answers with the whole
                 // record, loaded the same way.
-                'data'    => $template->fresh(['loanProduct:id,name,code', 'creator:' . User::SUMMARY_COLUMNS]),
+                'data'    => $template->fresh([self::WITH_LOAN_TYPE, 'creator:' . User::SUMMARY_COLUMNS]),
             ], 200);
         } catch (\Throwable $th) {
             return response()->json([

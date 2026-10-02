@@ -2,10 +2,12 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\LegalDocumentType;
 use App\Models\LoanProduct;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Validation\Rule;
 
 class UpdateLoanProductRequest extends FormRequest
 {
@@ -43,6 +45,18 @@ class UpdateLoanProductRequest extends FormRequest
             'is_active' => 'nullable|boolean',
             'is_islamic' => 'nullable|boolean',
             'is_group_loan' => 'nullable|boolean',
+
+            // When sent, replaces the product's legal documents; [] clears them.
+            'legal_document_types'   => 'sometimes|array',
+            'legal_document_types.*' => ['string', 'distinct', Rule::in(LegalDocumentType::values())],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'legal_document_types.*.in'       => 'Unknown legal document type. Use: ' . implode(', ', LegalDocumentType::values()) . '.',
+            'legal_document_types.*.distinct' => 'A legal document type is listed twice.',
         ];
     }
 

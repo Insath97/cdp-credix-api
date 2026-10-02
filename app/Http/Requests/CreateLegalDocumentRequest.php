@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\LegalDocumentStatus;
+use App\Enums\LegalDocumentType;
 use App\Models\LegalDocumentTemplate;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -21,7 +22,7 @@ class CreateLegalDocumentRequest extends FormRequest
         return [
             'loan_application_id'        => 'required|integer|exists:loan_applications,id',
             'legal_document_template_id' => 'nullable|integer|exists:legal_document_templates,id',
-            'document_type'              => ['required', 'string', Rule::in(array_keys(LegalDocumentTemplate::TYPES))],
+            'document_type'              => ['required', 'string', Rule::in(LegalDocumentType::values())],
             'language'                   => ['nullable', 'string', Rule::in(array_keys(LegalDocumentTemplate::LANGUAGES))],
 
             // Defaults to Pending. The created date and the officer who drew

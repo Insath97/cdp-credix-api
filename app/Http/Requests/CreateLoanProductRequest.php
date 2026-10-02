@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\LegalDocumentType;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
@@ -47,6 +48,19 @@ class CreateLoanProductRequest extends FormRequest
             'is_active' => 'nullable|boolean',
             'is_islamic' => 'nullable|boolean',
             'is_group_loan' => 'nullable|boolean',
+
+            // The legal documents this product's loans need. When sent, the
+            // list replaces the product's current one.
+            'legal_document_types'   => 'sometimes|array',
+            'legal_document_types.*' => ['string', 'distinct', Rule::in(LegalDocumentType::values())],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'legal_document_types.*.in'       => 'Unknown legal document type. Use: ' . implode(', ', LegalDocumentType::values()) . '.',
+            'legal_document_types.*.distinct' => 'A legal document type is listed twice.',
         ];
     }
 
