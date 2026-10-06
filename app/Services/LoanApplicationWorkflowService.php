@@ -104,7 +104,13 @@ class LoanApplicationWorkflowService
                 $metadata
             );
 
-            if ($to === LoanApplicationStatus::Disbursed) {
+            // Generate the installment schedule the moment the loan is
+            // approved so the repayment details are already available when
+            // the legal document is prepared for signing -- well before the
+            // money actually moves at Disbursed.  The guard inside
+            // generate() is idempotent (it short-circuits when rows already
+            // exist), so a reopen-then-re-approve path is safe.
+            if ($to === LoanApplicationStatus::Approved) {
                 $this->installmentScheduleService->generate($loanApplication);
             }
 

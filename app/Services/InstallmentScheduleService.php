@@ -11,7 +11,11 @@ use Carbon\Carbon;
 class InstallmentScheduleService
 {
     /**
-     * Generate the installment schedule for a disbursed loan application.
+     * Generate the installment schedule for an approved loan application.
+     *
+     * Called at the moment of approval so the repayment details are
+     * immediately available for the legal document the customer signs
+     * before disbursement.
      *
      * An Individual or Joint Loan gets one schedule: the stored
      * monthly_installment spread across term_months, last installment
@@ -32,7 +36,14 @@ class InstallmentScheduleService
 
         $termMonths = $loanApplication->term_months;
         $monthlyInstallment = round($loanApplication->monthly_installment, 2);
-        $baseDate = $loanApplication->disbursed_at ?? now();
+        // The schedule is generated at Approved, before disbursed_at exists,
+        // so the approval date is the natural anchor for the first due date.
+        // Falls back to disbursed_at for loans that were generated under the
+        // old flow, then to now() as a last resort.
+        $baseDate = $loanApplication->approved_at
+            ?? $loanApplication->disbursed_at
+            ?? now();
+        $baseDate = $baseDate instanceof Carbon ? $baseDate : Carbon::parse($baseDate);
 
         $owners = $this->scheduleOwnersFor($loanApplication);
         $monthlyShares = GroupLoan::splitEvenly($monthlyInstallment, count($owners));

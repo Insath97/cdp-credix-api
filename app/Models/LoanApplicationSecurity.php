@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\LoanSecurityType;
+use App\Enums\PropertyType;
 use App\Services\LoanSecurityPlanService;
 use App\Models\LendingMortgage;
 use Illuminate\Database\Eloquent\Builder;
@@ -33,12 +34,11 @@ class LoanApplicationSecurity extends Model
 {
     /** A fixed list rather than free text, so reports can group by it. */
     public const PROPERTY_TYPES = [
-        'land'                => 'Land',
         'house'               => 'House',
-        'land_and_building'   => 'Land and Building',
-        'apartment'           => 'Apartment / Condominium',
-        'commercial_building' => 'Commercial Building',
-        'other'               => 'Other',
+        'land'                => 'Land',
+        'apartment'           => 'Apartment',
+        'commercial_property' => 'Commercial Property',
+        'building'            => 'Building',
     ];
 
     protected $fillable = [
@@ -78,6 +78,7 @@ class LoanApplicationSecurity extends Model
         'loan_application_id'  => 'integer',
         'lending_mortgage_id'  => 'integer',
         'security_type'        => LoanSecurityType::class,
+        'property_type'        => PropertyType::class,
         'investment_details'   => 'array',
         'estimated_value'      => 'decimal:2',
         'evaluation_date'      => 'date:Y-m-d',

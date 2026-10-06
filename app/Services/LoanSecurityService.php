@@ -142,6 +142,15 @@ class LoanSecurityService
             'investment_details'  => null,
         ];
 
+        if ($type === LoanSecurityType::PropertyMortgage) {
+            $security['owner_name'] = $security['owner_name'] ?? $security['property_owner'] ?? null;
+            $security['owner_deed_number'] = $security['owner_deed_number'] ?? $security['deed_number'] ?? $security['title_number'] ?? $security['deed_title_number'] ?? null;
+            $security['estimated_value'] = $security['estimated_value'] ?? $security['market_value'] ?? $security['estimated_market_value'] ?? null;
+            $security['evaluation_date'] = $security['evaluation_date'] ?? $security['valuation_date'] ?? null;
+            $security['evaluated_by'] = $security['evaluated_by'] ?? $security['assessed_by'] ?? $security['evaluated_assessed_by'] ?? null;
+            $security['evaluation_remarks'] = $security['evaluation_remarks'] ?? $security['valuation_notes'] ?? $security['land_description'] ?? null;
+        }
+
         foreach (LoanSecurityType::cases() as $each) {
             foreach ($each->fields() as $field) {
                 $row[$field] = $each === $type ? ($security[$field] ?? null) : null;
