@@ -52,6 +52,14 @@ class UpdateLoanApplicationRequest extends FormRequest
     }
 
     /**
+     * Prepare inputs for validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        $this->normalizeSecuritiesInput();
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      */
     public function rules(): array

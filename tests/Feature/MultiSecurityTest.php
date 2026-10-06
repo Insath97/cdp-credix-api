@@ -32,7 +32,7 @@ function propertySecurity(array $overrides = []): array
         'security_type'     => 'property_mortgage',
         'security_plan'     => 'plan_1',
         'owner_name'        => 'Nimal Perera',
-        'property_type'     => 'land_and_building',
+        'property_type'     => 'land',
         'owner_deed_number' => 'DEED-001',
         'estimated_value'   => 10_000_000,
     ], $overrides);

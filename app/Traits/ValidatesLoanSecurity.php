@@ -3,6 +3,7 @@
 namespace App\Traits;
 
 use App\Enums\LoanSecurityType;
+use App\Enums\PropertyType;
 use App\Models\LendingMortgage;
 use App\Models\LoanApplicationSecurity;
 use App\Models\LoanProduct;
@@ -85,7 +86,7 @@ trait ValidatesLoanSecurity
 
             // Property Mortgage
             'securities.*.owner_name'        => [...$for($property), 'string', 'max:255'],
-            'securities.*.property_type'     => [...$for($property), Rule::in(array_keys(LoanApplicationSecurity::PROPERTY_TYPES))],
+            'securities.*.property_type'     => [...$for($property), Rule::enum(PropertyType::class)],
             'securities.*.owner_deed_number' => [...$for($property), 'string', 'max:100'],
 
             // Property Evaluation. Unlike before, the valuation is required: it
@@ -271,5 +272,65 @@ trait ValidatesLoanSecurity
                 );
             }
         }
+    }
+
+    /**
+     * Normalize frontend field aliases for securities before validation runs.
+     * E.g. property_owner -> owner_name, market_value -> estimated_value, etc.
+     */
+    protected function normalizeSecuritiesInput(): void
+    {
+        $securities = $this->input('securities');
+        if (!is_array($securities)) {
+            return;
+        }
+
+        foreach ($securities as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            // Normalize Property Mortgage fields
+            $secType = $item['security_type'] ?? '';
+            if ($secType === LoanSecurityType::PropertyMortgage->value || $secType === 'property') {
+                if (!isset($item['owner_name']) && isset($item['property_owner'])) {
+                    $item['owner_name'] = $item['property_owner'];
+                }
+                if (!isset($item['owner_deed_number']) && isset($item['deed_number'])) {
+                    $item['owner_deed_number'] = $item['deed_number'];
+                }
+                if (!isset($item['owner_deed_number']) && isset($item['title_number'])) {
+                    $item['owner_deed_number'] = $item['title_number'];
+                }
+                if (!isset($item['owner_deed_number']) && isset($item['deed_title_number'])) {
+                    $item['owner_deed_number'] = $item['deed_title_number'];
+                }
+                if (!isset($item['estimated_value']) && isset($item['market_value'])) {
+                    $item['estimated_value'] = $item['market_value'];
+                }
+                if (!isset($item['estimated_value']) && isset($item['estimated_market_value'])) {
+                    $item['estimated_value'] = $item['estimated_market_value'];
+                }
+                if (!isset($item['evaluation_date']) && isset($item['valuation_date'])) {
+                    $item['evaluation_date'] = $item['valuation_date'];
+                }
+                if (!isset($item['evaluated_by']) && isset($item['assessed_by'])) {
+                    $item['evaluated_by'] = $item['assessed_by'];
+                }
+                if (!isset($item['evaluated_by']) && isset($item['evaluated_assessed_by'])) {
+                    $item['evaluated_by'] = $item['evaluated_assessed_by'];
+                }
+                if (!isset($item['evaluation_remarks']) && isset($item['valuation_notes'])) {
+                    $item['evaluation_remarks'] = $item['valuation_notes'];
+                }
+                if (!isset($item['evaluation_remarks']) && isset($item['land_description'])) {
+                    $item['evaluation_remarks'] = $item['land_description'];
+                }
+            }
+
+            $securities[$index] = $item;
+        }
+
+        $this->merge(['securities' => $securities]);
     }
 }
