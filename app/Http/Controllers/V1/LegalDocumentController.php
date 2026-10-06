@@ -62,7 +62,7 @@ class LegalDocumentController extends Controller implements HasMiddleware
             'loanApplication.loanProduct:id,name,code,loan_type_id',
             'loanApplication.loanProduct.loanType:id,code,title',
             'loanApplication.branch:id,name,code',
-            'template:id,document_type,language,title,file_path,source_file_name',
+            'template:id,document_type,language,title,file_path,source_file_name',            
             'creator:' . User::SUMMARY_COLUMNS,
         ];
     }

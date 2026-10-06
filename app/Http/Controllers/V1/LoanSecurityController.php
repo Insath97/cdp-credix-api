@@ -146,8 +146,7 @@ class LoanSecurityController extends Controller implements HasMiddleware
     {
         $validator = Validator::make($request->all(), [
             'requested_amount'  => ['required', 'numeric', 'min:0'],
-            'securities'        => ['required', 'array', 'max:' . LoanApplicationSecurity::MAX_SECURITIES_PER_APPLICATION],
-            'securities.*'      => ['array'],
+            'securities'        => ['required', 'array', 'max:' . LoanApplicationSecurity::MAX_SECURITIES_PER_APPLICATION],            'securities.*'      => ['array'],
             'securities.*.security_type' => ['required', Rule::enum(LoanSecurityType::class)],
             'securities.*.security_plan' => ['required', 'string', 'max:50'],
             // Only the value columns are read here, and only for the type they
