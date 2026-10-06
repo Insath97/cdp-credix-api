@@ -14,12 +14,18 @@ return new class extends Migration
         Schema::create('loan_application_securities', function (Blueprint $table) {
             $table->id();
 
-            // One security per application; it lives and dies with the application.
-            $table->foreignId('loan_application_id')->unique()->constrained('loan_applications')->cascadeOnDelete();
+            // Securities live and die with the application. Multiple securities may secure one application.
+            $table->foreignId('loan_application_id')->constrained('loan_applications')->cascadeOnDelete();
 
             // cdp_investment | property_mortgage | vehicle (App\Enums\LoanSecurityType).
             // Only the chosen type's columns below are filled; the rest stay null.
             $table->string('security_type', 30)->index();
+            $table->string('security_plan', 50)->nullable();
+            $table->foreignId('lending_mortgage_id')
+                ->nullable()
+                ->after('security_plan')
+                ->constrained('lending_mortgages')
+                ->nullOnDelete();
 
             // CDP Investment. The policy is checked against CDP Core on the way in;
             // investment_details keeps what Core reported at that moment.
@@ -43,6 +49,12 @@ return new class extends Migration
             $table->unsignedSmallInteger('year_of_registration')->nullable();
             $table->string('registration_number', 50)->nullable()->index();
             $table->string('chassis_engine_number', 100)->nullable();
+            $table->decimal('vehicle_value', 15, 2)->nullable();
+
+            // Values snapshotted when the security is attached/measured.
+            $table->decimal('pledged_value', 15, 2)->nullable();
+            $table->decimal('max_loan_percentage', 5, 2)->nullable();
+            $table->decimal('max_loan_amount', 15, 2)->nullable();
 
             $table->timestamps();
         });

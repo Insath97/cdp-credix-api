@@ -18,12 +18,6 @@ class Customer extends Model
     /**
      * Columns to select when a customer is loaded as a nested reference — on a
      * loan, a payment, a recovery case — rather than as the record being viewed.
-     *
-     * Those screens only need to name the customer, so the NIC, date of birth,
-     * home address, income figures and employer/business details are never
-     * queried and so can never reach the browser. Endpoints whose subject IS the
-     * customer (CustomerController, CustomerProfileController) select normally.
-     *
      * Pass to a relation string: ->with('customer:'.Customer::SUMMARY_COLUMNS)
      */
     public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,id_number,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,credit_score,credit_score_on_time_rate,credit_score_updated_at,is_active';
@@ -163,7 +157,7 @@ class Customer extends Model
      * duplicating them in the frontend would let the two drift, and the scale
      * they are measured against is itself a System Setting.
      */
-    protected $appends = ['credit_score_band'];
+    protected $appends = ['credit_score_band', 'lending_mortgages'];
 
     public function scopeActive(Builder $query): Builder
     {
@@ -250,13 +244,13 @@ class Customer extends Model
         return $this->hasOne(CustomerDetail::class);
     }
 
+    public function loanApplications(): HasMany
+    {
+        return $this->hasMany(LoanApplication::class);
+    }
+
     /**
      * The CDP employee who introduced this customer.
-     *
-     * The standing introducer on the file. A particular loan can have been put
-     * forward by someone else -- that one lives on
-     * LoanApplication::recommendedByEmployee(). Read the snapshot columns for
-     * display; this relation is for walking back to the employee's file.
      */
     public function recommendedByEmployee(): BelongsTo
     {
@@ -288,5 +282,22 @@ class Customer extends Model
     public function hasCreditHistory(): bool
     {
         return $this->credit_score !== null;
+    }
+
+    /**
+     * Get all unique lending mortgages linked through the customer's loan applications.
+     */
+    public function getLendingMortgagesAttribute()
+    {
+        if (!$this->relationLoaded('loanApplications')) {
+            return [];
+        }
+
+        return $this->loanApplications
+            ->flatMap(fn ($loanApp) => $loanApp->securities ?? [])
+            ->map(fn ($security) => $security->lendingMortgage)
+            ->filter()
+            ->unique('id')
+            ->values();
     }
 }

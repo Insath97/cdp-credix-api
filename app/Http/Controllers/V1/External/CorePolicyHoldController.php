@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\V1\External;
 
-use App\Enums\LoanSecurityType;
 use App\Http\Controllers\Controller;
 use App\Models\LoanApplication;
 use App\Services\CustomerLoanEligibilityService;
+use App\Services\InvestmentCollateralService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -34,10 +34,8 @@ class CorePolicyHoldController extends Controller
 
         $query = LoanApplication::query()
             ->live()
-            ->whereHas('security', fn ($q) => $q
-                ->where('security_type', LoanSecurityType::CdpInvestment->value)
-                ->whereNotNull('policy_number'))
-            ->with(['application', 'customer:id,full_name,id_number', 'security']);
+            ->whereHas('cdpInvestmentSecurities', fn ($q) => $q->whereNotNull('policy_number'))
+            ->with(['application', 'customer:id,full_name,id_number', 'cdpInvestmentSecurities']);
 
         if (!empty($data['policy_number'])) {
             $query->holdingPolicy($data['policy_number']);
@@ -57,17 +55,31 @@ class CorePolicyHoldController extends Controller
             'status' => 'success',
             'data'   => [
                 'held'  => $loans->isNotEmpty(),
-                'loans' => $loans->map(fn (LoanApplication $loan) => [
-                    'policy_number' => $loan->security?->policy_number,
-                    'reference'     => $loan->reference(),
-                    'status'        => $loan->status->value,
-                    'amount'        => (float) ($loan->approved_amount ?? $loan->requested_amount),
-                    'customer'      => [
-                        'name'      => $loan->customer?->full_name,
-                        'id_number' => $loan->customer?->id_number,
-                    ],
-                    'applied_at'    => $loan->applied_at?->toDateString(),
-                ])->values(),
+                'loans' => $loans->map(function (LoanApplication $loan) {
+                    // A loan may be secured by more than one investment, so the
+                    // policies are a list. Core asked about one, but the answer
+                    // has to cover every policy the loan holds, not just the
+                    // first row.
+                    $policies = $loan->cdpInvestmentSecurities
+                        ->pluck('policy_number')
+                        ->filter()
+                        ->map(fn ($policy) => InvestmentCollateralService::normalisePolicy($policy))
+                        ->unique()
+                        ->values();
+
+                    return [
+                        'policy_numbers' => $policies,
+                        'policy_number'  => $policies->first(),
+                        'reference'      => $loan->reference(),
+                        'status'         => $loan->status->value,
+                        'amount'         => (float) ($loan->approved_amount ?? $loan->requested_amount),
+                        'customer'       => [
+                            'name'      => $loan->customer?->full_name,
+                            'id_number' => $loan->customer?->id_number,
+                        ],
+                        'applied_at'     => $loan->applied_at?->toDateString(),
+                    ];
+                })->values(),
             ],
         ]);
     }

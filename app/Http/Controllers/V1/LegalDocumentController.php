@@ -4,7 +4,6 @@ namespace App\Http\Controllers\V1;
 
 use App\Enums\LegalDocumentStatus;
 use App\Enums\LegalDocumentType;
-use App\Exceptions\LegalSignatureException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateLegalDocumentRequest;
 use App\Http\Requests\UpdateLegalDocumentRequest;
@@ -13,7 +12,6 @@ use App\Models\LegalDocument;
 use App\Models\LegalDocumentTemplate;
 use App\Models\LoanApplication;
 use App\Models\User;
-use App\Services\LegalDocumentSignatureService;
 use App\Traits\ActivityLogTrait;
 use App\Traits\ScopesToUserBranch;
 use Illuminate\Http\JsonResponse;
@@ -36,10 +34,6 @@ use Illuminate\Support\Facades\Log;
 class LegalDocumentController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait, ScopesToUserBranch;
-
-    public function __construct(protected LegalDocumentSignatureService $signatures)
-    {
-    }
 
     public static function middleware(): array
     {
@@ -285,8 +279,6 @@ class LegalDocumentController extends Controller implements HasMiddleware
 
             $data = $request->validated();
 
-            // Once anyone has signed, what they signed can't change under them.
-            $this->signatures->assertEditable($document, $data);
 
             // Re-checked against the product and loan type only when the edit
             // moves what the template depends on, so a document is still
@@ -361,7 +353,6 @@ class LegalDocumentController extends Controller implements HasMiddleware
                 ], 404);
             }
 
-            $this->signatures->assertDeletable($document);
 
             $reference = $document->reference_no;
             $document->delete();
@@ -372,8 +363,6 @@ class LegalDocumentController extends Controller implements HasMiddleware
                 'status'  => 'success',
                 'message' => 'Legal document deleted successfully',
             ], 200);
-        } catch (LegalSignatureException $e) {
-            return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',

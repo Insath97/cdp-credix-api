@@ -108,18 +108,20 @@ class UpdateLoanApplicationRequest extends FormRequest
     }
 
     /**
-     * The loan security against the loan as it will stand after this edit.
+     * The loan securities against the loan as it will stand after this edit.
      *
-     * The product is the loan's own unless this edit changes it, so a
-     * security is required when the edit moves the loan onto a secured
-     * product and refused when it moves it off one. Changing the security --
-     * replacing it, or dropping it along with the product that needed it -- is
-     * allowed only until approval.
+     * The product is the loan's own unless this edit changes it, so securities
+     * are required when the edit moves the loan onto a secured product and
+     * refused when it moves it off one. Changing them -- replacing the list, or
+     * dropping it along with the product that needed it -- is allowed only
+     * until approval.
      */
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
-            $loanApplication = LoanApplication::with(['loanProduct', 'security'])->find($this->route('loan_application'));
+            $this->assertNoEmptySecurities($validator);
+
+            $loanApplication = LoanApplication::with(['loanProduct', 'securities'])->find($this->route('loan_application'));
 
             // Not found, or a group loan: the controller answers both.
             if (!$loanApplication || $loanApplication->isGroupLoan()) {
@@ -130,18 +132,19 @@ class UpdateLoanApplicationRequest extends FormRequest
                 ? LoanProduct::find($this->input('loan_product_id'))
                 : $loanApplication->loanProduct;
 
-            $hasSecurity = $loanApplication->security !== null;
+            $hasSecurities = $loanApplication->securities->isNotEmpty();
 
-            $this->checkSecurityAgainstProduct($validator, $product, $hasSecurity);
+            $this->checkSecuritiesAgainstProduct($validator, $product, $hasSecurities);
+            $this->checkMortgageTypeMismatch($validator);
 
-            $sent = !empty($this->input('security'));
-            $drops = $product && !$product->requiresSecurity() && $hasSecurity;
+            $sent = $this->filled('securities') && is_array($this->input('securities')) && $this->input('securities') !== [];
+            $drops = $product && !$product->requiresSecurity() && $hasSecurities;
 
             if (($sent || $drops)
                 && !in_array($loanApplication->status, self::SECURITY_EDITABLE_STATUSES, true)) {
                 $validator->errors()->add(
-                    'security',
-                    "The loan security can no longer be changed: this loan application is {$loanApplication->status->value}, and the security is part of what it was approved on."
+                    'securities',
+                    "The loan securities can no longer be changed: this loan application is {$loanApplication->status->value}, and the security is part of what it was approved on."
                 );
             }
         });

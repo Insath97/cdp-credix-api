@@ -28,9 +28,12 @@ use App\Enums\LoanSecurityType;
 use App\Exceptions\CustomerHasLiveLoanException;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Exceptions\InvestmentCollateralException;
+use App\Exceptions\SecurityLimitExceededException;
+use App\Exceptions\SecurityPlanException;
 use App\Services\CustomerLoanEligibilityService;
 use App\Services\LoanApplicationWorkflowService;
 use App\Services\LoanDocumentService;
+use App\Services\LoanSecurityLtvService;
 use App\Services\LoanSecurityService;
 use App\Services\NotificationService;
 use Carbon\Carbon;
@@ -46,6 +49,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
         protected NotificationService $notificationService,
         protected LoanDocumentService $loanDocumentService,
         protected LoanSecurityService $loanSecurityService,
+        protected LoanSecurityLtvService $loanSecurityLtv,
     ) {
     }
 
@@ -148,7 +152,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'appliedByUser:'.User::SUMMARY_COLUMNS,
                 'reviewedByUser:'.User::SUMMARY_COLUMNS,
                 'approvedByUser:'.User::SUMMARY_COLUMNS,
-                'security',
+                'securities.lendingMortgage',
                 'groupLoan.loanProduct',
                 'groupLoan.branch',
                 'groupLoan.items',
@@ -206,35 +210,38 @@ class LoanApplicationController extends Controller implements HasMiddleware
 
             $data = Employee::mergeRecommenderSnapshot($data);
 
-            // Secured loan: the loan security is prepared before anything is
+            // Secured loan: the securities are prepared before anything is
             // written. The request has already made sure a Standard Borrowing
-            // loan carries one and any other loan does not. For a CDP
-            // Investment this asks CDP Core (ownership, approval, LTV,
-            // maturity) -- an HTTP call, so outside the transaction; the
-            // one-live-loan-per-policy rule is re-checked under the lock below.
-            $securityRow = null;
-            if (!empty($data['security'])) {
-                $securityRow = $this->loanSecurityService->prepare(
-                    $data['security'],
+            // loan carries at least one and any other loan carries none. For a
+            // CDP Investment this asks CDP Core (ownership, approval, maturity)
+            // -- an HTTP call, so outside the transaction; the one-live-loan-per
+            // -policy rule is re-checked under the lock below. What the whole
+            // collection is worth, and whether that covers the amount asked for,
+            // is settled here too: it has to be settled before anything is
+            // written, so a refused loan leaves no half-written securities.
+            $securityRows = [];
+            if (!empty($data['securities'])) {
+                $securityRows = $this->loanSecurityService->prepareAll(
+                    $data['securities'],
                     $this->borrowersOf((int) $data['customer_id'], $data['joint_customer_ids'] ?? []),
                     (float) $data['requested_amount'],
                     (int) $data['term_months'],
                     !empty($data['applied_at']) ? Carbon::parse($data['applied_at']) : now()
                 );
             }
-            unset($data['security']);
+            unset($data['securities']);
 
-            $loanApplication = DB::transaction(function () use (&$data, $securityRow) {
+            $loanApplication = DB::transaction(function () use (&$data, $securityRows) {
                 $borrowers = ['customer_id' => $data['customer_id']];
                 foreach ($data['joint_customer_ids'] ?? [] as $i => $jointId) {
                     $borrowers["joint_customer_ids.{$i}"] = $jointId;
                 }
                 CustomerLoanEligibilityService::assertEligible($borrowers);
 
-                if ($securityRow) {
+                if ($securityRows) {
                     // Two submissions for the same policy both passed the
                     // HTTP-time check above; only one may get through here.
-                    $this->loanSecurityService->assertPolicyStillFree($securityRow);
+                    $this->loanSecurityService->assertPoliciesStillFree($securityRows);
                 }
 
                 if (empty($data['application_id'])) {
@@ -281,8 +288,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     }
                 }
 
-                if ($securityRow) {
-                    $this->loanSecurityService->save($loanApplication, $securityRow);
+                if ($securityRows) {
+                    $this->loanSecurityService->saveCollection($loanApplication, $securityRows);
                 }
 
                 return $loanApplication;
@@ -291,7 +298,10 @@ class LoanApplicationController extends Controller implements HasMiddleware
             $this->loanDocumentService->syncForApplication($loanApplication);
 
             $this->logActivity('CREATE', 'LoanApplication', "Created loan application ID: {$loanApplication->id}", $data + [
-                'security_type' => $securityRow['security_type'] ?? null,
+                'security_types' => array_values(array_map(
+                    fn (array $row) => $row['security_type'] ?? null,
+                    $securityRows
+                )),
             ]);
 
             $staffRole = Role::where('name', config('notifications.staff_role'))->first();
@@ -321,13 +331,21 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'loanProduct',
                     'branch',
                     'appliedByUser:'.User::SUMMARY_COLUMNS,
-                    'security',
+                    'securities.lendingMortgage',
                 ]),
+                // What the securities are worth, and the most they can secure
+                // between them. The frontend shows this; it is not asked to
+                // work it out, and it must not.
+                'security_coverage' => $loanApplication->securityCoverage(),
             ], 201);
 
         } catch (CustomerHasLiveLoanException $e) {
             return $e->toResponse();
         } catch (InvestmentCollateralException $e) {
+            return $e->toResponse();
+        } catch (SecurityLimitExceededException $e) {
+            return $e->toResponse();
+        } catch (SecurityPlanException $e) {
             return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
@@ -372,7 +390,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'loanApplicationMovingAssets',
                 'loanApplicationLiabilities',
                 'loanApplicationBankDetails',
-                'security.documents',
+                'securities.documents',
+                'securities.lendingMortgage',
                 'installments',
                 'statusHistory.changedBy:'.User::SUMMARY_COLUMNS,
                 'groupLoan.loanProduct',
@@ -397,6 +416,7 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'status'  => 'success',
                 'message' => 'Loan application retrieved successfully',
                 'data'    => $loanApplication,
+                'security_coverage' => $loanApplication->securityCoverage(),
             ], 200);
 
         } catch (\Throwable $th) {
@@ -449,31 +469,36 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 }
             }
 
-            // The loan security, against the loan as it will stand after this
-            // edit (the request has already checked it against the product and
-            // the status). Sent, it replaces the one on file. Left out on a
-            // secured product, a CDP Investment is still re-checked against
+            // The securities, against the loan as it will stand after this
+            // edit (the request has already checked them against the product
+            // and the status). Sent, they replace the ones on file. Left out on
+            // a secured product, any CDP Investment is still re-checked against
             // Core when the edit moves what it was measured against, so a
-            // bigger amount cannot slip past the product's LTV. Moved off a
-            // secured product, the loan's security goes with it.
-            $securityPayload = $data['security'] ?? null;
-            unset($data['security']);
+            // bigger amount cannot slip past the product's limit. Moved off a
+            // secured product, the loan's securities go with it.
+            $securityPayloads = $data['securities'] ?? null;
+            unset($data['securities']);
 
             $product = LoanProduct::find($data['loan_product_id'] ?? $loanApplication->loan_product_id);
-            $existingSecurity = $loanApplication->security;
-            $securityRow = null;
-            $dropSecurity = false;
+            $loanApplication->loadMissing('securities');
+            $existingSecurities = $loanApplication->securities;
+            $securityRows = [];
+            $dropSecurities = false;
 
             if ($product?->requiresSecurity()) {
-                if (!$securityPayload
-                    && $existingSecurity?->security_type === LoanSecurityType::CdpInvestment
+                if (!$securityPayloads
+                    && $existingSecurities->contains(fn ($s) => $s->security_type === LoanSecurityType::CdpInvestment)
                     && $this->changesSecurityTerms($loanApplication, $data)) {
-                    $securityPayload = $this->loanSecurityService->payloadFrom($existingSecurity);
+                    $securityPayloads = $this->loanSecurityService->payloadsFrom(
+                        $existingSecurities->where(
+                            fn ($s) => $s->security_type === LoanSecurityType::CdpInvestment
+                        )
+                    );
                 }
 
-                if ($securityPayload) {
-                    $securityRow = $this->loanSecurityService->prepare(
-                        $securityPayload,
+                if ($securityPayloads) {
+                    $securityRows = $this->loanSecurityService->prepareAll(
+                        $securityPayloads,
                         $this->borrowersOf(
                             (int) ($data['customer_id'] ?? $loanApplication->customer_id),
                             $loanApplication->loanApplicationCustomers()->pluck('customer_id')
@@ -484,27 +509,30 @@ class LoanApplicationController extends Controller implements HasMiddleware
                         $loanApplication->id
                     );
                 }
-            } elseif ($existingSecurity) {
-                $dropSecurity = true;
+            } elseif ($existingSecurities->isNotEmpty()) {
+                $dropSecurities = true;
             }
 
-            DB::transaction(function () use ($loanApplication, $data, $securityRow, $dropSecurity) {
-                if ($securityRow) {
-                    $this->loanSecurityService->assertPolicyStillFree($securityRow, $loanApplication->id);
+            DB::transaction(function () use ($loanApplication, $data, $securityRows, $dropSecurities) {
+                if ($securityRows) {
+                    $this->loanSecurityService->assertPoliciesStillFree($securityRows, $loanApplication->id);
                 }
 
                 $loanApplication->update($data);
 
-                if ($securityRow) {
-                    $this->loanSecurityService->save($loanApplication, $securityRow);
-                } elseif ($dropSecurity) {
-                    $loanApplication->security()->delete();
+                if ($securityRows) {
+                    $this->loanSecurityService->saveCollection($loanApplication, $securityRows);
+                } elseif ($dropSecurities) {
+                    $loanApplication->securities()->delete();
                 }
             });
 
             $this->logActivity('UPDATE', 'LoanApplication', "Updated loan application ID: {$loanApplication->id}", $data + [
-                'security_type'    => $securityRow['security_type'] ?? null,
-                'security_removed' => $dropSecurity,
+                'security_types' => array_values(array_map(
+                    fn (array $row) => $row['security_type'] ?? null,
+                    $securityRows
+                )),
+                'securities_removed' => $dropSecurities,
             ]);
 
             return response()->json([
@@ -518,11 +546,16 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'appliedByUser:'.User::SUMMARY_COLUMNS,
                     'reviewedByUser:'.User::SUMMARY_COLUMNS,
                     'approvedByUser:'.User::SUMMARY_COLUMNS,
-                    'security',
+                    'securities.lendingMortgage',
                 ]),
+                'security_coverage' => $loanApplication->securityCoverage(),
             ], 200);
 
         } catch (InvestmentCollateralException $e) {
+            return $e->toResponse();
+        } catch (SecurityLimitExceededException $e) {
+            return $e->toResponse();
+        } catch (SecurityPlanException $e) {
             return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
@@ -1573,20 +1606,24 @@ class LoanApplicationController extends Controller implements HasMiddleware
             $loanApplication = DB::transaction(function () use ($loanApplication, $borrowers, $request, $rejection) {
                 CustomerLoanEligibilityService::assertEligible($borrowers, $loanApplication->id);
 
-                // A rejected loan freed its policy; another loan may have taken
-                // it since. It cannot be reopened while that loan is live.
-                $policy = $loanApplication->security?->security_type === LoanSecurityType::CdpInvestment
-                    ? $loanApplication->security->policy_number
-                    : null;
-                if ($policy) {
-                    $holder = LoanApplication::holdingPolicy($policy)
+                // A rejected loan freed its policies; other loans may have taken
+                // them since. It cannot be reopened while any of them is live --
+                // every one, because a loan may now be secured by more than one
+                // investment.
+                foreach ($loanApplication->securities as $security) {
+                    if ($security->security_type !== LoanSecurityType::CdpInvestment || empty($security->policy_number)) {
+                        continue;
+                    }
+
+                    $holder = LoanApplication::holdingPolicy($security->policy_number)
                         ->where('id', '!=', $loanApplication->id)
                         ->lockForUpdate()
                         ->with('application')
                         ->first();
+
                     if ($holder) {
                         throw new InvestmentCollateralException(
-                            "This loan cannot be reopened: its policy {$policy} now secures loan {$holder->reference()}. Create a new application with fresh security instead."
+                            "This loan cannot be reopened: its policy {$security->policy_number} now secures loan {$holder->reference()}. Create a new application with fresh security instead."
                         );
                     }
                 }
