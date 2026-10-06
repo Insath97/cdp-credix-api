@@ -38,7 +38,7 @@ trait ValidatesLoanSecurity
      * quantity cannot turn one mortgage into hundreds of rows. Set high enough
      * that no real file meets it.
      */
-    public const MAX_SECURITIES_PER_APPLICATION = 10;
+    public const MAX_SECURITIES_PER_APPLICATION = LoanApplicationSecurity::MAX_SECURITIES_PER_APPLICATION;
 
     /**
      * @return array<string, mixed>

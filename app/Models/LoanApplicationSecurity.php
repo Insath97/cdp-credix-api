@@ -41,6 +41,9 @@ class LoanApplicationSecurity extends Model
         'building'            => 'Building',
     ];
 
+    /** Maximum securities allowed per loan application. */
+    public const MAX_SECURITIES_PER_APPLICATION = 100;
+
     protected $fillable = [
         'loan_application_id',
         'security_type',

@@ -115,7 +115,7 @@ class LoanSecurityController extends Controller implements HasMiddleware
                 'property_types' => collect(LoanApplicationSecurity::PROPERTY_TYPES)
                     ->map(fn (string $label, string $value) => ['value' => $value, 'label' => $label])
                     ->values(),
-                'max_securities_per_application' => ValidatesLoanSecurity::MAX_SECURITIES_PER_APPLICATION,
+                'max_securities_per_application' => LoanApplicationSecurity::MAX_SECURITIES_PER_APPLICATION,
             ],
         ], 200);
     }
@@ -146,7 +146,7 @@ class LoanSecurityController extends Controller implements HasMiddleware
     {
         $validator = Validator::make($request->all(), [
             'requested_amount'  => ['required', 'numeric', 'min:0'],
-            'securities'        => ['required', 'array', 'max:' . ValidatesLoanSecurity::MAX_SECURITIES_PER_APPLICATION],
+            'securities'        => ['required', 'array', 'max:' . LoanApplicationSecurity::MAX_SECURITIES_PER_APPLICATION],
             'securities.*'      => ['array'],
             'securities.*.security_type' => ['required', Rule::enum(LoanSecurityType::class)],
             'securities.*.security_plan' => ['required', 'string', 'max:50'],
