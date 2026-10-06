@@ -34,13 +34,7 @@ return new class extends Migration
 
             $table->timestamp('legal_document_created_date')->nullable();
 
-            // Set when the last required signature is captured; cleared with them.
-            $table->timestamp('signed_at')->nullable();
-
-
             $table->json('details')->nullable();
-
-          
             $table->unsignedInteger('printed_count')->default(0);
             $table->timestamp('last_printed_at')->nullable();
 

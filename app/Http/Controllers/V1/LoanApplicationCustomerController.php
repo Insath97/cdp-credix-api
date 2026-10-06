@@ -349,7 +349,7 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     public function destroy(string $id)
     {
         try {
-            $record = LoanApplicationCustomer::with(['customer', 'loanApplication.groupLoan', 'loanApplication.security'])->find($id);
+            $record = LoanApplicationCustomer::with(['customer', 'loanApplication.groupLoan', 'loanApplication.cdpInvestmentSecurities'])->find($id);
 
             if (!$record) {
                 return $this->notFoundResponse();
@@ -362,20 +362,23 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 return $locked;
             }
 
-            // A CDP Investment secures only a loan its owner is borrowing on,
-            // so its owner cannot leave while it does.
-            $security = $loanApplication?->security;
-            if ($security?->security_type === LoanSecurityType::CdpInvestment
-                && in_array(
+            // A CDP Investment secures only a loan its owner is borrowing on, so
+            // its owner cannot leave while it does. Any of the loan's
+            // investments can be the one -- a joint loan may pledge one per
+            // borrower -- so all of them are checked.
+            $blocking = collect($loanApplication?->cdpInvestmentSecurities ?? [])
+                ->first(fn ($security) => in_array(
                     CustomerLoanEligibilityService::normalizeNic($security->investment_nic),
                     CustomerLoanEligibilityService::nicVariants($record->customer?->id_number),
                     true
-                )) {
+                ));
+
+            if ($blocking) {
                 $name = $record->customer?->full_name ?: 'This customer';
 
                 return response()->json([
                     'status'  => 'error',
-                    'message' => "{$name}'s CDP Investment (policy {$security->policy_number}) secures this loan, so they cannot be removed from it. Change the loan security first.",
+                    'message' => "{$name}'s CDP Investment (policy {$blocking->policy_number}) secures this loan, so they cannot be removed from it. Change the loan securities first.",
                 ], 422);
             }
 

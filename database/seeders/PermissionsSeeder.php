@@ -208,7 +208,6 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Legal Document Delete', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Legal Document Toggle Status', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Legal Document Sign', 'group_name' => 'Legal Management Permissions'],
-            ['name' => 'Legal Document Clear Signatures', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Loan Application Disburse', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Cancel', 'group_name' => 'Loan Application Management Permissions'],
 
@@ -315,6 +314,14 @@ class PermissionsSeeder extends Seeder
             /* System Settings Management */
             ['name' => 'Setting Index', 'group_name' => 'System Settings Permissions'],
             ['name' => 'Setting Update', 'group_name' => 'System Settings Permissions'],
+
+            /* Loan Security Permissions */
+            ['name' => 'use_plan_1', 'group_name' => 'Loan Security Permissions'],
+            ['name' => 'use_plan_2', 'group_name' => 'Loan Security Permissions'],
+            ['name' => 'use_plan_3', 'group_name' => 'Loan Security Permissions'],
+            ['name' => 'use_cdp_inv_001', 'group_name' => 'Loan Security Permissions'],
+            ['name' => 'use_cdp_pro_001', 'group_name' => 'Loan Security Permissions'],
+            ['name' => 'use_cdp_vec_001', 'group_name' => 'Loan Security Permissions'],
 
             /* Credit Score Management */
             ['name' => 'Credit Score Index', 'group_name' => 'Credit Score Management Permissions'],

@@ -4,11 +4,14 @@ namespace App\Services;
 
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
+use App\Exceptions\SecurityLimitExceededException;
 use App\Models\Document;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationSecurity;
 use App\Models\LoanApplicationStatusHistory;
 use App\Models\Setting;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class LoanApplicationWorkflowService
@@ -16,6 +19,7 @@ class LoanApplicationWorkflowService
     public function __construct(
         protected InstallmentScheduleService $installmentScheduleService,
         protected ReferenceNumberService $referenceNumberService,
+        protected LoanSecurityLtvService $loanSecurityLtv,
     ) {
     }
 
@@ -121,11 +125,15 @@ class LoanApplicationWorkflowService
 
     /**
      * A secured (Standard Borrowing) loan is not ready for review without its
-     * security, nor without the security's required papers
-     * (LoanSecurityType::documents()). The papers are uploaded separately
-     * through POST /documents, so review is the first point at which both can
-     * be checked together. Checked again at verification: the security can
-     * still be switched after review, and a document can still be removed.
+     * securities, nor without the papers each of them requires
+     * (LoanSecurityType::documents()), nor without the securities still
+     * covering what the loan is for.
+     *
+     * All three checks are on the collection. The papers are uploaded
+     * separately through POST /documents, so review is the first point at which
+     * everything can be looked at together; checked again at verification,
+     * because the securities can still be swapped after review and a document
+     * can still be removed.
      */
     protected function assertSecurityReady(LoanApplication $loanApplication, string $stage): void
     {
@@ -133,27 +141,82 @@ class LoanApplicationWorkflowService
             return;
         }
 
-        $security = $loanApplication->security;
+        $loanApplication->loadMissing('securities');
 
-        if (!$security) {
+        $securities = $loanApplication->securities;
+
+        if ($securities->isEmpty()) {
             throw new InvalidLoanApplicationTransitionException(
-                "{$loanApplication->loanProduct->name} is a Standard Borrowing loan, so it must be secured. Add the loan security (CDP Investment, Property Mortgage or Vehicle) before this loan application can be {$stage}."
+                "{$loanApplication->loanProduct->name} is a Standard Borrowing loan, so it must be secured. Add at least one loan security (CDP Investment, Property Mortgage or Vehicle) before this loan application can be {$stage}."
             );
         }
 
-        $missing = collect($security->security_type->documents())
-            ->filter()
-            ->keys()
-            ->reject(fn (string $documentType) => $loanApplication->documents()
-                ->ofDocumentType($documentType)
+        $this->assertSecuritiesStillCoverTheLoan($loanApplication, $securities, $stage);
+
+        // What papers are still missing, counted across the whole collection.
+        // A document records which application it was collected for and not
+        // which of that application's securities, so this asks "is a paper of
+        // this type on the loan at all" -- binding each document to its own
+        // security is not built yet.
+        $missing = $securities
+            ->flatMap(fn ($security) => collect($security->security_type->documents())
+                ->filter()
+                ->keys()
+                ->map(fn (string $documentType) => [
+                    'security_type' => $security->security_type->value,
+                    'document_type'  => $documentType,
+                ]))
+            ->reject(fn (array $needed) => $loanApplication->documents()
+                ->ofDocumentType($needed['document_type'])
                 ->where('status', 'active')
                 ->where('is_active', true)
                 ->exists())
-            ->map(fn (string $documentType) => Document::TYPES[$documentType]);
+            // The same paper satisfies every security of the same type, so two
+            // properties missing their deeds are one item to fix, not two.
+            ->unique('document_type')
+            ->map(fn (array $needed) => Document::TYPES[$needed['document_type']]);
 
         if ($missing->isNotEmpty()) {
             throw new InvalidLoanApplicationTransitionException(
                 'Upload the ' . $missing->join(', the ', ' and the ') . " before this loan application can be {$stage}."
+            );
+        }
+    }
+
+    /**
+     * The securities must still carry the loan. Re-checked here, not only on
+     * submit, because by review or verification the requested amount, a
+     * valuation or a lending plan's percentage may all have moved -- what was
+     * written was correct when it was written, not necessarily now.
+     *
+     * The plan is read from the row and only from the row. Permission is not
+     * consulted here and that is deliberate: this is a measurement of a stored
+     * loan, not a new pledge, and a reviewer who does not hold the submitter's
+     * plan permission must still be able to measure and judge it. A permission
+     * withdrawn after submission cannot make the application unreadable.
+     *
+     * @param Collection<int, LoanApplicationSecurity> $securities
+     */
+    protected function assertSecuritiesStillCoverTheLoan(
+        LoanApplication $loanApplication,
+        Collection $securities,
+        string $stage
+    ): void {
+        try {
+            $this->loanSecurityLtv->assertWithinLimit(
+                (float) $loanApplication->requested_amount,
+                $securities->map(fn ($security) => [
+                    'security_type' => $security->security_type->value,
+                    'security_plan' => $security->security_plan,
+                    // The stored value, so a property is measured by its
+                    // valuation and a CDP Investment by what Core reported,
+                    // whichever columns happen to hold it now.
+                    'value'          => $security->value(),
+                ])->all()
+            );
+        } catch (SecurityLimitExceededException $e) {
+            throw new InvalidLoanApplicationTransitionException(
+                'The loan securities no longer cover this loan, so it cannot be ' . $stage . ". {$e->getMessage()}"
             );
         }
     }

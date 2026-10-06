@@ -68,10 +68,13 @@ class CreateLoanApplicationRequest extends FormRequest
             'resubmitted_at' => 'nullable|date',
             'resubmission_count' => 'nullable|integer|min:0',
 
-        // The Loan Security step: required on a secured product (checked in
-        // withValidator), each type's fields only for that type.
-        ], $this->loanSecurityRules());
+            // The Loan Security step: at least one security on a secured
+            // product (checked in withValidator), each type's fields only for
+            // that type, and every security carrying a value for its limit to
+            // be worked out from.
+            ], $this->loanSecurityRules());
     }
+
 
 
     /**
@@ -108,12 +111,14 @@ class CreateLoanApplicationRequest extends FormRequest
                 }
             }
 
-            // A Standard Borrowing loan must carry a loan security; any other
-            // must not. Individual and Joint alike -- a joint loan's CDP
-            // Investment may be any of its borrowers' (checked against Core
-            // in the controller).
+            // A Standard Borrowing loan must carry at least one loan security;
+            // any other must carry none. Individual and Joint alike -- a joint
+            // loan's CDP Investment may be any of its borrowers' (checked
+            // against Core in the controller).
             if ($this->filled('loan_product_id')) {
-                $this->checkSecurityAgainstProduct($validator, LoanProduct::find($this->input('loan_product_id')));
+                $this->assertNoEmptySecurities($validator);
+                $this->checkSecuritiesAgainstProduct($validator, LoanProduct::find($this->input('loan_product_id')));
+                $this->checkMortgageTypeMismatch($validator);
             }
 
             foreach ((array) $this->input('joint_customer_ids', []) as $i => $jointId) {

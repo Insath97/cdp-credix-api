@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\LoanSecurityType;
 use App\Exceptions\InvestmentCollateralException;
 use App\Models\Customer;
 use App\Models\LoanApplication;
@@ -26,8 +27,13 @@ use Illuminate\Support\Collection;
  *      or a joint co-borrower (old and new NIC formats match)
  *   3. the policy is approved in Core under that NIC (not pending, cancelled, terminated)
  *   4. no other LIVE Credix loan is secured by it
- *   5. requested_amount <= investment_amount x the cdp_investment_max_loan_percentage
- *      System Setting / 100
+ *   5. where the policy is the only security pledged, requested_amount <=
+ *      investment_amount x the lending plan's percentage / 100. The percentage
+ *      comes from the plan the officer chose (LoanSecurityPlanService), not from
+ *      a type-wide setting. When other securities are pledged as well this rule
+ *      is not applied to the loan as a whole -- see validate() -- because the
+ *      ceiling that matters is the sum across every security, which
+ *      LoanSecurityLtvService measures
  *   6. investment maturity (reservation_date + duration) >= loan end date
  *
  * "Held" is derived from the loan's status: LoanApplication::holdingPolicy()
@@ -36,22 +42,56 @@ use Illuminate\Support\Collection;
  */
 class InvestmentCollateralService
 {
+    /**
+     * The pre-plan percentage setting, kept only for installations whose plans
+     * have not been configured yet. Once cdp_investment_security_plans holds a
+     * plan, that plan is the percentage and this row is not read at all --
+     * leaving it in the read path would mean two rates could disagree and the
+     * one the officer was shown would be whichever the code happened to prefer.
+     */
     public const MAX_LOAN_PERCENTAGE_SETTING = 'cdp_investment_max_loan_percentage';
+
+    /**
+     * The percentage used when there is no configured plan to read.
+     *
+     * Only the picker reaches that state: it shows what a policy is worth
+     * before a plan has been chosen. 80 remains the last-resort fallback for a
+     * missing setting row, unchanged and still disagreeing with the 50 the
+     * setting says -- the same deliberate disagreement as before, because which
+     * of the two is right is a business decision and not this code's to make.
+     */
+    public const DEFAULT_MAX_LOAN_PERCENTAGE = 80.0;
 
     public function __construct(protected CdpConnectService $cdp)
     {
     }
 
-    /** The System Setting rule 5 lends up to; 80 when the row is missing. */
+    /**
+     * The percentage the CDP Investment plans lend at, before one has been
+     * chosen: the first configured plan, else the old setting, else 80.
+     *
+     * The first plan is the reading on purpose. Plan 1 is what the picker means
+     * when it shows a figure before anyone has chosen, and when the officer does
+     * choose, coverage recomputes under the plan they actually picked -- so this
+     * number is never the authority on a written loan.
+     */
     public static function maxLoanPercentage(): float
     {
-        return (float) Setting::get(self::MAX_LOAN_PERCENTAGE_SETTING, 80);
+        $plan = app(LoanSecurityPlanService::class)->plans(LoanSecurityType::CdpInvestment)[0] ?? null;
+
+        if ($plan !== null) {
+            return (float) $plan['percentage'];
+        }
+
+        return (float) Setting::get(self::MAX_LOAN_PERCENTAGE_SETTING, self::DEFAULT_MAX_LOAN_PERCENTAGE);
     }
 
-    /** The most a loan can be against an investment: 1,000,000 at 80% -> 800,000. */
-    public static function maxLoanAgainst(float $investmentValue): float
+    /** The most a loan can be against an investment at a given percentage. */
+    public static function maxLoanAgainst(float $investmentValue, ?float $percentage = null): float
     {
-        return round($investmentValue * self::maxLoanPercentage() / 100, 2);
+        $percentage ??= self::maxLoanPercentage();
+
+        return round($investmentValue * $percentage / 100, 2);
     }
 
     /**
@@ -121,6 +161,11 @@ class InvestmentCollateralService
      * investment_details.
      *
      * @param iterable<int, Customer> $borrowers everyone borrowing on the loan, primary first
+     * @param bool $securedByOthers whether another security is pledged on the same
+     *                              loan alongside this one
+     * @param float|null $maxLoanPercentage rule 5's percentage, from the lending
+     *                              plan the officer chose; null falls back to the
+     *                              setting, which is what the picker does
      *
      * @throws InvestmentCollateralException
      */
@@ -131,7 +176,9 @@ class InvestmentCollateralService
         float $requestedAmount,
         int $termMonths,
         ?Carbon $appliedAt = null,
-        ?int $excludeLoanApplicationId = null
+        ?int $excludeLoanApplicationId = null,
+        bool $securedByOthers = false,
+        ?float $maxLoanPercentage = null
     ): array {
         $policy = self::normalisePolicy($policyNumber);
 
@@ -172,20 +219,34 @@ class InvestmentCollateralService
             );
         }
 
-        // Rule 5
-        $ceiling = self::maxLoanAgainst((float) $inv['investment_amount']);
-        if ($requestedAmount > $ceiling) {
-            throw new InvestmentCollateralException(
-                sprintf(
-                    'Requested amount Rs. %s exceeds %s%% of the investment value. The most this loan can be against policy %s (Rs. %s) is Rs. %s.',
-                    number_format($requestedAmount, 2),
-                    rtrim(rtrim(number_format(self::maxLoanPercentage(), 2, '.', ''), '0'), '.'),
-                    $policy,
-                    number_format((float) $inv['investment_amount'], 2),
-                    number_format($ceiling, 2)
-                ),
-                'requested_amount'
-            );
+        // Rule 5 -- but only when this policy is the whole of the security.
+        //
+        // The ceiling that matters to the business is what the securities TOGETHER
+        // can carry, and that is measured once over every row by
+        // LoanSecurityLtvService::assertWithinLimit(). Holding the whole loan
+        // against one policy here would refuse a property-and-investment loan
+        // that is comfortably covered: a 1,000,000 loan against a 10,000,000
+        // property and a 600,000 investment is fine, yet the investment alone is
+        // worth 300,000 of it. So the per-policy check stands only where the
+        // policy IS the security, and otherwise the aggregate owns the decision
+        // and owns the message too.
+        if (!$securedByOthers) {
+            $ceiling = self::maxLoanAgainst((float) $inv['investment_amount'], $maxLoanPercentage);
+            $rate    = $maxLoanPercentage ?? self::maxLoanPercentage();
+
+            if ($requestedAmount > $ceiling) {
+                throw new InvestmentCollateralException(
+                    sprintf(
+                        'Requested amount Rs. %s exceeds %s%% of the investment value. The most this loan can be against policy %s (Rs. %s) is Rs. %s.',
+                        number_format($requestedAmount, 2),
+                        rtrim(rtrim(number_format($rate, 2, '.', ''), '0'), '.'),
+                        $policy,
+                        number_format((float) $inv['investment_amount'], 2),
+                        number_format($ceiling, 2)
+                    ),
+                    'requested_amount'
+                );
+            }
         }
 
         // Rule 6

@@ -331,7 +331,18 @@ class CustomerController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $customer = Customer::with(['user', 'customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents'])->find($id);
+            $customer = Customer::with([
+                'user',
+                'customerDetail',
+                'bankDetails',
+                'fixedAssets',
+                'movingAssets',
+                'liabilities',
+                'guarantors',
+                'documents',
+                'loanApplications.loanProduct',
+                'loanApplications.securities.lendingMortgage',
+            ])->find($id);
 
             if (!$customer) {
                 return response()->json([

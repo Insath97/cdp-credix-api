@@ -8,7 +8,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Enums\LoanApplicationStatus;
 use App\Enums\LoanRevisionStatus;
@@ -58,8 +57,6 @@ class LoanApplication extends Model
         'verified_remarks',
         'approval_remarks',
         'rejection_reason',
-        // Set when review sends the file back to the customer for better
-        // documents, cleared when they resubmit.
         'review_failure_reason',
         'review_failed_at',
         'resubmitted_at',
@@ -279,13 +276,58 @@ class LoanApplication extends Model
     }
 
     /**
-     * The security pledged against this application (CDP Investment,
+     * The securities pledged against this application (CDP Investment,
      * Property Mortgage or Vehicle). Present on secured loans -- see
-     * requiresSecurity() -- null otherwise.
+     * requiresSecurity() -- and normally more than one of them, since a loan
+     * larger than any single asset can be worth is secured by several:
+     * two properties, an investment and a vehicle, and so on. Each row is an
+     * independent item with its own details, value and papers.
      */
-    public function security(): HasOne
+    public function securities(): HasMany
     {
-        return $this->hasOne(LoanApplicationSecurity::class);
+        return $this->hasMany(LoanApplicationSecurity::class);
+    }
+
+    /**
+     * The CDP Investments pledged against this application. Split out because
+     * these are the ones with a rule the others do not have: a policy may back
+     * only one live loan at a time, wherever it sits (holdingPolicy()).
+     *
+     * @return HasMany
+     */
+    public function cdpInvestmentSecurities(): HasMany
+    {
+        return $this->securities()
+            ->where('security_type', LoanSecurityType::CdpInvestment->value);
+    }
+
+    /**
+     * What every one of this loan's securities is worth together, and the most
+     * they can secure between them at their own configured percentages
+     * (LoanSecurityLtvService). Null when the loan has no securities yet, which
+     * is different from zero.
+     *
+     * @return array{security_count: int, valued_count: int, total_pledged_value: float, total_eligible_security_value: float}|null
+     */
+    public function securityCoverage(): ?array
+    {
+        if (!$this->relationLoaded('securities')) {
+            $this->load('securities');
+        }
+
+        if ($this->securities->isEmpty()) {
+            return null;
+        }
+
+        $values  = $this->securities->map(fn (LoanApplicationSecurity $s) => $s->value());
+        $eligible = $this->securities->map(fn (LoanApplicationSecurity $s) => $s->eligibleValue());
+
+        return [
+            'security_count'                => $this->securities->count(),
+            'valued_count'                  => $values->filter(fn ($v) => $v !== null)->count(),
+            'total_pledged_value'           => round((float) $values->sum(), 2),
+            'total_eligible_security_value' => round((float) $eligible->sum(), 2),
+        ];
     }
 
     /**
@@ -589,11 +631,14 @@ class LoanApplication extends Model
      * Live loans secured by this CDP Core policy. Normally zero or one: a
      * policy may back only one live loan at a time, and CDP Core asks this
      * before paying the policy out.
+     *
+     * Goes through securities(), so it finds the policy wherever it sits on a
+     * loan that has more than one security.
      */
     public function scopeHoldingPolicy(Builder $query, string $policyNumber): Builder
     {
         return $query->live()
-            ->whereHas('security', fn (Builder $q) => $q
+            ->whereHas('securities', fn (Builder $q) => $q
                 ->where('security_type', LoanSecurityType::CdpInvestment->value)
                 ->whereRaw('UPPER(TRIM(policy_number)) = ?', [strtoupper(trim($policyNumber))]));
     }

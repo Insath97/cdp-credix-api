@@ -39,7 +39,6 @@ class LegalDocument extends Model
         'created_by'                  => 'integer',
         'status'                      => LegalDocumentStatus::class,
         'legal_document_created_date' => 'datetime',
-        'signed_at'                   => 'datetime',
         'details'                     => 'array',
         'printed_count'               => 'integer',
         'last_printed_at'             => 'datetime',
@@ -71,12 +70,6 @@ class LegalDocument extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
-    }
-
-    /** The signatures standing on this document; cleared ones are voided. */
-    public function signatures(): HasMany
-    {
-        return $this->hasMany(LegalDocumentSignature::class)->whereNull('voided_at');
     }
 
     public function scopeSearch(Builder $query, ?string $term): Builder

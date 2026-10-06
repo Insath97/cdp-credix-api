@@ -32,7 +32,6 @@ use App\Http\Controllers\V1\LoanTermController;
 use App\Http\Controllers\V1\LoanTypeController;
 use App\Http\Controllers\V1\LoanProductController;
 use App\Http\Controllers\V1\LegalDocumentController;
-use App\Http\Controllers\V1\LegalDocumentSignatureController;
 use App\Http\Controllers\V1\LegalDocumentTemplateController;
 use App\Http\Controllers\V1\LoanApplicationController;
 use App\Http\Controllers\V1\LoanApplicationStatusHistoryController;
@@ -45,6 +44,7 @@ use App\Http\Controllers\V1\LoanApplicationMovingAssetController;
 use App\Http\Controllers\V1\LoanApplicationLiabilityController;
 use App\Http\Controllers\V1\LoanApplicationBankDetailController;
 use App\Http\Controllers\V1\LoanSecurityController;
+use App\Http\Controllers\V1\LendingMortgageController;
 use App\Http\Controllers\V1\LoanInstallmentController;
 use App\Http\Controllers\V1\LoanRevisionController;
 use App\Http\Controllers\V1\PaymentController;
@@ -276,11 +276,21 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
 
     Route::apiResource('loan-applications', LoanApplicationController::class);
 
-    // Loan Security -- the wizard step for secured products. The security
-    // itself is saved with the loan application (its `security` object).
+    // Loan Security -- the wizard step for secured products. The securities
+    // themselves are saved with the loan application (its `securities` array);
+    // coverage is what the step reads on every change to work out what each
+    // security is worth as a loan and whether they cover the amount asked for.
     Route::prefix('loan-securities')->group(function () {
         Route::get('options', [LoanSecurityController::class, 'options']);
+        Route::post('coverage', [LoanSecurityController::class, 'coverage']);
         Route::post('investment-lookup', [LoanSecurityController::class, 'investmentLookup']);
+    });
+
+    // Lending Mortgages -- plans filtered by security type for the frontend dropdown.
+    Route::prefix('lending-mortgages')->group(function () {
+        Route::get('/', [LendingMortgageController::class, 'plansBySecurityType']);
+        Route::get('plans', [LendingMortgageController::class, 'plansBySecurityType']);
+        Route::get('options', [LendingMortgageController::class, 'options']);
     });
 
     // Legal
@@ -295,9 +305,6 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::get('applications', [LegalDocumentController::class, 'applications']);
         Route::patch('{id}/record-print', [LegalDocumentController::class, 'recordPrint']);
         Route::patch('{id}/toggle-status', [LegalDocumentController::class, 'toggleStatus']);
-        Route::get('{id}/signatures', [LegalDocumentSignatureController::class, 'index']);
-        Route::post('{id}/signatures', [LegalDocumentSignatureController::class, 'store']);
-        Route::post('{id}/signatures/clear', [LegalDocumentSignatureController::class, 'clear']);
     });
     Route::apiResource('legal-documents', LegalDocumentController::class);
 
