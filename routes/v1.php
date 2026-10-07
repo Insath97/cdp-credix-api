@@ -58,6 +58,7 @@ use App\Http\Controllers\V1\CreditScoreController;
 use App\Http\Controllers\V1\SettingController;
 use App\Http\Controllers\V1\AdminDashboardController;
 use App\Http\Controllers\V1\ReportController;
+use App\Http\Controllers\V1\SignatureController;
 use App\Http\Controllers\V1\Customer\CustomerDashboardController;
 use App\Http\Controllers\V1\Customer\CustomerProfileController;
 use App\Http\Controllers\V1\Customer\CustomerLoanController;
@@ -429,6 +430,14 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
 
         Route::get('recovery', [ReportController::class, 'recovery']);
         Route::get('recovery/{id}', [ReportController::class, 'recoveryShow']);
+    });
+
+    // Signatures
+    Route::prefix('signatures')->group(function () {
+        Route::get('/', [SignatureController::class, 'index']);
+        Route::post('/', [SignatureController::class, 'store']);
+        Route::get('{id}', [SignatureController::class, 'show']);
+        Route::delete('{id}', [SignatureController::class, 'destroy']);
     });
 
 });

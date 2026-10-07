@@ -330,8 +330,6 @@ class LegalDocumentController extends Controller implements HasMiddleware
                 'message' => 'Legal document updated successfully',
                 'data'    => $document->fresh($this->withRelations()),
             ], 200);
-        } catch (LegalSignatureException $e) {
-            return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
