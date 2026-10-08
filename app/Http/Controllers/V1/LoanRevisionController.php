@@ -20,6 +20,7 @@ use App\Exceptions\InvalidLoanRevisionTransitionException;
 use App\Services\LoanRevisionService;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\File;
 
 class LoanRevisionController extends Controller implements HasMiddleware
 {
@@ -365,12 +366,9 @@ class LoanRevisionController extends Controller implements HasMiddleware
                 ], 404);
             }
 
-            // Resolved and contained through FileUploadTrait, not public_path().
-            // Uploads now live outside the web root, and the resolver refuses a
-            // stored path that escapes its base directory.
-            $absolutePath = $this->resolveStoredFile($revision->document);
+            $absolutePath = public_path($revision->document);
 
-            if ($absolutePath === null) {
+            if (!File::exists($absolutePath)) {
                 return response()->json([
                     'status'  => 'error',
                     'message' => 'Document file is missing',

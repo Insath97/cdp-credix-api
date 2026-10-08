@@ -51,6 +51,11 @@ class Customer extends Model
         });
     }
 
+    protected $attributes = [
+        'is_kyc_verified' => false,
+        'is_active'       => true,
+    ];
+
     protected $fillable = [
         'customer_id',
         'customer_code',
@@ -123,6 +128,11 @@ class Customer extends Model
         'credit_score_on_time_rate',
         'credit_score_updated_at',
         'is_active',
+
+        // KYC Verification (staff-assisted OTP & immutable snapshot)
+        'is_kyc_verified',
+        'kyc_verified_at',
+        'current_kyc_verification_id',
     ];
 
     protected $hidden = [
@@ -134,6 +144,9 @@ class Customer extends Model
     protected $casts = [
         'branch_id' => 'integer',
         'is_active' => 'boolean',
+        'is_kyc_verified' => 'boolean',
+        'kyc_verified_at' => 'datetime',
+        'current_kyc_verification_id' => 'integer',
         'date_of_birth' => 'date',
         'have_whatsapp' => 'boolean',
         'monthly_income' => 'decimal:2',
@@ -299,5 +312,21 @@ class Customer extends Model
             ->filter()
             ->unique('id')
             ->values();
+    }
+
+    /**
+     * All KYC verification records for this customer.
+     */
+    public function verifications(): HasMany
+    {
+        return $this->hasMany(CustomerVerification::class);
+    }
+
+    /**
+     * The active/current KYC verification record for this customer.
+     */
+    public function currentKycVerification(): BelongsTo
+    {
+        return $this->belongsTo(CustomerVerification::class, 'current_kyc_verification_id');
     }
 }

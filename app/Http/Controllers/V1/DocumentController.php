@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\File;
 use App\Models\Customer;
 use App\Models\Document;
 use App\Models\LoanApplication;
@@ -490,9 +491,9 @@ class DocumentController extends Controller implements HasMiddleware
                 ], 422);
             }
 
-            $absolutePath = $this->resolveStoredFile($path);
+            $absolutePath = public_path($path);
 
-            if ($absolutePath === null) {
+            if (!File::exists($absolutePath)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Document file is missing',

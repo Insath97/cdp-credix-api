@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\CustomerHasLiveLoanException;
+use App\Exceptions\CustomerKycNotVerifiedException;
 use App\Models\Customer;
 use App\Models\LoanApplication;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +57,24 @@ class CustomerLoanEligibilityService
         $loan = self::liveLoanForPerson([$customer->id], $customer->id_number, $excludeLoanApplicationId);
 
         return $loan ? self::message($customer->full_name, $customer->id_number, $loan, [$customer->id]) : null;
+    }
+
+    /**
+     * Why this customer may not go on a loan due to unverified KYC details.
+     */
+    public static function refusalForUnverifiedKyc(int $customerId): ?string
+    {
+        $customer = Customer::find($customerId);
+
+        if (!$customer) {
+            return null;
+        }
+
+        if (!$customer->is_kyc_verified) {
+            return "Customer {$customer->full_name} ({$customer->customer_id}) KYC details must be confirmed and verified with OTP before applying for a loan.";
+        }
+
+        return null;
     }
 
     /**
@@ -122,6 +141,13 @@ class CustomerLoanEligibilityService
             $customer = $customers->firstWhere('id', $customerId);
             if (!$customer) {
                 continue;
+            }
+
+            if (!$customer->is_kyc_verified) {
+                throw new CustomerKycNotVerifiedException(
+                    "Customer {$customer->full_name} ({$customer->customer_id}) KYC details must be confirmed and verified with OTP before applying for a loan.",
+                    (string) $field
+                );
             }
 
             $loan = self::liveLoanForPerson([$customer->id], $customer->id_number, $excludeLoanApplicationId);

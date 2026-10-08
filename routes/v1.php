@@ -17,6 +17,7 @@ use App\Http\Controllers\V1\DesignationController;
 use App\Http\Controllers\V1\CountryController;
 use App\Http\Controllers\V1\GroupController;
 use App\Http\Controllers\V1\CustomerController;
+use App\Http\Controllers\V1\CustomerVerificationController;
 use App\Http\Controllers\V1\CustomerLoanEligibilityController;
 use App\Http\Controllers\V1\CustomerInvestmentController;
 use App\Http\Controllers\V1\External\CorePolicyHoldController;
@@ -191,6 +192,20 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::delete('{id}/force-delete', [CustomerController::class, 'forceDelete']);
     });
     Route::apiResource('customers', CustomerController::class);
+
+    // Customer KYC Verification (Pre-loan Customer Consent & Verification with JWT + OTP)
+    Route::prefix('customers/{customerId}/verification')->group(function () {
+        Route::get('status', [CustomerVerificationController::class, 'status']);
+        Route::post('initiate', [CustomerVerificationController::class, 'initiate']);
+        Route::post('verify-otp', [CustomerVerificationController::class, 'verifyOtp'])->middleware('throttle:otp-verify');
+        Route::post('resend-otp', [CustomerVerificationController::class, 'resendOtp'])->middleware('throttle:otp-request');
+    });
+
+    Route::prefix('customer-verifications')->group(function () {
+        Route::post('initiate', [CustomerVerificationController::class, 'initiateWithCustomer']);
+        Route::post('verify-otp', [CustomerVerificationController::class, 'verifyOtp'])->middleware('throttle:otp-verify');
+        Route::post('resend-otp', [CustomerVerificationController::class, 'resendOtp'])->middleware('throttle:otp-request');
+    });
 
     // Customer Bank Details
     Route::prefix('customer-bank-details')->group(function () {
@@ -430,14 +445,6 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
 
         Route::get('recovery', [ReportController::class, 'recovery']);
         Route::get('recovery/{id}', [ReportController::class, 'recoveryShow']);
-    });
-
-    // Signatures
-    Route::prefix('signatures')->group(function () {
-        Route::get('/', [SignatureController::class, 'index']);
-        Route::post('/', [SignatureController::class, 'store']);
-        Route::get('{id}', [SignatureController::class, 'show']);
-        Route::delete('{id}', [SignatureController::class, 'destroy']);
     });
 
 });

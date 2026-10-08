@@ -113,7 +113,10 @@ class CreateLoanApplicationRequest extends FormRequest
             $errors = $validator->errors();
 
             if (!$errors->has('customer_id') && $this->filled('customer_id')) {
-                if ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $this->input('customer_id'))) {
+                if ($kycRefusal = CustomerLoanEligibilityService::refusalForUnverifiedKyc((int) $this->input('customer_id'))) {
+                    $this->liveLoanRefusal ??= $kycRefusal;
+                    $errors->add('customer_id', $kycRefusal);
+                } elseif ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $this->input('customer_id'))) {
                     $this->liveLoanRefusal ??= $refusal;
                     $errors->add('customer_id', $refusal);
                 }
@@ -134,7 +137,10 @@ class CreateLoanApplicationRequest extends FormRequest
                 if ($errors->has($field) || !is_numeric($jointId)) {
                     continue;
                 }
-                if ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $jointId)) {
+                if ($kycRefusal = CustomerLoanEligibilityService::refusalForUnverifiedKyc((int) $jointId)) {
+                    $this->liveLoanRefusal ??= $kycRefusal;
+                    $errors->add($field, $kycRefusal);
+                } elseif ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $jointId)) {
                     $this->liveLoanRefusal ??= $refusal;
                     $errors->add($field, $refusal);
                 }

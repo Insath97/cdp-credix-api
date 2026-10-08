@@ -26,6 +26,7 @@ use Illuminate\Routing\Controllers\Middleware;
 use App\Enums\LoanApplicationStatus;
 use App\Enums\LoanSecurityType;
 use App\Exceptions\CustomerHasLiveLoanException;
+use App\Exceptions\CustomerKycNotVerifiedException;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Exceptions\InvestmentCollateralException;
 use App\Exceptions\SecurityLimitExceededException;
@@ -340,6 +341,8 @@ class LoanApplicationController extends Controller implements HasMiddleware
             ], 201);
 
         } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
+        } catch (CustomerKycNotVerifiedException $e) {
             return $e->toResponse();
         } catch (InvestmentCollateralException $e) {
             return $e->toResponse();

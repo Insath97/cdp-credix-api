@@ -152,7 +152,7 @@ class CustomerController extends Controller implements HasMiddleware
             ]);
 
             if (!empty($data['guarantors'])) {
-                foreach ($data['guarantors'] as $guarantorData) {
+                foreach ($data['guarantors'] as $guarantorIndex => $guarantorData) {
                     // Documents ride in on the guarantor payload but belong to
                     // the documents table, so they are pulled out before the
                     // guarantor row is written.
@@ -161,7 +161,7 @@ class CustomerController extends Controller implements HasMiddleware
 
                     $guarantor = $customer->guarantors()->create($guarantorData);
 
-                    foreach ($guarantorDocuments as $doc) {
+                    foreach ($guarantorDocuments as $docIndex => $doc) {
                         if (empty($doc['file']) && empty($doc['file_path'])) {
                             continue;
                         }
@@ -177,7 +177,7 @@ class CustomerController extends Controller implements HasMiddleware
                             'guarantor_id'  => $guarantor->id,
                             'customer_id'   => $customer->id,
                             'file_path'     => !empty($doc['file'])
-                                ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
+                                ? $this->handleFileUpload($request, "guarantors.{$guarantorIndex}.documents.{$docIndex}.file", null, 'documents', $customer->id . '_' . $documentName)
                                 : $doc['file_path'],
                         ]);
                     }
@@ -185,7 +185,7 @@ class CustomerController extends Controller implements HasMiddleware
             }
 
             if (!empty($data['documents'])) {
-                foreach ($data['documents'] as $doc) {
+                foreach ($data['documents'] as $docIndex => $doc) {
                     if (empty($doc['file']) && empty($doc['file_path'])) {
                         continue;
                     }
@@ -197,7 +197,7 @@ class CustomerController extends Controller implements HasMiddleware
                         'is_active' => $doc['is_active'] ?? true,
                         'uploaded_at' => now(),
                         'file_path' => !empty($doc['file'])
-                            ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
+                            ? $this->handleFileUpload($request, "documents.{$docIndex}.file", null, 'documents', $customer->id . '_' . $documentName)
                             : $doc['file_path'],
                     ]);
                 }
@@ -446,7 +446,7 @@ class CustomerController extends Controller implements HasMiddleware
                 $customer->guarantors()->delete();
             }
             if (!empty($data['guarantors'])) {
-                foreach ($data['guarantors'] as $guarantorData) {
+                foreach ($data['guarantors'] as $guarantorIndex => $guarantorData) {
                     // Documents ride in on the guarantor payload but belong to
                     // the documents table, so they are pulled out before the
                     // guarantor row is written.
@@ -455,7 +455,7 @@ class CustomerController extends Controller implements HasMiddleware
 
                     $guarantor = $customer->guarantors()->create($guarantorData);
 
-                    foreach ($guarantorDocuments as $doc) {
+                    foreach ($guarantorDocuments as $docIndex => $doc) {
                         if (empty($doc['file']) && empty($doc['file_path'])) {
                             continue;
                         }
@@ -476,7 +476,7 @@ class CustomerController extends Controller implements HasMiddleware
                             'guarantor_id'  => $guarantor->id,
                             'customer_id'   => $customer->id,
                             'file_path'     => !empty($doc['file'])
-                                ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
+                                ? $this->handleFileUpload($request, "guarantors.{$guarantorIndex}.documents.{$docIndex}.file", null, 'documents', $customer->id . '_' . $documentName)
                                 : $doc['file_path'],
                         ]);
                     }
@@ -495,7 +495,7 @@ class CustomerController extends Controller implements HasMiddleware
                 ->whereNull('guarantor_id')
                 ->delete();
             if (!empty($data['documents'])) {
-                foreach ($data['documents'] as $doc) {
+                foreach ($data['documents'] as $docIndex => $doc) {
                     if (empty($doc['file']) && empty($doc['file_path'])) {
                         continue;
                     }
@@ -507,7 +507,7 @@ class CustomerController extends Controller implements HasMiddleware
                         'is_active' => $doc['is_active'] ?? true,
                         'uploaded_at' => now(),
                         'file_path' => !empty($doc['file'])
-                            ? $this->storeUploadedFile($doc['file'], 'documents', $customer->id . '_' . $documentName)
+                            ? $this->handleFileUpload($request, "documents.{$docIndex}.file", $doc['file_path'] ?? null, 'documents', $customer->id . '_' . $documentName)
                             : $doc['file_path'],
                     ]);
                 }

@@ -9,13 +9,10 @@ use App\Traits\FileUploadTrait;
 use App\Traits\ResolvesAuthenticatedCustomerTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\File;
 
 class CustomerDocumentController extends Controller
 {
-    // FileUploadTrait is what provides resolveStoredFile(), which download()
-    // uses to turn a stored path into a readable one. It was referenced
-    // without being used here, so every download died on an undefined method
-    // and the blanket catch reported it as a 500.
     use ActivityLogTrait, FileUploadTrait, ResolvesAuthenticatedCustomerTrait;
 
     /**
@@ -94,9 +91,9 @@ class CustomerDocumentController extends Controller
                 ], 404);
             }
 
-            $absolutePath = $this->resolveStoredFile($document->file_path);
+            $absolutePath = public_path($document->file_path);
 
-            if ($absolutePath === null) {
+            if (!File::exists($absolutePath)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Document file is missing',
