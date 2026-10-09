@@ -10,6 +10,7 @@ use App\Enums\LoanApplicationStatus;
 use App\Models\CustomerBankDetail;
 use App\Models\Customer;
 use App\Models\Setting;
+use App\Services\CustomerVerificationService;
 use Illuminate\Support\Facades\DB;
 use App\Traits\ActivityLogTrait;
 use Illuminate\Support\Facades\Auth;
@@ -105,6 +106,8 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
             }
             $customerbankdetail = CustomerBankDetail::create($data);
 
+            $this->invalidateKyc($customerbankdetail->customer_id);
+
             DB::commit();
 
             $this->logActivity('CREATE', 'Customer bank detail', "Created Customer bank detail: {$customerbankdetail->bank_name} - {$customerbankdetail->account_number}");
@@ -170,7 +173,10 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
             if ($customer) {
                 $data['customer_id'] = $customer->id;
             }
+            $previousCustomerId = $customerbankdetail->customer_id;
             $customerbankdetail->update($data);
+
+            $this->invalidateKyc($previousCustomerId, $customerbankdetail->customer_id);
 
             $this->logActivity('Update', 'Customer bank detail', 'Customer bank detail updated', [
                 'updater_id' => Auth::id(),
@@ -204,6 +210,8 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
             }
 
             $customerbankdetail->delete();
+
+            $this->invalidateKyc($customerbankdetail->customer_id);
 
             $this->logActivity('Delete', 'Customer bank detail', 'Customer bank detail deleted', [
                 'deleter_id' => Auth::id(),
@@ -258,6 +266,19 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
                 'message' => 'Failed to toggle customer bank detail status',
                 'error' => $th->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Bank details are part of the KYC snapshot, so a change to them needs a
+     * fresh OTP verification of the customer(s) concerned.
+     */
+    private function invalidateKyc(?int ...$customerIds): void
+    {
+        foreach (array_unique(array_filter($customerIds)) as $customerId) {
+            if ($customer = Customer::find($customerId)) {
+                app(CustomerVerificationService::class)->invalidateIfChanged($customer);
+            }
         }
     }
 }

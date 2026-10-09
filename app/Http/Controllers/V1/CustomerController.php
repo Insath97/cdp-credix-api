@@ -18,6 +18,7 @@ use App\Models\LoanApplication;
 use App\Models\LoanApplicationStatusHistory;
 use App\Models\User;
 use App\Enums\LoanApplicationStatus;
+use App\Services\CustomerVerificationService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -512,6 +513,9 @@ class CustomerController extends Controller implements HasMiddleware
                     ]);
                 }
             }
+
+            // Edited KYC details need a fresh OTP verification.
+            app(CustomerVerificationService::class)->invalidateIfChanged($customer);
 
             DB::commit();
 

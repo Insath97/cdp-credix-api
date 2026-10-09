@@ -20,6 +20,7 @@ class LoanApplicationWorkflowService
         protected InstallmentScheduleService $installmentScheduleService,
         protected ReferenceNumberService $referenceNumberService,
         protected LoanSecurityLtvService $loanSecurityLtv,
+        protected LoanCustomerConfirmationService $customerConfirmation,
     ) {
     }
 
@@ -55,6 +56,13 @@ class LoanApplicationWorkflowService
             throw new InvalidLoanApplicationTransitionException(
                 'At least one guarantor is required before this loan application can be verified.'
             );
+        }
+
+        // The customer must have confirmed the details, as they stand now,
+        // with OTP 2 before underwriting starts (every co-borrower on a Joint
+        // Loan). A change after confirmation makes it stale and blocks again.
+        if ($to === LoanApplicationStatus::Reviewed) {
+            $this->customerConfirmation->assertConfirmedForReview($loanApplication);
         }
 
         if (in_array($to, [LoanApplicationStatus::Reviewed, LoanApplicationStatus::Verified], true)) {

@@ -18,6 +18,8 @@ use App\Http\Controllers\V1\CountryController;
 use App\Http\Controllers\V1\GroupController;
 use App\Http\Controllers\V1\CustomerController;
 use App\Http\Controllers\V1\CustomerVerificationController;
+use App\Http\Controllers\V1\LoanCustomerConfirmationController;
+use App\Http\Controllers\V1\Public\LoanReviewController;
 use App\Http\Controllers\V1\CustomerLoanEligibilityController;
 use App\Http\Controllers\V1\CustomerInvestmentController;
 use App\Http\Controllers\V1\External\CorePolicyHoldController;
@@ -76,6 +78,13 @@ Route::prefix('v1')->group(function () {
     Route::post('login/verify-otp', [AuthController::class, 'verifyOtp'])->middleware('throttle:otp-verify');
     Route::post('forgot-password', [PasswordChangeController::class, 'forgotPassword'])->middleware('throttle:otp-request');
     Route::post('reset-forgot-password', [PasswordChangeController::class, 'resetForgotPassword'])->middleware('throttle:otp-verify');
+
+    // Customer loan review (OTP 2) -- reached from the SMS link, no login.
+    Route::prefix('public/loan-review/{token}')->group(function () {
+        Route::get('/', [LoanReviewController::class, 'show'])->middleware('throttle:60,1');
+        Route::post('request-otp', [LoanReviewController::class, 'requestOtp'])->middleware('throttle:otp-request');
+        Route::post('confirm', [LoanReviewController::class, 'confirm'])->middleware('throttle:otp-verify');
+    });
 });
 
 /* protected routes */
@@ -282,6 +291,8 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/reopen', [LoanApplicationController::class, 'reopen']);
         Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
+        Route::get('{id}/customer-confirmation', [LoanCustomerConfirmationController::class, 'status']);
+        Route::post('{id}/customer-confirmation/send-link', [LoanCustomerConfirmationController::class, 'sendLink'])->middleware('throttle:otp-request');
     });
 
     Route::prefix('loan-application-status-history')->group(function () {
@@ -442,6 +453,7 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::get('branch-wise', [ReportController::class, 'branchWise']);
         Route::get('customer-wise', [ReportController::class, 'customerWise']);
         Route::get('loan-portfolio', [ReportController::class, 'loanPortfolio']);
+        
 
         Route::get('recovery', [ReportController::class, 'recovery']);
         Route::get('recovery/{id}', [ReportController::class, 'recoveryShow']);

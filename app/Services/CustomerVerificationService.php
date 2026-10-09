@@ -94,6 +94,41 @@ class CustomerVerificationService
     }
 
     /**
+     * Drop the KYC verification if the details no longer match what the
+     * customer confirmed with OTP. A save that changes nothing in the
+     * snapshot (or only non-KYC fields such as assets) leaves it alone.
+     * current_kyc_verification_id is kept as history.
+     */
+    public function invalidateIfChanged(Customer $customer): bool
+    {
+        if (!$customer->is_kyc_verified) {
+            return false;
+        }
+
+        $customer = $customer->fresh(['currentKycVerification']);
+
+        $verified = $customer->currentKycVerification?->snapshot_data ?? [];
+        $current = $this->buildCustomerSnapshot($customer);
+        unset($verified['captured_at'], $current['captured_at']);
+
+        if ($verified == $current) {
+            return false;
+        }
+
+        $customer->update([
+            'is_kyc_verified' => false,
+            'kyc_verified_at' => null,
+        ]);
+
+        Log::info('Customer KYC verification reset after details changed', [
+            'customer_id'     => $customer->id,
+            'verification_id' => $customer->current_kyc_verification_id,
+        ]);
+
+        return true;
+    }
+
+    /**
      * Step 1: Initiate KYC verification (generate snapshot, OTP, JWT and send SMS).
      */
     public function initiate(Customer $customer, ?User $staffUser = null): array
@@ -177,7 +212,9 @@ class CustomerVerificationService
         $verificationId = (int) $claims['review_id'];
         $customerId = (int) $claims['customer_id'];
 
-        return DB::transaction(function () use ($verificationId, $customerId, $claims, $otp, $staffUser) {
+        // Failures that write (attempt count, expired/failed status) are
+        // returned rather than thrown, so the transaction commits them.
+        $result = DB::transaction(function () use ($verificationId, $customerId, $claims, $otp, $staffUser) {
             /** @var CustomerVerification $verification */
             $verification = CustomerVerification::lockForUpdate()->find($verificationId);
 
@@ -195,12 +232,12 @@ class CustomerVerificationService
 
             if ($verification->isExpired()) {
                 $verification->update(['status' => 'expired']);
-                throw new Exception("Verification OTP has expired. Please request a new OTP.");
+                return new Exception("Verification OTP has expired. Please request a new OTP.");
             }
 
             if ($verification->attempts >= self::MAX_ATTEMPTS) {
                 $verification->update(['status' => 'failed']);
-                throw new Exception("Maximum verification attempts exceeded. Please initiate a new verification.");
+                return new Exception("Maximum verification attempts exceeded. Please initiate a new verification.");
             }
 
             $enteredOtpHash = hash('sha256', trim($otp));
@@ -208,7 +245,7 @@ class CustomerVerificationService
             if (!hash_equals($claims['otp_hash'], $enteredOtpHash) || !hash_equals($verification->otp_hash, $enteredOtpHash)) {
                 $verification->increment('attempts');
                 $remaining = self::MAX_ATTEMPTS - $verification->attempts;
-                throw new Exception("Invalid OTP. {$remaining} attempts remaining.");
+                return new Exception("Invalid OTP. {$remaining} attempts remaining.");
             }
 
             // Successfully verified!
@@ -242,6 +279,12 @@ class CustomerVerificationService
                 'customer'     => $customer?->only(['id', 'customer_id', 'full_name', 'id_number', 'is_kyc_verified', 'kyc_verified_at']),
             ];
         });
+
+        if ($result instanceof Exception) {
+            throw $result;
+        }
+
+        return $result;
     }
 
     /**
