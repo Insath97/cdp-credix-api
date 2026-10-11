@@ -244,38 +244,6 @@ class LoanApplication extends Model
     }
 
     /**
-     * Relationship with pledged fixed assets (via the pivot).
-     */
-    public function loanApplicationFixedAssets(): HasMany
-    {
-        return $this->hasMany(LoanApplicationFixedAsset::class);
-    }
-
-    /**
-     * Relationship with pledged moving assets (via the pivot).
-     */
-    public function loanApplicationMovingAssets(): HasMany
-    {
-        return $this->hasMany(LoanApplicationMovingAsset::class);
-    }
-
-    /**
-     * Relationship with linked liabilities (via the pivot).
-     */
-    public function loanApplicationLiabilities(): HasMany
-    {
-        return $this->hasMany(LoanApplicationLiability::class);
-    }
-
-    /**
-     * Relationship with linked bank details (via the pivot).
-     */
-    public function loanApplicationBankDetails(): HasMany
-    {
-        return $this->hasMany(LoanApplicationBankDetail::class);
-    }
-
-    /**
      * The securities pledged against this application (CDP Investment,
      * Property Mortgage or Vehicle). Present on secured loans -- see
      * requiresSecurity() -- and normally more than one of them, since a loan

@@ -104,6 +104,8 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Customer Restore', 'group_name' => 'Customer Management Permissions'],
             ['name' => 'Customer Force Delete', 'group_name' => 'Customer Management Permissions'],
             ['name' => 'Customer Toggle Status', 'group_name' => 'Customer Management Permissions'],
+            // Change bank details, assets and liabilities of a customer on a live loan.
+            ['name' => 'Customer Financials Live Loan Override', 'group_name' => 'Customer Management Permissions'],
 
             /* Customer Bank Detail Management */
             ['name' => 'Customer Bank Detail Index', 'group_name' => 'Customer Bank Detail Management Permissions'],
@@ -123,12 +125,6 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Application Create', 'group_name' => 'Application Management Permissions'],
             ['name' => 'Application Update', 'group_name' => 'Application Management Permissions'],
             ['name' => 'Application Delete', 'group_name' => 'Application Management Permissions'],
-
-            /* Application History Management */
-            ['name' => 'Application History Index', 'group_name' => 'Application History Management Permissions'],
-            ['name' => 'Application History Create', 'group_name' => 'Application History Management Permissions'],
-            ['name' => 'Application History Update', 'group_name' => 'Application History Management Permissions'],
-            ['name' => 'Application History Delete', 'group_name' => 'Application History Management Permissions'],
 
             /* Fixed Asset Management */
             ['name' => 'Fixed Asset Index', 'group_name' => 'Fixed Asset Management Permissions'],
@@ -207,7 +203,6 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Legal Document Update', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Legal Document Delete', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Legal Document Toggle Status', 'group_name' => 'Legal Management Permissions'],
-            ['name' => 'Legal Document Sign', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Loan Application Disburse', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Cancel', 'group_name' => 'Loan Application Management Permissions'],
 
@@ -251,26 +246,6 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Loan Application Customer Create', 'group_name' => 'Loan Application Customer Management Permissions'],
             ['name' => 'Loan Application Customer Update', 'group_name' => 'Loan Application Customer Management Permissions'],
             ['name' => 'Loan Application Customer Delete', 'group_name' => 'Loan Application Customer Management Permissions'],
-
-            /* Loan Application Fixed Asset Management */
-            ['name' => 'Loan Application Fixed Asset Index', 'group_name' => 'Loan Application Fixed Asset Management Permissions'],
-            ['name' => 'Loan Application Fixed Asset Create', 'group_name' => 'Loan Application Fixed Asset Management Permissions'],
-            ['name' => 'Loan Application Fixed Asset Delete', 'group_name' => 'Loan Application Fixed Asset Management Permissions'],
-
-            /* Loan Application Moving Asset Management */
-            ['name' => 'Loan Application Moving Asset Index', 'group_name' => 'Loan Application Moving Asset Management Permissions'],
-            ['name' => 'Loan Application Moving Asset Create', 'group_name' => 'Loan Application Moving Asset Management Permissions'],
-            ['name' => 'Loan Application Moving Asset Delete', 'group_name' => 'Loan Application Moving Asset Management Permissions'],
-
-            /* Loan Application Liability Management */
-            ['name' => 'Loan Application Liability Index', 'group_name' => 'Loan Application Liability Management Permissions'],
-            ['name' => 'Loan Application Liability Create', 'group_name' => 'Loan Application Liability Management Permissions'],
-            ['name' => 'Loan Application Liability Delete', 'group_name' => 'Loan Application Liability Management Permissions'],
-
-            /* Loan Application Bank Detail Management */
-            ['name' => 'Loan Application Bank Detail Index', 'group_name' => 'Loan Application Bank Detail Management Permissions'],
-            ['name' => 'Loan Application Bank Detail Create', 'group_name' => 'Loan Application Bank Detail Management Permissions'],
-            ['name' => 'Loan Application Bank Detail Delete', 'group_name' => 'Loan Application Bank Detail Management Permissions'],
 
             /* Loan Installment Management */
             ['name' => 'Loan Installment Index', 'group_name' => 'Loan Installment Management Permissions'],

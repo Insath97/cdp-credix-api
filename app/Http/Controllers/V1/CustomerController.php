@@ -4,6 +4,7 @@ namespace App\Http\Controllers\V1;
 
 use App\Traits\ActivityLogTrait;
 use App\Traits\FileUploadTrait;
+use App\Traits\GuardsCustomerLoanRecords;
 use App\Traits\ScopesToUserBranch;
 
 use App\Http\Controllers\Controller;
@@ -30,7 +31,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class CustomerController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait, FileUploadTrait, ScopesToUserBranch;
+    use ActivityLogTrait, FileUploadTrait, GuardsCustomerLoanRecords, ScopesToUserBranch;
 
     public function __construct(protected NotificationService $notificationService)
     {
@@ -391,6 +392,16 @@ class CustomerController extends Controller implements HasMiddleware
             // employee (see Employee::mergeRecommenderSnapshot).
             $data = Employee::mergeRecommenderSnapshot($data);
 
+            // Only the record lists that really changed are rewritten, and
+            // while the customer is on a live loan only a user with the
+            // live-loan override permission may change them
+            // (GuardsCustomerLoanRecords).
+            $changedLists = $this->changedCustomerRecordLists($customer, $data);
+            if ($changedLists && ($locked = $this->customerRecordsLocked($customer->id))) {
+                DB::rollBack();
+                return $locked;
+            }
+
             $customer->update($data);
 
             if (array_filter($data, fn ($key) => in_array($key, ['gn_division', 'ds_division', 'district', 'province']) && !empty($data[$key]), ARRAY_FILTER_USE_KEY)) {
@@ -403,33 +414,33 @@ class CustomerController extends Controller implements HasMiddleware
             }
 
             // Bank Details
-            $customer->bankDetails()->delete();
-            if (!empty($data['bank_details'])) {
-                foreach ($data['bank_details'] as $bankDetail) {
+            if (in_array('bank_details', $changedLists, true)) {
+                $customer->bankDetails()->delete();
+                foreach ($data['bank_details'] ?? [] as $bankDetail) {
                     $customer->bankDetails()->create($bankDetail);
                 }
             }
 
             // Fixed Assets
-            $customer->fixedAssets()->delete();
-            if (!empty($data['fixed_assets'])) {
-                foreach ($data['fixed_assets'] as $fixedAsset) {
+            if (in_array('fixed_assets', $changedLists, true)) {
+                $customer->fixedAssets()->delete();
+                foreach ($data['fixed_assets'] ?? [] as $fixedAsset) {
                     $customer->fixedAssets()->create($fixedAsset);
                 }
             }
 
             // Moving Assets
-            $customer->movingAssets()->delete();
-            if (!empty($data['moving_assets'])) {
-                foreach ($data['moving_assets'] as $movingAsset) {
+            if (in_array('moving_assets', $changedLists, true)) {
+                $customer->movingAssets()->delete();
+                foreach ($data['moving_assets'] ?? [] as $movingAsset) {
                     $customer->movingAssets()->create($movingAsset);
                 }
             }
 
             // Liabilities
-            $customer->liabilities()->delete();
-            if (!empty($data['liabilities'])) {
-                foreach ($data['liabilities'] as $liability) {
+            if (in_array('liabilities', $changedLists, true)) {
+                $customer->liabilities()->delete();
+                foreach ($data['liabilities'] ?? [] as $liability) {
                     $customer->liabilities()->create($liability);
                 }
             }

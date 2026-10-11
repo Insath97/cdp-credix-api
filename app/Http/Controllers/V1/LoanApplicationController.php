@@ -389,10 +389,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 'approvedByUser:'.User::SUMMARY_COLUMNS,
                 'offerRespondedByUser:'.User::SUMMARY_COLUMNS,
                 'loanApplicationGuarantors.guarantor',
-                'loanApplicationFixedAssets',
-                'loanApplicationMovingAssets',
-                'loanApplicationLiabilities',
-                'loanApplicationBankDetails',
                 'securities.documents',
                 'securities.lendingMortgage',
                 'installments',
@@ -414,6 +410,16 @@ class LoanApplicationController extends Controller implements HasMiddleware
                     'message' => 'Loan application not found',
                 ], 404);
             }
+
+            // Assets, liabilities and bank accounts are declared on the
+            // customer, not per loan. These keys carry the primary borrower's
+            // own records for the screens and legal templates that read them;
+            // a group loan has no primary borrower, so they stay empty there.
+            $borrower = $loanApplication->customer;
+            $loanApplication->setRelation('loanApplicationFixedAssets', $borrower?->fixedAssets ?? collect());
+            $loanApplication->setRelation('loanApplicationMovingAssets', $borrower?->movingAssets ?? collect());
+            $loanApplication->setRelation('loanApplicationLiabilities', $borrower?->liabilities ?? collect());
+            $loanApplication->setRelation('loanApplicationBankDetails', $borrower?->bankDetails ?? collect());
 
             return response()->json([
                 'status'  => 'success',

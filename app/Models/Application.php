@@ -60,11 +60,6 @@ class Application extends Model
         return $this->hasMany(Customer::class, 'current_application_id');
     }
 
-    public function applicationHistories(): HasMany
-    {
-        return $this->hasMany(ApplicationHistory::class);
-    }
-
     public function guarantors(): HasMany
     {
         return $this->hasMany(Guarantor::class);

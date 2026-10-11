@@ -27,7 +27,6 @@ use App\Http\Controllers\V1\CustomerBankDetailController;
 use App\Http\Controllers\V1\GuarantorController;
 use App\Http\Controllers\V1\LiabilityController;
 use App\Http\Controllers\V1\ApplicationController;
-use App\Http\Controllers\V1\ApplicationHistoryController;
 use App\Http\Controllers\V1\FixedAssestsController;
 use App\Http\Controllers\V1\MovingAssestsController;
 use App\Http\Controllers\V1\DocumentController;
@@ -42,10 +41,6 @@ use App\Http\Controllers\V1\GroupLoanController;
 use App\Http\Controllers\V1\GroupLoanItemController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
 use App\Http\Controllers\V1\LoanApplicationCustomerController;
-use App\Http\Controllers\V1\LoanApplicationFixedAssetController;
-use App\Http\Controllers\V1\LoanApplicationMovingAssetController;
-use App\Http\Controllers\V1\LoanApplicationLiabilityController;
-use App\Http\Controllers\V1\LoanApplicationBankDetailController;
 use App\Http\Controllers\V1\LoanSecurityController;
 use App\Http\Controllers\V1\LendingMortgageController;
 use App\Http\Controllers\V1\LoanInstallmentController;
@@ -61,7 +56,6 @@ use App\Http\Controllers\V1\CreditScoreController;
 use App\Http\Controllers\V1\SettingController;
 use App\Http\Controllers\V1\AdminDashboardController;
 use App\Http\Controllers\V1\ReportController;
-use App\Http\Controllers\V1\SignatureController;
 use App\Http\Controllers\V1\Customer\CustomerDashboardController;
 use App\Http\Controllers\V1\Customer\CustomerProfileController;
 use App\Http\Controllers\V1\Customer\CustomerLoanController;
@@ -229,9 +223,6 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     // Applications
     Route::apiResource('applications', ApplicationController::class);
 
-    // Application Histories
-    Route::apiResource('application-histories', ApplicationHistoryController::class);
-
     // Fixed Assets
     Route::apiResource('fixed-assests', FixedAssestsController::class);
 
@@ -370,18 +361,6 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
     Route::apiResource('loan-application-customers', LoanApplicationCustomerController::class)
         ->only(['index', 'store', 'show', 'destroy'])
         ->parameters(['loan-application-customers' => 'id']);
-
-    // Loan Application Fixed Assets (pledged assets)
-    Route::apiResource('loan-application-fixed-assets', LoanApplicationFixedAssetController::class)->only(['index', 'store', 'show', 'destroy']);
-
-    // Loan Application Moving Assets (pledged assets)
-    Route::apiResource('loan-application-moving-assets', LoanApplicationMovingAssetController::class)->only(['index', 'store', 'show', 'destroy']);
-
-    // Loan Application Liabilities (linked liabilities)
-    Route::apiResource('loan-application-liabilities', LoanApplicationLiabilityController::class)->only(['index', 'store', 'show', 'destroy']);
-
-    // Loan Application Bank Details (linked bank details)
-    Route::apiResource('loan-application-bank-details', LoanApplicationBankDetailController::class)->only(['index', 'store', 'show', 'destroy']);
 
     // Loan Installments
     Route::prefix('loan-installments')->group(function () {

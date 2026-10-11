@@ -8,8 +8,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\MovingAssests;
 use App\Models\Customer;
-use App\Enums\LoanApplicationStatus;
 use App\Traits\ActivityLogTrait;
+use App\Traits\GuardsCustomerLoanRecords;
 use App\Http\Requests\CreateMovingAssetsRequest;
 use App\Http\Requests\UpdateMovingAssetsRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -17,7 +17,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class MovingAssestsController extends Controller implements HasMiddleware
 {
-     use ActivityLogTrait;
+     use ActivityLogTrait, GuardsCustomerLoanRecords;
 
      public static function middleware(): array
      {
@@ -48,17 +48,7 @@ class MovingAssestsController extends Controller implements HasMiddleware
              }
 
              if ($request->has('used_for_loan')) {
-                 $terminalStatuses = [
-                     LoanApplicationStatus::Rejected->value,
-                     LoanApplicationStatus::Cancelled->value,
-                     LoanApplicationStatus::Closed->value,
-                 ];
-
-                 if ($request->boolean('used_for_loan')) {
-                     $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
-                 } else {
-                     $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
-                 }
+                 $query->usedForLoan($request->boolean('used_for_loan'));
              }
 
              $moving_assests = $query->orderBy('created_at', 'desc')->paginate($perPage);
@@ -92,6 +82,9 @@ class MovingAssestsController extends Controller implements HasMiddleware
                  ->first();
              if ($customer) {
                  $data['customer_id'] = $customer->id;
+             }
+             if ($locked = $this->customerRecordsLocked($data['customer_id'])) {
+                 return $locked;
              }
              $moving_assests = MovingAssests::create($data);
 
@@ -156,6 +149,9 @@ class MovingAssestsController extends Controller implements HasMiddleware
              if ($customer) {
                  $data['customer_id'] = $customer->id;
              }
+             if ($locked = $this->customerRecordsLocked($moving_assests->customer_id, $data['customer_id'] ?? null)) {
+                 return $locked;
+             }
              $moving_assests->update($data);
 
              $this->logActivity('UPDATE', 'Moving Assets', "Updated moving assets: {$moving_assests->id}", $data);
@@ -184,6 +180,10 @@ class MovingAssestsController extends Controller implements HasMiddleware
                      'status' => 'error',
                      'message' => 'Moving assets not found'
                  ], 404);
+             }
+
+             if ($locked = $this->customerRecordsLocked($moving_assests->customer_id)) {
+                 return $locked;
              }
 
              $moving_assests->delete();

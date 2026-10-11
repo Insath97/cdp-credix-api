@@ -8,8 +8,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use App\Models\FixedAssests;
 use App\Models\Customer;
-use App\Enums\LoanApplicationStatus;
 use App\Traits\ActivityLogTrait;
+use App\Traits\GuardsCustomerLoanRecords;
 use App\Http\Requests\CreateFixedAssetsRequest;
 use App\Http\Requests\UpdateFixedAssetsRequest;
 
@@ -19,7 +19,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class FixedAssestsController extends Controller implements HasMiddleware
 {
-     use ActivityLogTrait;
+     use ActivityLogTrait, GuardsCustomerLoanRecords;
 
      public static function middleware(): array
      {
@@ -50,17 +50,7 @@ class FixedAssestsController extends Controller implements HasMiddleware
             }
 
             if ($request->has('used_for_loan')) {
-                $terminalStatuses = [
-                    LoanApplicationStatus::Rejected->value,
-                    LoanApplicationStatus::Cancelled->value,
-                    LoanApplicationStatus::Closed->value,
-                ];
-
-                if ($request->boolean('used_for_loan')) {
-                    $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
-                } else {
-                    $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
-                }
+                $query->usedForLoan($request->boolean('used_for_loan'));
             }
 
             $fixed_assests = $query->orderBy('created_at', 'desc')->paginate($perPage);
@@ -94,6 +84,9 @@ class FixedAssestsController extends Controller implements HasMiddleware
                 ->first();
             if ($customer) {
                 $data['customer_id'] = $customer->id;
+            }
+            if ($locked = $this->customerRecordsLocked($data['customer_id'])) {
+                return $locked;
             }
             $fixed_assests = FixedAssests::create($data);
 
@@ -158,6 +151,9 @@ class FixedAssestsController extends Controller implements HasMiddleware
             if ($customer) {
                 $data['customer_id'] = $customer->id;
             }
+            if ($locked = $this->customerRecordsLocked($fixed_assests->customer_id, $data['customer_id'] ?? null)) {
+                return $locked;
+            }
             $fixed_assests->update($data);
 
             $this->logActivity('Update', 'Fixed Assets', 'Fixed assets updated', [
@@ -191,6 +187,10 @@ class FixedAssestsController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            if ($locked = $this->customerRecordsLocked($fixed_assests->customer_id)) {
+                return $locked;
+            }
+
             $fixed_assests->delete();
 
             $this->logActivity('Delete', 'Fixed Assets', 'Fixed assets deleted (soft)', [
@@ -221,6 +221,10 @@ class FixedAssestsController extends Controller implements HasMiddleware
                     'status' => 'error',
                     'message' => 'Fixed assets not found'
                 ], 404);
+            }
+
+            if ($locked = $this->customerRecordsLocked($fixed_assests->customer_id)) {
+                return $locked;
             }
 
             $fixed_assests->is_active = !$fixed_assests->is_active;

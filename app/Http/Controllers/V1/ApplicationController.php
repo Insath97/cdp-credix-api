@@ -95,7 +95,7 @@ class ApplicationController extends Controller implements HasMiddleware
      public function show(string $id)
      {
          try {
-             $application = Application::with(['customers', 'applicationHistories', 'guarantors'])->find($id);
+             $application = Application::with(['customers', 'guarantors'])->find($id);
 
              if (!$application) {
                  return response()->json([

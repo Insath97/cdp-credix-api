@@ -23,10 +23,14 @@ class CustomerVerificationService
 
     /**
      * Build an immutable snapshot of customer KYC details.
+     *
+     * Bank details are deliberately not part of it: they are financial
+     * records like assets and liabilities, not identity, so changing them
+     * does not call for a new OTP verification.
      */
     public function buildCustomerSnapshot(Customer $customer): array
     {
-        $customer->loadMissing(['customerDetail', 'bankDetails']);
+        $customer->loadMissing(['customerDetail']);
 
         return [
             'captured_at' => now()->toIso8601String(),
@@ -83,12 +87,6 @@ class CustomerVerificationService
                     'district'    => $customer->customerDetail->district,
                     'province'    => $customer->customerDetail->province,
                 ] : null,
-                'bank_details' => $customer->bankDetails->map(fn ($bank) => [
-                    'bank_name'      => $bank->bank_name,
-                    'branch_name'    => $bank->branch_name,
-                    'account_number' => $bank->account_number,
-                    'account_name'   => $bank->account_name,
-                ])->toArray(),
             ],
         ];
     }
@@ -109,7 +107,8 @@ class CustomerVerificationService
 
         $verified = $customer->currentKycVerification?->snapshot_data ?? [];
         $current = $this->buildCustomerSnapshot($customer);
-        unset($verified['captured_at'], $current['captured_at']);
+        // Snapshots taken before bank details left the KYC still carry them.
+        unset($verified['captured_at'], $current['captured_at'], $verified['customer']['bank_details']);
 
         if ($verified == $current) {
             return false;

@@ -242,11 +242,6 @@ class Customer extends Model
         return $this->hasMany(Liability::class, 'customer_id');
     }
 
-    public function applicationHistories(): HasMany
-    {
-        return $this->hasMany(ApplicationHistory::class);
-    }
-
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
