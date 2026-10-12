@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('customer_id')->nullable()->constrained('customers')->nullOnDelete();
             $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('type')->index();
-            $table->enum('channel', ['email', 'sms'])->default('email')->index();
+            $table->enum('channel', ['email', 'sms', 'system'])->default('email')->index();
             $table->string('recipient');
             $table->string('subject')->nullable();
             $table->text('message');

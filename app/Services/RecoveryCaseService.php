@@ -324,36 +324,21 @@ class RecoveryCaseService
     }
 
     /**
-     * Tell the staff role a case has been opened and still needs an agent.
-     * Without this an auto-created case would sit unassigned indefinitely,
-     * since nothing else surfaces it. Mirrors the staff SMS fan-out in
+     * Tell staff a case has been opened and still needs an agent. Without
+     * this an auto-created case would sit unassigned indefinitely, since
+     * nothing else surfaces it. Mirrors the staff system notification in
      * LoanApplicationController::store().
      */
     public function notifyStaffOfUnassignedCase(RecoveryCase $case, LoanApplication $loanApplication, string $stageLabel): void
     {
-        $staffRole = Role::where('name', config('notifications.staff_role'))->first();
-
-        if (!$staffRole) {
-            return;
-        }
-
         $customerName = $loanApplication->customer?->full_name ?? 'a customer';
         $message = "CDP Capital: {$case->case_no} opened for {$stageLabel} ({$customerName}). Please assign an agent.";
 
-        foreach ($staffRole->users as $staffUser) {
-            $staffPhone = $staffUser->employee?->phone_primary;
-
-            if (empty($staffPhone)) {
-                continue;
-            }
-
-            $this->notificationService->sendSms(
-                'recovery_case_needs_agent',
-                $staffPhone,
-                $message,
-                ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
-            );
-        }
+        $this->notificationService->sendSystemToStaff(
+            'recovery_case_needs_agent',
+            $message,
+            ['loan_application_id' => $loanApplication->id]
+        );
     }
 
     /**

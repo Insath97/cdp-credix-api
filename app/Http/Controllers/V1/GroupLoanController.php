@@ -374,23 +374,14 @@ class GroupLoanController extends Controller implements HasMiddleware
 
             $this->logActivity('CREATE', 'GroupLoan', "Created group loan ID: {$groupLoan->id}", $data);
 
-            $staffRole = Role::where('name', config('notifications.staff_role'))->first();
-            if ($staffRole) {
-                foreach ($staffRole->users as $staffUser) {
-                    $staffPhone = $staffUser->employee?->phone_primary;
-                    if (!empty($staffPhone)) {
-                        $this->notificationService->sendSms(
-                            'group_loan_submitted',
-                            $staffPhone,
-                            'CDP Capital: New group loan application pending for review.',
-                            // Names the loan so the appended reference can
-                            // reach it; without this the reviewer was told a
-                            // group loan was waiting but not which one.
-                            ['user_id' => $staffUser->id, 'loan_application_id' => $groupLoan->loanApplication?->id]
-                        );
-                    }
-                }
-            }
+            $this->notificationService->sendSystemToStaff(
+                'group_loan_submitted',
+                'CDP Capital: New group loan application pending for review.',
+                // Names the loan so the appended reference can reach it;
+                // without this the reviewer was told a group loan was
+                // waiting but not which one.
+                ['loan_application_id' => $groupLoan->loanApplication?->id]
+            );
 
             return response()->json([
                 'status'  => 'success',

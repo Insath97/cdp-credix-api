@@ -141,19 +141,12 @@ class PaymentController extends Controller implements HasMiddleware
      * Store a newly created payment and apply it to the installment/loan balance.
      */
     /**
-     * SMS the staff role that a payment landed: who paid, how much, when, and
-     * whether it closed a live recovery case. Reaches staff through their
-     * employee record, the same way every other staff notification does, so a
-     * staff user with no employee phone is simply skipped.
+     * Notify staff in-app that a payment landed: who paid, how much, when, and
+     * whether it closed a live recovery case. A system notification on the
+     * admin dashboard, not an SMS.
      */
     protected function notifyStaffOfPayment(Payment $payment, LoanApplication $loanApplication, int $casesResolved, string $paidOn): void
     {
-        $staffRole = Role::where('name', config('notifications.staff_role'))->first();
-
-        if (!$staffRole) {
-            return;
-        }
-
         $payer = $payment->customer?->full_name
             ?? $loanApplication->customer?->full_name
             ?? 'the customer';
@@ -174,29 +167,19 @@ class PaymentController extends Controller implements HasMiddleware
             $caseLine
         );
 
-        foreach ($staffRole->users as $staffUser) {
-            $staffPhone = $staffUser->employee?->phone_primary;
-
-            if (empty($staffPhone)) {
-                continue;
-            }
-
-            try {
-                $this->notificationService->sendSms(
-                    'payment_received_staff',
-                    $staffPhone,
-                    $message,
-                    ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
-                );
-            } catch (\Throwable $th) {
-                // The payment is already recorded; a failed staff SMS must not
-                // turn a successful receipt into an error response.
-                Log::warning('Failed to notify staff of a payment', [
-                    'payment_id' => $payment->id,
-                    'user_id'    => $staffUser->id,
-                    'error'      => $th->getMessage(),
-                ]);
-            }
+        try {
+            $this->notificationService->sendSystemToStaff(
+                'payment_received_staff',
+                $message,
+                ['loan_application_id' => $loanApplication->id]
+            );
+        } catch (\Throwable $th) {
+            // The payment is already recorded; a failed staff notification
+            // must not turn a successful receipt into an error response.
+            Log::warning('Failed to notify staff of a payment', [
+                'payment_id' => $payment->id,
+                'error'      => $th->getMessage(),
+            ]);
         }
     }
 
@@ -391,7 +374,7 @@ class PaymentController extends Controller implements HasMiddleware
                 // Tell the back office the money came in, and say so on the
                 // same run that closed the case -- otherwise the only record an
                 // admin has of a recovery case going quiet is the case list
-                // changing colour. Mirrors the staff SMS fan-out in
+                // changing colour. Mirrors the staff notification fan-out in
                 // RecoveryCaseService::notifyStaffOfUnassignedCase().
                 if ($notify) {
                     $this->notifyStaffOfPayment($payment, $loanApplication, $casesResolved, $paidOn);

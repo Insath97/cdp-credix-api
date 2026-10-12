@@ -296,20 +296,11 @@ class LoanApplicationController extends Controller implements HasMiddleware
                 )),
             ]);
 
-            $staffRole = Role::where('name', config('notifications.staff_role'))->first();
-            if ($staffRole) {
-                foreach ($staffRole->users as $staffUser) {
-                    $staffPhone = $staffUser->employee?->phone_primary;
-                    if (!empty($staffPhone)) {
-                        $this->notificationService->sendSms(
-                            'application_submitted',
-                            $staffPhone,
-                            'CDP Capital: New loan application pending for review.',
-                            ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
-                        );
-                    }
-                }
-            }
+            $this->notificationService->sendSystemToStaff(
+                'application_submitted',
+                'CDP Capital: New loan application pending for review.',
+                ['loan_application_id' => $loanApplication->id]
+            );
 
             return response()->json([
                 'status'  => 'success',

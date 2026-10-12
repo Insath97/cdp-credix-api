@@ -7,8 +7,10 @@ use App\Mail\GenericNotificationMail;
 use App\Models\Customer;
 use App\Models\LoanApplication;
 use App\Models\Notification;
+use App\Models\User;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Spatie\Permission\Models\Permission;
 
 class NotificationService
 {
@@ -135,6 +137,50 @@ class NotificationService
         }
 
         return $notification;
+    }
+
+    /**
+     * Notify staff in-app: every user holding the Notification Index
+     * permission, through a role or directly. Who receives these is decided
+     * by permission alone, never by role name. Nothing is sent by SMS or
+     * email -- staff read them on the admin dashboard.
+     */
+    public function sendSystemToStaff(string $type, string $message, array $context = []): void
+    {
+        // The model, not the name: User's default guard is 'web', and the
+        // permissions live on 'api'.
+        $permission = Permission::where('name', 'Notification Index')
+            ->where('guard_name', 'api')
+            ->first();
+
+        if (!$permission) {
+            return;
+        }
+
+        foreach (User::permission($permission)->get() as $staffUser) {
+            $this->sendSystem($type, $staffUser, $message, $context);
+        }
+    }
+
+    /**
+     * Record an in-app notification for one staff user. The row itself is the
+     * notification: the admin header bell reads it through
+     * GET /notifications?mine=1, which filters on user_id.
+     */
+    public function sendSystem(string $type, User $user, string $message, array $context = []): Notification
+    {
+        $message = $this->personalise($message, $context);
+
+        return Notification::create(array_merge($context, [
+            'type'         => $type,
+            'channel'      => 'system',
+            'user_id'      => $user->id,
+            'recipient'    => $user->email ?: ($user->username ?: $user->name),
+            'message'      => $message,
+            'message_hash' => hash('sha256', $message),
+            'status'       => 'sent',
+            'sent_at'      => now(),
+        ]));
     }
 
     /**
