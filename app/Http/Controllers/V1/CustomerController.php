@@ -155,9 +155,7 @@ class CustomerController extends Controller implements HasMiddleware
 
             if (!empty($data['guarantors'])) {
                 foreach ($data['guarantors'] as $guarantorIndex => $guarantorData) {
-                    // Documents ride in on the guarantor payload but belong to
-                    // the documents table, so they are pulled out before the
-                    // guarantor row is written.
+                    
                     $guarantorDocuments = $guarantorData['documents'] ?? [];
                     unset($guarantorData['documents']);
 

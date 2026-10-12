@@ -32,29 +32,29 @@ class SendSmsJob implements ShouldQueue
             'numbers'         => $this->numbers,
         ]);
 
-        $sent = $smsService->sendSms($this->numbers, $this->message);
+        // $sent = $smsService->sendSms($this->numbers, $this->message);
 
-        if ($this->notificationId) {
-            $notification = Notification::find($this->notificationId);
+        // if ($this->notificationId) {
+        //     $notification = Notification::find($this->notificationId);
 
-            if ($notification) {
-                $notification->update($sent
-                    ? ['status' => 'sent', 'sent_at' => now()]
-                    : ['status' => 'failed', 'error' => 'SMS gateway rejected the message. Check logs for details.']
-                );
-            }
-        }
+        //     if ($notification) {
+        //         $notification->update($sent
+        //             ? ['status' => 'sent', 'sent_at' => now()]
+        //             : ['status' => 'failed', 'error' => 'SMS gateway rejected the message. Check logs for details.']
+        //         );
+        //     }
+        // }
 
-        if ($sent) {
-            Log::info('SendSmsJob completed successfully', [
-                'notification_id' => $this->notificationId,
-                'numbers'         => $this->numbers,
-            ]);
-        } else {
-            Log::error('SendSmsJob failed: SMS gateway rejected the message', [
-                'notification_id' => $this->notificationId,
-                'numbers'         => $this->numbers,
-            ]);
-        }
+        // if ($sent) {
+        //     Log::info('SendSmsJob completed successfully', [
+        //         'notification_id' => $this->notificationId,
+        //         'numbers'         => $this->numbers,
+        //     ]);
+        // } else {
+        //     Log::error('SendSmsJob failed: SMS gateway rejected the message', [
+        //         'notification_id' => $this->notificationId,
+        //         'numbers'         => $this->numbers,
+        //     ]);
+        // }
     }
 }

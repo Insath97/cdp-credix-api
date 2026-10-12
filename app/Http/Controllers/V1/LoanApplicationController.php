@@ -211,15 +211,6 @@ class LoanApplicationController extends Controller implements HasMiddleware
 
             $data = Employee::mergeRecommenderSnapshot($data);
 
-            // Secured loan: the securities are prepared before anything is
-            // written. The request has already made sure a Standard Borrowing
-            // loan carries at least one and any other loan carries none. For a
-            // CDP Investment this asks CDP Core (ownership, approval, maturity)
-            // -- an HTTP call, so outside the transaction; the one-live-loan-per
-            // -policy rule is re-checked under the lock below. What the whole
-            // collection is worth, and whether that covers the amount asked for,
-            // is settled here too: it has to be settled before anything is
-            // written, so a refused loan leaves no half-written securities.
             $securityRows = [];
             if (!empty($data['securities'])) {
                 $securityRows = $this->loanSecurityService->prepareAll(
