@@ -13,22 +13,11 @@ return new class extends Migration
     {
         Schema::create('loan_application_securities', function (Blueprint $table) {
             $table->id();
-
-            // Securities live and die with the application. Multiple securities may secure one application.
             $table->foreignId('loan_application_id')->constrained('loan_applications')->cascadeOnDelete();
-
-            // cdp_investment | property_mortgage | vehicle (App\Enums\LoanSecurityType).
-            // Only the chosen type's columns below are filled; the rest stay null.
             $table->string('security_type', 30)->index();
             $table->string('security_plan', 50)->nullable();
-            $table->foreignId('lending_mortgage_id')
-                ->nullable()
-                ->after('security_plan')
-                ->constrained('lending_mortgages')
-                ->nullOnDelete();
+            $table->foreignId('lending_mortgage_id')->nullable();
 
-            // CDP Investment. The policy is checked against CDP Core on the way in;
-            // investment_details keeps what Core reported at that moment.
             $table->string('investment_nic', 20)->nullable();
             $table->string('policy_number', 100)->nullable()->index();
             $table->json('investment_details')->nullable();

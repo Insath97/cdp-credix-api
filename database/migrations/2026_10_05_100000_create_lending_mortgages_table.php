@@ -22,6 +22,15 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        // loan_application_securities is created earlier, so its link to
+        // this table can only be constrained once this table exists.
+        Schema::table('loan_application_securities', function (Blueprint $table) {
+            $table->foreign('lending_mortgage_id')
+                ->references('id')
+                ->on('lending_mortgages')
+                ->nullOnDelete();
+        });
+
         DB::table('lending_mortgages')->insert([
             // CDP Investment plans
             [
@@ -117,6 +126,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::table('loan_application_securities', function (Blueprint $table) {
+            $table->dropForeign(['lending_mortgage_id']);
+        });
+
         Schema::dropIfExists('lending_mortgages');
     }
 };
