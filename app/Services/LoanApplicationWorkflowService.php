@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Exceptions\SecurityLimitExceededException;
+use App\Models\Customer;
 use App\Models\Document;
 use App\Models\LoanApplication;
 use App\Models\LoanApplicationSecurity;
@@ -100,6 +101,13 @@ class LoanApplicationWorkflowService
                     : ($extra['is_active'] ?? $loanApplication->is_active),
             ]));
 
+            // One KYC verification covers one loan. Once the loan lets go of
+            // its borrowers, their verification is spent: the next loan must
+            // confirm the details as they stand then, with a fresh OTP.
+            if ($from->holdsBorrowers() && !$to->holdsBorrowers()) {
+                $this->resetBorrowerKyc($loanApplication);
+            }
+
             $loanApplication->application()->update([
                 'status' => $to->toApplicationStatus(),
             ]);
@@ -135,6 +143,29 @@ class LoanApplicationWorkflowService
                 'installments',
             ]);
         });
+    }
+
+    /**
+     * Drop the KYC verification of everyone the loan held: the primary
+     * borrower, co-borrowers and group members. The verification rows are
+     * kept as history; only the customer flag goes back to unverified.
+     */
+    protected function resetBorrowerKyc(LoanApplication $loanApplication): void
+    {
+        $customerIds = $loanApplication->loanApplicationCustomers()
+            ->pluck('customer_id')
+            ->push($loanApplication->customer_id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($customerIds->isEmpty()) {
+            return;
+        }
+
+        Customer::whereIn('id', $customerIds)
+            ->where('is_kyc_verified', true)
+            ->update(['is_kyc_verified' => false, 'kyc_verified_at' => null]);
     }
 
     /**

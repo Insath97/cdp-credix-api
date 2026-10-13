@@ -74,7 +74,7 @@ class LoanCustomerConfirmationService
                 'id'                      => $loanApplication->id,
                 'reference'               => $loanApplication->reference(),
                 'product'                 => $product?->name,
-                'loan_type'               => $product?->loanType?->name,
+                'loan_type'               => $product?->loanType?->title,
                 'requested_amount'        => $loanApplication->requested_amount,
                 'interest_rate'           => $loanApplication->interest_rate,
                 'interest_type'           => $loanApplication->interest_type,
@@ -173,7 +173,7 @@ class LoanCustomerConfirmationService
                     ->whereIn('status', [LoanCustomerConfirmation::STATUS_PENDING, LoanCustomerConfirmation::STATUS_CONFIRMED])
                     ->update(['status' => LoanCustomerConfirmation::STATUS_SUPERSEDED]);
 
-                $token = bin2hex(random_bytes(32));
+                $token = bin2hex(random_bytes(16));
                 $expiresAt = now()->addHours(self::LINK_TTL_HOURS);
 
                 $confirmation = LoanCustomerConfirmation::create([

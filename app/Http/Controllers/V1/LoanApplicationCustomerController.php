@@ -382,6 +382,18 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 ], 422);
             }
 
+            // The first member a group loan was created with is its leader
+            // (loan_applications.customer_id), and the leader stays for the
+            // life of the loan: the review link and OTP 2 go to them.
+            if ($groupLoan && (int) $loanApplication->customer_id === (int) $record->customer_id) {
+                $name = $record->member_name ?: ($record->customer?->full_name ?: 'This member');
+
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "{$name} is the group leader and cannot be removed from the group.",
+                ], 422);
+            }
+
             // A group loan must keep enough members to still be a group.
             if ($groupLoan) {
                 $memberCount = $loanApplication->loanApplicationCustomers()->count();
@@ -399,9 +411,10 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
             DB::transaction(function () use ($record, $loanApplication, $groupLoan) {
                 $record->delete();
 
-                // The removed person may have been the primary applicant on the
-                // row itself; promote a remaining member so the loan never
-                // points at someone who is no longer on it.
+                // The removed person may have been the primary applicant on a
+                // joint loan; promote a remaining member so the loan never
+                // points at someone who is no longer on it. (A group leader
+                // never gets here -- refused above.)
                 if ($loanApplication && (int) $loanApplication->customer_id === (int) $record->customer_id) {
                     $replacement = $loanApplication->loanApplicationCustomers()->value('customer_id');
 
