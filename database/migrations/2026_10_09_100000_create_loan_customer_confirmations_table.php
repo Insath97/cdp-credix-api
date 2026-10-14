@@ -41,6 +41,12 @@ return new class extends Migration
             $table->dateTime('confirmed_at')->nullable();
             $table->string('confirmed_ip', 45)->nullable();
             $table->string('confirmed_user_agent')->nullable();
+
+            // Who completed it: the customer on their link, or staff entering the
+            // OTP the customer read out to them (with the reason staff had to).
+            $table->string('confirmation_method', 20)->nullable(); // customer_link, staff_assisted
+            $table->foreignId('confirmed_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->text('staff_assist_reason')->nullable();
             $table->timestamps();
 
             $table->index(['loan_application_id', 'customer_id', 'status'], 'lcc_loan_customer_status_idx');

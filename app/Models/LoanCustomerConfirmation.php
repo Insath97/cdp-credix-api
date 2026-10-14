@@ -21,6 +21,9 @@ class LoanCustomerConfirmation extends Model
     public const STATUS_EXPIRED    = 'expired';
     public const STATUS_FAILED     = 'failed';
 
+    public const METHOD_CUSTOMER_LINK  = 'customer_link';
+    public const METHOD_STAFF_ASSISTED = 'staff_assisted';
+
     protected $fillable = [
         'loan_application_id',
         'customer_id',
@@ -41,6 +44,9 @@ class LoanCustomerConfirmation extends Model
         'confirmed_at',
         'confirmed_ip',
         'confirmed_user_agent',
+        'confirmation_method',
+        'confirmed_by',
+        'staff_assist_reason',
     ];
 
     protected $hidden = [
@@ -82,6 +88,15 @@ class LoanCustomerConfirmation extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * The staff member who entered the customer's OTP, on a staff-assisted
+     * confirmation.
+     */
+    public function confirmer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'confirmed_by');
     }
 
     public function isLinkExpired(): bool

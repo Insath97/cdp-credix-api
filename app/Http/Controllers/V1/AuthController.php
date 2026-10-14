@@ -138,6 +138,7 @@ class AuthController extends Controller
             /** @var \PHPOpenSourceSaver\JWTAuth\JWTGuard $guard */
             $guard = Auth::guard('api');
             $token = $guard->login($user);
+            /** @var User $user */
             $user = auth('api')->user();
 
             // Checked before canLogin(), and computed from the deadline rather
@@ -412,6 +413,7 @@ class AuthController extends Controller
     public function updateProfile(Request $request)
     {
         try {
+            /** @var User $user */
             $user = auth('api')->user();
 
             $data = $request->validate([
@@ -485,6 +487,7 @@ class AuthController extends Controller
     public function me()
     {
         try {
+            /** @var User $user */
             $user = auth('api')->user();
 
             $user->load([
@@ -495,12 +498,6 @@ class AuthController extends Controller
                         }]);
                 },
 
-                // User::toArray() fills branch, zone, region, province, parent
-                // and children only from relations that are already loaded --
-                // it will not go to the database itself, so that serialising a
-                // list of users cannot fire four queries per row. Loading them
-                // here is therefore what decides whether the profile screen
-                // shows a posting or four dashes.
                 'employee.branch',
                 'employee.branch.zonal',
                 'employee.branch.region',

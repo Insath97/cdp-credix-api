@@ -4,6 +4,8 @@ namespace App\Http\Controllers\V1\Public;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ConfirmLoanReviewRequest;
+use App\Http\Requests\SubmitCorrectionRequestRequest;
+use App\Services\CustomerCorrectionService;
 use App\Services\LoanCustomerConfirmationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -16,7 +18,8 @@ use Illuminate\Support\Facades\Log;
 class LoanReviewController extends Controller
 {
     public function __construct(
-        protected LoanCustomerConfirmationService $confirmationService
+        protected LoanCustomerConfirmationService $confirmationService,
+        protected CustomerCorrectionService $correctionService
     ) {
     }
 
@@ -72,6 +75,30 @@ class LoanReviewController extends Controller
                 'message' => 'Thank you. Your loan application details have been confirmed.',
                 'data'    => $result,
             ], 200);
+
+        } catch (\Throwable $th) {
+            return $this->errorResponse($th);
+        }
+    }
+
+    /**
+     * The customer reports an incorrect detail. Nothing is changed: the
+     * request waits for staff review.
+     */
+    public function correctionRequest(SubmitCorrectionRequestRequest $request, string $token): JsonResponse
+    {
+        try {
+            $correction = $this->correctionService->submit($token, $request->validated());
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Your correction request has been sent to our staff for review. You will receive a new link once it is processed.',
+                'data'    => [
+                    'id'      => $correction->id,
+                    'status'  => $correction->status,
+                    'message' => 'Your correction request has been sent to our staff for review.',
+                ],
+            ], 201);
 
         } catch (\Throwable $th) {
             return $this->errorResponse($th);

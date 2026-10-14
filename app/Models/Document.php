@@ -35,6 +35,11 @@ class Document extends Model
         'property_deed'                   => 'Property Deed',
         'vehicle_cr'                      => 'Vehicle CR (Certificate of Registration)',
         'valuation_report'                => 'Valuation Report',
+        'assignment_form'                 => 'Assignment / Pledge Form',
+        'survey_plan'                     => 'Survey Plan',
+        'title_extract'                   => 'Title Extract',
+        'insurance_policy'                => 'Insurance Certificate',
+        'revenue_license'                 => 'Revenue License',
         'other'                           => 'Other',
     ];
 

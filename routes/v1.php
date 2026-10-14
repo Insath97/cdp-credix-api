@@ -19,6 +19,7 @@ use App\Http\Controllers\V1\GroupController;
 use App\Http\Controllers\V1\CustomerController;
 use App\Http\Controllers\V1\CustomerVerificationController;
 use App\Http\Controllers\V1\LoanCustomerConfirmationController;
+use App\Http\Controllers\V1\CustomerCorrectionRequestController;
 use App\Http\Controllers\V1\Public\LoanReviewController;
 use App\Http\Controllers\V1\CustomerLoanEligibilityController;
 use App\Http\Controllers\V1\CustomerInvestmentController;
@@ -78,6 +79,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/', [LoanReviewController::class, 'show'])->middleware('throttle:60,1');
         Route::post('request-otp', [LoanReviewController::class, 'requestOtp'])->middleware('throttle:otp-request');
         Route::post('confirm', [LoanReviewController::class, 'confirm'])->middleware('throttle:otp-verify');
+        Route::post('correction-request', [LoanReviewController::class, 'correctionRequest'])->middleware('throttle:10,1');
     });
 });
 
@@ -284,6 +286,19 @@ Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(functio
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
         Route::get('{id}/customer-confirmation', [LoanCustomerConfirmationController::class, 'status']);
         Route::post('{id}/customer-confirmation/send-link', [LoanCustomerConfirmationController::class, 'sendLink'])->middleware('throttle:otp-request');
+        Route::get('{id}/customer-confirmation/preview', [LoanCustomerConfirmationController::class, 'preview']);
+        Route::post('{id}/customer-confirmation/customers/{customerId}/send-otp', [LoanCustomerConfirmationController::class, 'sendOtp'])->middleware('throttle:otp-request');
+        Route::post('{id}/customer-confirmation/customers/{customerId}/verify-otp', [LoanCustomerConfirmationController::class, 'verifyOtp'])->middleware('throttle:otp-verify');
+    });
+
+    // Corrections customers ask for from their loan review link.
+    Route::prefix('customer-correction-requests')->group(function () {
+        Route::get('/', [CustomerCorrectionRequestController::class, 'index']);
+        Route::get('history', [CustomerCorrectionRequestController::class, 'history']);
+        Route::get('{id}', [CustomerCorrectionRequestController::class, 'show']);
+        Route::patch('{id}/in-review', [CustomerCorrectionRequestController::class, 'inReview']);
+        Route::patch('{id}/reject', [CustomerCorrectionRequestController::class, 'reject']);
+        Route::patch('{id}/approve', [CustomerCorrectionRequestController::class, 'approve']);
     });
 
     Route::prefix('loan-application-status-history')->group(function () {

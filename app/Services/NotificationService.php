@@ -140,16 +140,16 @@ class NotificationService
     }
 
     /**
-     * Notify staff in-app: every user holding the Notification Index
-     * permission, through a role or directly. Who receives these is decided
-     * by permission alone, never by role name. Nothing is sent by SMS or
-     * email -- staff read them on the admin dashboard.
+     * Notify staff in-app: every user holding the given permission (Notification
+     * Index unless a feature narrows it), through a role or directly. Who
+     * receives these is decided by permission alone, never by role name.
+     * Nothing is sent by SMS or email -- staff read them on the admin dashboard.
      */
-    public function sendSystemToStaff(string $type, string $message, array $context = []): void
+    public function sendSystemToStaff(string $type, string $message, array $context = [], string $permissionName = 'Notification Index'): void
     {
         // The model, not the name: User's default guard is 'web', and the
         // permissions live on 'api'.
-        $permission = Permission::where('name', 'Notification Index')
+        $permission = Permission::where('name', $permissionName)
             ->where('guard_name', 'api')
             ->first();
 

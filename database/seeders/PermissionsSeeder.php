@@ -205,6 +205,11 @@ class PermissionsSeeder extends Seeder
             ['name' => 'Legal Document Toggle Status', 'group_name' => 'Legal Management Permissions'],
             ['name' => 'Loan Application Disburse', 'group_name' => 'Loan Application Management Permissions'],
             ['name' => 'Loan Application Cancel', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Customer Correction Index', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Customer Correction Review', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Customer Correction Audit', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Customer Confirmation Send OTP', 'group_name' => 'Loan Application Management Permissions'],
+            ['name' => 'Loan Customer Confirmation Verify OTP', 'group_name' => 'Loan Application Management Permissions'],
 
             /* Group Loan Management */
             ['name' => 'Group Loan Index', 'group_name' => 'Group Loan Management Permissions'],

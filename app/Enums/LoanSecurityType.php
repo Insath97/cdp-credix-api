@@ -130,9 +130,11 @@ enum LoanSecurityType: string
     public function documents(): array
     {
         return match ($this) {
-            self::CdpInvestment    => ['investment_document' => true],
-            self::PropertyMortgage => ['property_deed' => true, 'valuation_report' => false],
-            self::Vehicle          => ['vehicle_cr' => true, 'valuation_report' => true],
+            self::CdpInvestment    => ['investment_document' => true, 'assignment_form' => false],
+            self::PropertyMortgage => ['property_deed' => true, 'valuation_report' => false,
+                                       'survey_plan' => false, 'title_extract' => false],
+            self::Vehicle          => ['vehicle_cr' => true, 'valuation_report' => false,
+                                       'insurance_policy' => false, 'revenue_license' => false],
         };
     }
 
