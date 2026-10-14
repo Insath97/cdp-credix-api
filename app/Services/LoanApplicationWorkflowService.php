@@ -4,9 +4,15 @@ namespace App\Services;
 
 use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
+use App\Exceptions\SecurityLimitExceededException;
+use App\Models\Customer;
+use App\Models\Document;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationSecurity;
+use App\Models\LoanApplicationStatusHistory;
 use App\Models\Setting;
 use App\Models\User;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class LoanApplicationWorkflowService
@@ -14,6 +20,8 @@ class LoanApplicationWorkflowService
     public function __construct(
         protected InstallmentScheduleService $installmentScheduleService,
         protected ReferenceNumberService $referenceNumberService,
+        protected LoanSecurityLtvService $loanSecurityLtv,
+        protected LoanCustomerConfirmationService $customerConfirmation,
     ) {
     }
 
@@ -29,7 +37,8 @@ class LoanApplicationWorkflowService
         LoanApplicationStatus $to,
         ?int $actorId = null,
         ?string $remarks = null,
-        array $extra = []
+        array $extra = [],
+        array $metadata = []
     ): LoanApplication {
         $from = $loanApplication->status;
 
@@ -41,8 +50,7 @@ class LoanApplicationWorkflowService
 
         $this->assertSegregationOfDuties($loanApplication, $to, $actorId);
 
-        // A guarantor is mandatory for Individual Loan before it can be
-        // verified, but stays optional for Group Loan members.
+
         if ($to === LoanApplicationStatus::Verified
             && $loanApplication->group_loan_id === null
             && $loanApplication->loanApplicationGuarantors()->count() === 0) {
@@ -51,7 +59,17 @@ class LoanApplicationWorkflowService
             );
         }
 
-        return DB::transaction(function () use ($loanApplication, $from, $to, $actorId, $remarks, $extra) {
+        // Final customer review and loan-detail confirmation OTP (OTP 2) is enforced
+        // at the Disbursement stage, after approval and customer decision (Accepted).
+        if ($to === LoanApplicationStatus::Disbursed) {
+            $this->customerConfirmation->assertConfirmedForDisbursement($loanApplication);
+        }
+
+        if (in_array($to, [LoanApplicationStatus::Reviewed, LoanApplicationStatus::Verified], true)) {
+            $this->assertSecurityReady($loanApplication, $to === LoanApplicationStatus::Reviewed ? 'reviewed' : 'verified');
+        }
+
+        return DB::transaction(function () use ($loanApplication, $from, $to, $actorId, $remarks, $extra, $metadata) {
             // The approval reference, minted the first time this application is
             // approved. Guarded on being null rather than on the transition
             // alone: a loan that is reverted and approved again keeps the
@@ -70,21 +88,44 @@ class LoanApplicationWorkflowService
                 // "Active". Applied here rather than in each controller so
                 // cancel/reject/close all get it, including the Group Loan
                 // cascade, which transitions through this same method.
-                'is_active' => $to->isTerminal() ? false : $loanApplication->is_active,
+                // Going the other way has to be said explicitly. Reopening a
+                // rejected file passes is_active in $extra, and this line sits
+                // second in the array_merge -- so without honouring it here the
+                // reopened application inherited the false set at rejection and
+                // stayed off every working list. A terminal status still forces
+                // false whatever the caller passes; that invariant is not
+                // negotiable.
+                'is_active' => $to->isTerminal()
+                    ? false
+                    : ($extra['is_active'] ?? $loanApplication->is_active),
             ]));
+
+            // One KYC verification covers one loan. Once the loan lets go of
+            // its borrowers, their verification is spent: the next loan must
+            // confirm the details as they stand then, with a fresh OTP.
+            if ($from->holdsBorrowers() && !$to->holdsBorrowers()) {
+                $this->resetBorrowerKyc($loanApplication);
+            }
 
             $loanApplication->application()->update([
                 'status' => $to->toApplicationStatus(),
             ]);
 
-            $loanApplication->statusHistory()->create([
-                'from_status' => $from->value,
-                'to_status'   => $to->value,
-                'changed_by'  => $actorId,
-                'remarks'     => $remarks,
-            ]);
+            LoanApplicationStatusHistory::record(
+                $loanApplication,
+                $to,
+                $actorId,
+                $remarks,
+                $metadata
+            );
 
-            if ($to === LoanApplicationStatus::Disbursed) {
+            // Generate the installment schedule the moment the loan is
+            // approved so the repayment details are already available when
+            // the legal document is prepared for signing -- well before the
+            // money actually moves at Disbursed.  The guard inside
+            // generate() is idempotent (it short-circuits when rows already
+            // exist), so a reopen-then-re-approve path is safe.
+            if ($to === LoanApplicationStatus::Approved) {
                 $this->installmentScheduleService->generate($loanApplication);
             }
 
@@ -101,6 +142,127 @@ class LoanApplicationWorkflowService
                 'installments',
             ]);
         });
+    }
+
+    /**
+     * Drop the KYC verification of everyone the loan held: the primary
+     * borrower, co-borrowers and group members. The verification rows are
+     * kept as history; only the customer flag goes back to unverified.
+     */
+    protected function resetBorrowerKyc(LoanApplication $loanApplication): void
+    {
+        $customerIds = $loanApplication->loanApplicationCustomers()
+            ->pluck('customer_id')
+            ->push($loanApplication->customer_id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($customerIds->isEmpty()) {
+            return;
+        }
+
+        Customer::whereIn('id', $customerIds)
+            ->where('is_kyc_verified', true)
+            ->update(['is_kyc_verified' => false, 'kyc_verified_at' => null]);
+    }
+
+    /**
+     * A secured (Standard Borrowing) loan is not ready for review without its
+     * securities, nor without the papers each of them requires
+     * (LoanSecurityType::documents()), nor without the securities still
+     * covering what the loan is for.
+     *
+     * All three checks are on the collection. The papers are uploaded
+     * separately through POST /documents, so review is the first point at which
+     * everything can be looked at together; checked again at verification,
+     * because the securities can still be swapped after review and a document
+     * can still be removed.
+     */
+    protected function assertSecurityReady(LoanApplication $loanApplication, string $stage): void
+    {
+        if (!$loanApplication->requiresSecurity()) {
+            return;
+        }
+
+        $loanApplication->loadMissing('securities');
+
+        $securities = $loanApplication->securities;
+
+        if ($securities->isEmpty()) {
+            throw new InvalidLoanApplicationTransitionException(
+                "{$loanApplication->loanProduct->name} is a Standard Borrowing loan, so it must be secured. Add at least one loan security (CDP Investment, Property Mortgage or Vehicle) before this loan application can be {$stage}."
+            );
+        }
+
+        $this->assertSecuritiesStillCoverTheLoan($loanApplication, $securities, $stage);
+
+        // What papers are still missing, counted across the whole collection.
+        // A document records which application it was collected for and not
+        // which of that application's securities, so this asks "is a paper of
+        // this type on the loan at all" -- binding each document to its own
+        // security is not built yet.
+        $missing = $securities
+            ->flatMap(fn ($security) => collect($security->security_type->documents())
+                ->filter()
+                ->keys()
+                ->map(fn (string $documentType) => [
+                    'security_type' => $security->security_type->value,
+                    'document_type'  => $documentType,
+                ]))
+            ->reject(fn (array $needed) => $loanApplication->documents()
+                ->ofDocumentType($needed['document_type'])
+                ->where('status', 'active')
+                ->where('is_active', true)
+                ->exists())
+            // The same paper satisfies every security of the same type, so two
+            // properties missing their deeds are one item to fix, not two.
+            ->unique('document_type')
+            ->map(fn (array $needed) => Document::TYPES[$needed['document_type']]);
+
+        if ($missing->isNotEmpty()) {
+            throw new InvalidLoanApplicationTransitionException(
+                'Upload the ' . $missing->join(', the ', ' and the ') . " before this loan application can be {$stage}."
+            );
+        }
+    }
+
+    /**
+     * The securities must still carry the loan. Re-checked here, not only on
+     * submit, because by review or verification the requested amount, a
+     * valuation or a lending plan's percentage may all have moved -- what was
+     * written was correct when it was written, not necessarily now.
+     *
+     * The plan is read from the row and only from the row. Permission is not
+     * consulted here and that is deliberate: this is a measurement of a stored
+     * loan, not a new pledge, and a reviewer who does not hold the submitter's
+     * plan permission must still be able to measure and judge it. A permission
+     * withdrawn after submission cannot make the application unreadable.
+     *
+     * @param Collection<int, LoanApplicationSecurity> $securities
+     */
+    protected function assertSecuritiesStillCoverTheLoan(
+        LoanApplication $loanApplication,
+        Collection $securities,
+        string $stage
+    ): void {
+        try {
+            $this->loanSecurityLtv->assertWithinLimit(
+                (float) $loanApplication->requested_amount,
+                $securities->map(fn ($security) => [
+                    'security_type' => $security->security_type->value,
+                    'security_plan' => $security->security_plan,
+                    // The stored value, so a property is measured by its
+                    // valuation and a CDP Investment by what Core reported,
+                    // whichever columns happen to hold it now.
+                    'value'          => $security->value(),
+                ])->all()
+            );
+        } catch (SecurityLimitExceededException $e) {
+            throw new InvalidLoanApplicationTransitionException(
+                'The loan securities no longer cover this loan, so it cannot be ' . $stage . ". {$e->getMessage()}"
+            );
+        }
     }
 
     /**
@@ -140,7 +302,13 @@ class LoanApplicationWorkflowService
         }
 
         $conflicts = match ($to) {
-            LoanApplicationStatus::Verified => ['reviewed_by' => 'reviewed'],
+            // Reverify is checked alongside Verified because failing a
+            // verification is still an act of verification. Without it the
+            // reviewer could pick their own file back up and fail it, covering
+            // two of the three hands -- the exact thing this rule exists to
+            // stop.
+            LoanApplicationStatus::Verified,
+            LoanApplicationStatus::Reverify => ['reviewed_by' => 'reviewed'],
             LoanApplicationStatus::Approved => ['reviewed_by' => 'reviewed', 'verified_by' => 'verified'],
             default => [],
         };
@@ -150,7 +318,10 @@ class LoanApplicationWorkflowService
                 continue;
             }
 
-            $action = $to === LoanApplicationStatus::Verified ? 'verify' : 'approve';
+            $action = in_array($to, [
+                LoanApplicationStatus::Verified,
+                LoanApplicationStatus::Reverify,
+            ], true) ? 'verify' : 'approve';
 
             throw new InvalidLoanApplicationTransitionException(
                 "You already {$stage} this loan application, so you cannot also {$action} it. "
