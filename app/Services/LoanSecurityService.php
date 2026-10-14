@@ -121,7 +121,9 @@ class LoanSecurityService
 
         $lendingMortgage = null;
         if (!empty($security['lending_mortgage_id'])) {
-            $lendingMortgage = LendingMortgage::find($security['lending_mortgage_id']);
+            $lendingMortgage = LendingMortgage::where('id', $security['lending_mortgage_id'])
+                ->where('status', LendingMortgage::STATUS_ACTIVE)
+                ->first();
         }
 
         if ($lendingMortgage) {

@@ -12,6 +12,7 @@ use App\Models\LoanApplicationSecurity;
 use App\Models\LoanApplicationStatusHistory;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\LoanCustomerConfirmationService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -250,12 +251,15 @@ class LoanApplicationWorkflowService
             $this->loanSecurityLtv->assertWithinLimit(
                 (float) $loanApplication->requested_amount,
                 $securities->map(fn ($security) => [
-                    'security_type' => $security->security_type->value,
-                    'security_plan' => $security->security_plan,
+                    'security_type'       => $security->security_type->value,
+                    'security_plan'       => $security->security_plan,
+                    'lending_mortgage_id' => $security->lending_mortgage_id,
+                    'max_loan_percentage' => $security->max_loan_percentage,
+                    'max_loan_amount'     => $security->max_loan_amount,
                     // The stored value, so a property is measured by its
                     // valuation and a CDP Investment by what Core reported,
                     // whichever columns happen to hold it now.
-                    'value'          => $security->value(),
+                    'value'               => $security->value(),
                 ])->all()
             );
         } catch (SecurityLimitExceededException $e) {

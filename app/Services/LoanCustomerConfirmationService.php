@@ -21,7 +21,6 @@ use Illuminate\Support\Str;
  * customer on the loan (every co-borrower on a Joint Loan) confirms for
  * themselves. Confirmation does not move the loan's status -- it is a
  * precondition for review, checked by assertConfirmedForReview().
- *
  * Errors meant for the public page carry an HTTP code: 404 for an unknown
  * link, 410 for one that has expired or been replaced. Anything else is 422.
  */

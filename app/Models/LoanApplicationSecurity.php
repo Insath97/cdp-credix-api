@@ -47,6 +47,7 @@ class LoanApplicationSecurity extends Model
     protected $fillable = [
         'loan_application_id',
         'security_type',
+        'security_plan',
         'lending_mortgage_id',
         'investment_nic',
         'policy_number',

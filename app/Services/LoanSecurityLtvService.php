@@ -201,19 +201,21 @@ class LoanSecurityLtvService
             $percentage = $security['max_loan_percentage'] ?? null;
             $planLabel  = null;
 
-            if ($percentage === null && !empty($security['lending_mortgage_id'])) {
-                $lendingMortgage = LendingMortgage::find($security['lending_mortgage_id']);
+            if (!empty($security['lending_mortgage_id'])) {
+                $lendingMortgage = LendingMortgage::where('id', $security['lending_mortgage_id'])
+                    ->where('status', LendingMortgage::STATUS_ACTIVE)
+                    ->first();
                 if ($lendingMortgage) {
-                    $percentage = (float) $lendingMortgage->percentage;
-                    $planCode   = $lendingMortgage->code;
-                    $planLabel  = $lendingMortgage->name;
+                    $percentage ??= (float) $lendingMortgage->percentage;
+                    $planCode   ??= $lendingMortgage->code;
+                    $planLabel  ??= $lendingMortgage->name;
                 }
             }
 
-            if ($percentage === null) {
+            if ($percentage === null || $planLabel === null) {
                 $plan       = $this->plans->plan($type, is_string($planCode) ? $planCode : null);
-                $percentage = $plan['percentage'] ?? null;
-                $planLabel  = $plan['label'] ?? null;
+                $percentage ??= $plan['percentage'] ?? null;
+                $planLabel  ??= $plan['label'] ?? null;
             }
 
             $rows[] = [
