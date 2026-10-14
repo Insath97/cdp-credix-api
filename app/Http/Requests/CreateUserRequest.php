@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
@@ -10,8 +9,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class CreateUserRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -29,9 +26,15 @@ class CreateUserRequest extends FormRequest
     {
         return [
             'name' => 'required|string|max:255',
-            'username' => 'required_if:user_type,admin|nullable|string|max:255|unique:users,username',
+            'username' => 'required_if:user_type,admin,customer|nullable|string|max:255|unique:users,username',
             'email' => 'nullable|email|max:255|unique:users,email',
-            'password' => 'required_if:user_type,admin|nullable|string|min:8',
+            // Required for every kind of account, not just admins. A staff
+            // account created without one used to fall back to the person's NIC
+            // -- a number printed on the customer, guarantor and document
+            // screens that any officer can read -- and nothing ever forced it
+            // to be changed. Whoever creates the account now chooses the
+            // password and passes it on themselves.
+            'password' => 'required|string|min:8',
             // 'user_type' => 'required|in:admin,staff',
             'user_type' => 'required|in:admin,staff,customer',
 

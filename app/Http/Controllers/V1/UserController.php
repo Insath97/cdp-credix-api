@@ -94,6 +94,20 @@ class UserController extends Controller implements HasMiddleware
         }
     }
 
+    /**
+     * Whether this payload is trying to hand someone the Super Admin role.
+     *
+     * Compared case-insensitively for the same reason User::isSuperAdmin() is:
+     * the role is seeded as 'SUPER ADMIN', so an exact match against the words
+     * 'Super Admin' is false, and a guard written that way would wave through
+     * the one request it exists to stop.
+     */
+    protected function grantsSuperAdmin(array $data): bool
+    {
+        return isset($data['role'])
+            && strcasecmp(trim((string) $data['role']), 'Super Admin') === 0;
+    }
+
     public function store(CreateUserRequest $request)
     {
         try {
@@ -108,6 +122,17 @@ class UserController extends Controller implements HasMiddleware
                         'message' => 'Only Super Admin can create admin users'
                     ], 403);
                 }
+            }
+
+            // The same rule update() applies: only a Super Admin hands out the
+            // Super Admin role. Without this the escalation just moves one step
+            // sideways -- a holder of "User Create" mints a brand new staff
+            // account carrying role Super Admin and signs in as it.
+            if ($this->grantsSuperAdmin($data) && (!$currentUser || !$currentUser->isSuperAdmin())) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only Super Admin can assign the Super Admin role'
+                ], 403);
             }
 
             // Create Employee first if user_type is staff
@@ -141,18 +166,36 @@ class UserController extends Controller implements HasMiddleware
 
                 $employee = Employee::create($employeeData);
 
-                // Set staff credentials automatically to id_number
+                // The username still defaults to the NIC: it is an identifier,
+                // not a secret, and an officer who was told "sign in with your
+                // NIC" is not thereby told anyone's password.
+                //
+                // The PASSWORD no longer does. It used to fall back to the same
+                // NIC, which is printed on the customer, guarantor and document
+                // screens for every officer to read, and login never checked
+                // password_changed_at -- so the default stood for the life of
+                // the account. CreateUserRequest now requires one.
                 $data['employee_id'] = $employee->id;
-                $data['username'] = $data['id_number'];
-                $data['password'] = Hash::make($data['id_number']);
+                if (!filled($data['username'] ?? null)) {
+                    $data['username'] = $data['id_number'];
+                }
+                $data['password'] = Hash::make($data['password']);
             } else {
                 // For admin and customer users
                 $data['employee_id'] = null;
                 if ($data['user_type'] === 'admin') {
                     $data['customer_id'] = null;
                 }
-                $data['password'] = Hash::make($data['password'] ?? '');
+                // Never Hash::make('') -- an omitted password used to become a
+                // real, valid hash of the empty string.
+                $data['password'] = Hash::make($data['password']);
             }
+
+            // Stamped at creation: CreateUserRequest now requires a password, so
+            // whoever created the account chose it deliberately. Only the older
+            // accounts whose password was defaulted to their NIC are left for
+            // EnsurePasswordChanged to hold at the door.
+            $data['password_changed_at'] = now();
 
             $user = User::create($data);
 
@@ -176,7 +219,12 @@ class UserController extends Controller implements HasMiddleware
                         'user_type' => $user->user_type,
                         'email_verified_at' => $user->email_verified_at,
                     ],
-                    'password' => ($user->user_type === 'staff') ? $data['id_number'] : $request->password,
+                    // Not sent any more. The password is now always chosen by
+                    // whoever creates the account, so they already have it and
+                    // hand it over themselves -- there is nothing here worth
+                    // putting in an inbox, where it would outlive the handover
+                    // and sit in plain text for as long as the mail is kept.
+                    'password' => null,
                     'role' => $data['role'] ?? null,
                     'created_by' => $currentUser ? $currentUser->name : 'System',
                     'login_url' => trim(config('app.frontend_url') ?? config('app.url')),
@@ -302,6 +350,37 @@ class UserController extends Controller implements HasMiddleware
                 }
             }
 
+            // Who may hand out the Super Admin role, and to whom.
+            //
+            // The guard above asks only what the TARGET is, never what the
+            // caller is entitled to grant. A staff account is not an admin, so
+            // a branch officer holding nothing but "User Update" could PUT
+            // their own id with {"role":"Super Admin"} and take over the
+            // system; the same request aimed at a colleague worked just as
+            // well. getAvailableRoles() hides Super Admin from the picker, but
+            // that is a dropdown, not an authorisation check, and the endpoint
+            // accepted the name regardless.
+            //
+            // Scoped to the Super Admin role rather than to roles in general:
+            // handing a new officer the Credit Officer role is exactly what a
+            // user manager is for, and blocking that would break the screen.
+            if ($this->grantsSuperAdmin($data) && (!$currentUser || !$currentUser->isSuperAdmin())) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only Super Admin can assign the Super Admin role'
+                ], 403);
+            }
+
+            // Nobody rewrites their own role, Super Admin included. Self-service
+            // is the shape every escalation here took, and an administrator who
+            // genuinely needs a different role can be given it by another one.
+            if (array_key_exists('role', $data) && (int) $currentUser?->id === (int) $user->id) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You cannot change your own role'
+                ], 403);
+            }
+
             if (isset($data['password'])) {
                 $data['password'] = Hash::make($data['password']);
             } else {
@@ -333,8 +412,12 @@ class UserController extends Controller implements HasMiddleware
                     $data['employee_id'] = $employee->id;
                 }
 
-                // If id_number is updated, sync username
-                if (isset($data['id_number'])) {
+                // Keep the NIC as the login only while nobody has chosen
+                // otherwise. The form posts the whole record, id_number
+                // included, so syncing on its mere presence overwrote every
+                // username edit with the NIC -- the field looked editable and
+                // never changed.
+                if (!filled($data['username'] ?? null) && isset($data['id_number'])) {
                     $data['username'] = $data['id_number'];
                 }
             } else {

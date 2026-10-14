@@ -6,19 +6,18 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Http\Requests\CreateCustomerBankDetailRequest;
 use App\Http\Requests\UpdateCustomerBankDetailRequest;
-use App\Enums\LoanApplicationStatus;
 use App\Models\CustomerBankDetail;
 use App\Models\Customer;
 use App\Models\Setting;
-use Illuminate\Support\Facades\DB;
 use App\Traits\ActivityLogTrait;
+use App\Traits\GuardsCustomerLoanRecords;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
 class CustomerBankDetailController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, GuardsCustomerLoanRecords;
 
     public static function middleware(): array
     {
@@ -59,17 +58,7 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
             }
 
             if ($request->has('used_for_loan')) {
-                $terminalStatuses = [
-                    LoanApplicationStatus::Rejected->value,
-                    LoanApplicationStatus::Cancelled->value,
-                    LoanApplicationStatus::Closed->value,
-                ];
-
-                if ($request->boolean('used_for_loan')) {
-                    $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
-                } else {
-                    $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
-                }
+                $query->usedForLoan($request->boolean('used_for_loan'));
             }
 
             $customerbankdetail = $query->orderBy('created_at', 'desc')->paginate($perPage);
@@ -96,16 +85,15 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
     public function store(CreateCustomerBankDetailRequest $request)
     {
         try {
-            DB::beginTransaction();
-
             $data = $request->validated();
             $customer = Customer::where('customer_id', $data['customer_id'])->first();
             if ($customer) {
                 $data['customer_id'] = $customer->id;
             }
+            if ($locked = $this->customerRecordsLocked($data['customer_id'])) {
+                return $locked;
+            }
             $customerbankdetail = CustomerBankDetail::create($data);
-
-            DB::commit();
 
             $this->logActivity('CREATE', 'Customer bank detail', "Created Customer bank detail: {$customerbankdetail->bank_name} - {$customerbankdetail->account_number}");
             return response()->json([
@@ -114,7 +102,6 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
                 'data' => $customerbankdetail
             ], 201);
         } catch (\Throwable $th) {
-            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create Customer bank detail',
@@ -170,6 +157,9 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
             if ($customer) {
                 $data['customer_id'] = $customer->id;
             }
+            if ($locked = $this->customerRecordsLocked($customerbankdetail->customer_id, $data['customer_id'] ?? null)) {
+                return $locked;
+            }
             $customerbankdetail->update($data);
 
             $this->logActivity('Update', 'Customer bank detail', 'Customer bank detail updated', [
@@ -203,6 +193,10 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            if ($locked = $this->customerRecordsLocked($customerbankdetail->customer_id)) {
+                return $locked;
+            }
+
             $customerbankdetail->delete();
 
             $this->logActivity('Delete', 'Customer bank detail', 'Customer bank detail deleted', [
@@ -233,6 +227,10 @@ class CustomerBankDetailController extends Controller implements HasMiddleware
                     'status' => 'error',
                     'message' => 'Customer bank detail not found'
                 ], 404);
+            }
+
+            if ($locked = $this->customerRecordsLocked($customerbankdetail->customer_id)) {
+                return $locked;
             }
 
             $customerbankdetail->is_active = !$customerbankdetail->is_active;

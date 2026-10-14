@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\CustomerCreditScore;
 use App\Services\CreditScoreService;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -22,7 +23,7 @@ use Illuminate\Routing\Controllers\Middleware;
  */
 class CreditScoreController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected CreditScoreService $creditScoreService,
@@ -70,6 +71,9 @@ class CreditScoreController extends Controller implements HasMiddleware
             // credit_score_band rides along on every row: Customer appends it.
             // Plain orderBy is enough now that nulls are filtered out -- there
             // is no "sort the blanks last" case left to handle.
+            // A branch officer sees their own branch's customers only.
+            $this->scopeToUserBranch($query);
+
             $customers = $query
                 ->orderBy('credit_score', $direction)
                 ->paginate($perPage);
@@ -78,7 +82,7 @@ class CreditScoreController extends Controller implements HasMiddleware
                 'status'  => 'success',
                 'message' => 'Credit scores retrieved successfully',
                 'data'    => $customers,
-                'meta'    => ['scale_max' => $config['normalize_max']],
+                'meta'    => [],
             ], 200);
 
         } catch (\Throwable $th) {
@@ -128,11 +132,11 @@ class CreditScoreController extends Controller implements HasMiddleware
                         'installments_counted' => $score->installments_counted,
                         'on_time_count'        => $score->on_time_count,
                         'late_count'           => $score->late_count,
-                        'total_points'         => (float) $score->total_points,
-                        'average_points'       => $score->average_points !== null ? (float) $score->average_points : null,
                         'score'                => $score->final_score !== null ? (float) $score->final_score : null,
+                        // The band reads the on-time share, not the point
+                        // total -- see CreditScoreService::share().
                         'band'                 => $this->creditScoreService->band(
-                            $score->final_score !== null ? (float) $score->final_score : null,
+                            $this->creditScoreService->share($score->on_time_count, $score->installments_counted),
                             $config
                         ),
                         // False while the loan is still repaying: the score is
@@ -157,13 +161,13 @@ class CreditScoreController extends Controller implements HasMiddleware
                     'customer'      => $customer,
                     'score'         => $customer->credit_score !== null ? (float) $customer->credit_score : null,
                     'band'          => $this->creditScoreService->band(
-                        $customer->credit_score !== null ? (float) $customer->credit_score : null,
+                        $customer->credit_score_on_time_rate !== null ? (float) $customer->credit_score_on_time_rate : null,
                         $config
                     ),
+                    'on_time_rate'  => $customer->credit_score_on_time_rate !== null ? (float) $customer->credit_score_on_time_rate : null,
                     // Null score plus this flag is how the UI tells "new
                     // borrower" apart from "scored zero".
                     'has_history'   => $customer->credit_score !== null,
-                    'scale_max'     => $config['normalize_max'],
                     'updated_at'    => $customer->credit_score_updated_at,
                     'summary'       => [
                         'loans_scored'         => $loanScores->count(),
@@ -220,6 +224,10 @@ class CreditScoreController extends Controller implements HasMiddleware
             $scores = $this->creditScoreService->recomputeForCustomer($customer->id);
             $customer->refresh();
 
+            // Read after the recompute, so the band below is banded against the
+            // same rules the scores were just built with.
+            $config = $this->creditScoreService->config();
+
             $this->logActivity('UPDATE', 'CustomerCreditScore', "Recomputed credit score for customer ID: {$customer->id}", [
                 'customer_id'  => $customer->id,
                 'loans_scored' => $scores->count(),
@@ -232,8 +240,19 @@ class CreditScoreController extends Controller implements HasMiddleware
                 'data'    => [
                     'customer_id'  => $customer->id,
                     'score'        => $customer->credit_score !== null ? (float) $customer->credit_score : null,
+                    // The on-time share, exactly as show() reads it.
+                    //
+                    // This passed credit_score, which is the signed POINT
+                    // TOTAL, into a function whose bands are a percentage out
+                    // of 100. Five punctual months and four late ones is ten
+                    // points, which lands in 'very_poor', while the true share
+                    // of 55.6% is 'fair' -- so the same customer was rated
+                    // differently depending on which endpoint you asked.
                     'band'         => $this->creditScoreService->band(
-                        $customer->credit_score !== null ? (float) $customer->credit_score : null
+                        $customer->credit_score_on_time_rate !== null
+                            ? (float) $customer->credit_score_on_time_rate
+                            : null,
+                        $config
                     ),
                     'loans_scored' => $scores->count(),
                     'updated_at'   => $customer->credit_score_updated_at,

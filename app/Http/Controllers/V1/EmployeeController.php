@@ -16,7 +16,7 @@ class EmployeeController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Employee Index', ['only' => ['getActiveList', 'getEmployeeList']]),
+            new Middleware('permission:Employee Index', only: ['getActiveList', 'getEmployeeList']),
         ];
     }
 

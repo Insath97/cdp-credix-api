@@ -4,6 +4,7 @@ namespace App\Http\Controllers\V1\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateCustomerProfileRequest;
+use App\Services\CustomerVerificationService;
 use App\Traits\ActivityLogTrait;
 use App\Traits\MasksSensitiveDataTrait;
 use App\Traits\ResolvesAuthenticatedCustomerTrait;
@@ -50,6 +51,7 @@ class CustomerProfileController extends Controller
         try {
             $customer = $this->myCustomer();
             $customer->update($request->validated());
+            app(CustomerVerificationService::class)->invalidateIfChanged($customer);
 
             $this->logActivity('UPDATE', 'CustomerPortal', "Customer {$customer->customer_code} updated own profile", [
                 'user_id' => Auth::id(),

@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('applications', function (Blueprint $table) {
             $table->id();
             $table->string('application_no')->unique();
-            $table->string('application_type'); // e.g. loan / lease
+            $table->string('application_type'); 
             $table->string('branch')->nullable();
             $table->string('loan_type')->nullable();
             $table->decimal('requested_amount', 15, 2);

@@ -2,16 +2,27 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use App\Enums\LoanApplicationStatus;
+use App\Models\LoanProduct;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use App\Traits\GuardsLoanWorkflowFields;
+use App\Traits\ValidatesLoanSecurity;
+use App\Services\CustomerLoanEligibilityService;
 
 class CreateLoanApplicationRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
+    use GuardsLoanWorkflowFields, ValidatesLoanSecurity;
+
+    /**
+     * The first one-live-loan refusal raised in withValidator(), if any.
+     * failedValidation() shows it as the top-level message, so the officer
+     * reads why the loan was refused instead of "There is an issue with the
+     * input for customer_id."
+     */
+    private ?string $liveLoanRefusal = null;
 
     /**
      * Determine if the user is authorized to make this request.
@@ -22,11 +33,19 @@ class CreateLoanApplicationRequest extends FormRequest
     }
 
     /**
+     * Prepare inputs for validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        $this->normalizeSecuritiesInput();
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      */
     public function rules(): array
     {
-        return [
+        return array_merge($this->workflowOwnedRules(), [
             'application_id'         => 'nullable|integer|exists:applications,id',
             'customer_id'            => 'required|integer|exists:customers,id',
             'joint_customer_ids'     => 'nullable|array',
@@ -39,17 +58,7 @@ class CreateLoanApplicationRequest extends FormRequest
             'term_months'            => 'required|integer|min:1',
             'processing_fee'         => 'nullable|numeric|min:0',
             'monthly_repayment_date' => 'nullable|string|max:255',
-            // The CDP employee who put this loan forward.
-            //
-            // Nullable for now only because no form sends it yet -- the intent
-            // is that no loan goes out unattributed, so make the four details
-            // `required` the moment the UI captures them. Left permissive here
-            // rather than blocking every submission in the meantime.
-            //
-            // recommended_by_employee_id stays nullable permanently: a
-            // recommender who has not been entered into the employee register
-            // yet must still be recordable, and refusing the loan over it would
-            // put a data-entry gap ahead of the business.
+
             'recommended_by_employee_id' => 'nullable|integer|exists:employees,id',
             'recommender_name'           => 'nullable|string|max:255',
             'recommender_employee_code'  => 'nullable|string|max:255',
@@ -60,10 +69,84 @@ class CreateLoanApplicationRequest extends FormRequest
             'applied_at'             => 'nullable|date',
             'outstanding_balance'    => 'nullable|numeric|min:0',
             'is_active'              => 'nullable|boolean',
+            'assigned_reviewer_id'   => 'nullable|integer|exists:users,id',
             'status'                 => ['nullable', Rule::enum(LoanApplicationStatus::class)],
-        ];
+            'review_failure_reason' => 'nullable|string|max:1000',
+            'review_failed_at' => 'nullable|date',
+            'resubmitted_at' => 'nullable|date',
+            'resubmission_count' => 'nullable|integer|min:0',
+
+            // The Loan Security step: at least one security on a secured
+            // product (checked in withValidator), each type's fields only for
+            // that type, and every security carrying a value for its limit to
+            // be worked out from.
+            ], $this->loanSecurityRules());
     }
 
+
+
+    /**
+     * Custom messages for the workflow-owned fields, so a caller that sends
+     * one is told which endpoint to use instead of just "is prohibited".
+     */
+    public function messages(): array
+    {
+        return array_merge($this->workflowOwnedMessages(), $this->loanSecurityMessages());
+    }
+
+    public function attributes(): array
+    {
+        return $this->loanSecurityAttributes();
+    }
+
+    /**
+     * One live loan per customer -- the primary borrower and every joint
+     * co-borrower alike. Only runs on ids that already passed their own rules,
+     * so a missing customer is reported once, as "does not exist".
+     *
+     * The controller repeats this under a row lock inside its transaction;
+     * this pass is what gives the officer a field-level message up front.
+     */
+    protected function withValidator(Validator $validator)
+    {
+        $validator->after(function ($validator) {
+            $errors = $validator->errors();
+
+            if (!$errors->has('customer_id') && $this->filled('customer_id')) {
+                if ($kycRefusal = CustomerLoanEligibilityService::refusalForUnverifiedKyc((int) $this->input('customer_id'))) {
+                    $this->liveLoanRefusal ??= $kycRefusal;
+                    $errors->add('customer_id', $kycRefusal);
+                } elseif ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $this->input('customer_id'))) {
+                    $this->liveLoanRefusal ??= $refusal;
+                    $errors->add('customer_id', $refusal);
+                }
+            }
+
+            // A Standard Borrowing loan must carry at least one loan security;
+            // any other must carry none. Individual and Joint alike -- a joint
+            // loan's CDP Investment may be any of its borrowers' (checked
+            // against Core in the controller).
+            if ($this->filled('loan_product_id')) {
+                $this->assertNoEmptySecurities($validator);
+                $this->checkSecuritiesAgainstProduct($validator, LoanProduct::find($this->input('loan_product_id')));
+                $this->checkMortgageTypeMismatch($validator);
+            }
+
+            foreach ((array) $this->input('joint_customer_ids', []) as $i => $jointId) {
+                $field = "joint_customer_ids.{$i}";
+                if ($errors->has($field) || !is_numeric($jointId)) {
+                    continue;
+                }
+                if ($kycRefusal = CustomerLoanEligibilityService::refusalForUnverifiedKyc((int) $jointId)) {
+                    $this->liveLoanRefusal ??= $kycRefusal;
+                    $errors->add($field, $kycRefusal);
+                } elseif ($refusal = CustomerLoanEligibilityService::refusalForCustomer((int) $jointId)) {
+                    $this->liveLoanRefusal ??= $refusal;
+                    $errors->add($field, $refusal);
+                }
+            }
+        });
+    }
 
     protected function failedValidation(Validator $validator)
     {
@@ -75,9 +158,10 @@ class CreateLoanApplicationRequest extends FormRequest
             ];
         })->values();
 
-        $message = $fieldErrors->count() > 1
-            ? 'There are multiple validation errors. Please review the form and correct the issues.'
-            : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.';
+        $message = $this->liveLoanRefusal
+            ?? ($fieldErrors->count() > 1
+                ? 'There are multiple validation errors. Please review the form and correct the issues.'
+                : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.');
 
         throw new HttpResponseException(response()->json([
             'message' => $message,

@@ -18,9 +18,40 @@ class ActivityController extends Controller implements HasMiddleware
     {
         return [
             // Matches the permissions added in your PermissionsSeeder
-            new Middleware('permission:Activity Index', only: ['index']),
+            new Middleware('permission:Activity Index', only: ['index', 'filterOptions']),
             new Middleware('permission:Activity Show', only: ['show']),
         ];
+    }
+
+    /**
+     * The actions and modules that actually appear in the log.
+     *
+     * The screen used to offer a hardcoded action list -- VIEW, LOGIN, LOGOUT,
+     * DOWNLOAD, EXPORT -- none of which this application has ever written,
+     * while INDEX, which is over four fifths of every row, was not on it at
+     * all. The module dropdown had the opposite problem: it was built from
+     * whichever fifteen rows the current page happened to hold.
+     *
+     * Read from the log itself, so both lists stay true as the app grows.
+     */
+    public function filterOptions(): JsonResponse
+    {
+        try {
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Activity filter options retrieved successfully',
+                'data'    => [
+                    'actions' => ActivityLog::query()->distinct()->orderBy('action')->pluck('action')->filter()->values(),
+                    'modules' => ActivityLog::query()->distinct()->orderBy('module')->pluck('module')->filter()->values(),
+                ],
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to retrieve activity filter options',
+                'error'   => $th->getMessage(),
+            ], 500);
+        }
     }
 
     /**

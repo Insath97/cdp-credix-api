@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
@@ -10,8 +9,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class UpdateRoleRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -37,7 +34,7 @@ class UpdateRoleRequest extends FormRequest
                 'max:255',
                 Rule::unique('roles')->ignore($roleId)
             ],
-            'permissions' => 'sometimes|array',
+            'permissions' => 'sometimes|required|array|min:1',
             'permissions.*' => 'exists:permissions,id'
         ];
     }

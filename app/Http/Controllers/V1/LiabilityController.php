@@ -5,17 +5,17 @@ namespace App\Http\Controllers\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateLiabilityRequest;
 use App\Http\Requests\UpdateLiabilityRequest;
-use App\Enums\LoanApplicationStatus;
 use App\Models\Customer;
 use App\Models\Liability;
 use App\Traits\ActivityLogTrait;
+use App\Traits\GuardsCustomerLoanRecords;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
 class LiabilityController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, GuardsCustomerLoanRecords;
 
     public static function middleware(): array
     {
@@ -47,17 +47,7 @@ class LiabilityController extends Controller implements HasMiddleware
             }
 
             if ($request->has('used_for_loan')) {
-                $terminalStatuses = [
-                    LoanApplicationStatus::Rejected->value,
-                    LoanApplicationStatus::Cancelled->value,
-                    LoanApplicationStatus::Closed->value,
-                ];
-
-                if ($request->boolean('used_for_loan')) {
-                    $query->whereHas('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
-                } else {
-                    $query->whereDoesntHave('loanApplications', fn ($q) => $q->whereNotIn('status', $terminalStatuses));
-                }
+                $query->usedForLoan($request->boolean('used_for_loan'));
             }
 
             $liabilities = $query->orderBy('created_at', 'desc')->paginate($perPage);
@@ -93,6 +83,10 @@ class LiabilityController extends Controller implements HasMiddleware
             }
 
             $data['is_active'] = $data['is_active'] ?? true;
+
+            if ($locked = $this->customerRecordsLocked($data['customer_id'])) {
+                return $locked;
+            }
 
             $liability = Liability::create($data);
 
@@ -159,6 +153,10 @@ class LiabilityController extends Controller implements HasMiddleware
                 $data['customer_id'] = $customer->id;
             }
 
+            if ($locked = $this->customerRecordsLocked($liability->customer_id, $data['customer_id'] ?? null)) {
+                return $locked;
+            }
+
             $liability->update($data);
 
             $this->logActivity('UPDATE', 'Liability', "Updated liability: {$liability->id}", $data);
@@ -189,6 +187,10 @@ class LiabilityController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            if ($locked = $this->customerRecordsLocked($liability->customer_id)) {
+                return $locked;
+            }
+
             $liability->delete();
 
             $this->logActivity('DELETE', 'Liability', "Deleted liability: {$id}");
@@ -216,6 +218,10 @@ class LiabilityController extends Controller implements HasMiddleware
                     'status' => 'error',
                     'message' => 'Liability not found',
                 ], 404);
+            }
+
+            if ($locked = $this->customerRecordsLocked($liability->customer_id)) {
+                return $locked;
             }
 
             $liability->is_active = !$liability->is_active;

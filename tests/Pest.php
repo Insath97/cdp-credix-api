@@ -1,14 +1,18 @@
 <?php
 
+use Tests\Support\ApiTestCase;
+
 /*
 |--------------------------------------------------------------------------
 | Test Case
 |--------------------------------------------------------------------------
 |
-| The closure you provide to your test functions is always bound to a specific PHPUnit test
-| case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
-| need to change it using the "uses()" function to bind a different classes or traits.
+| Every feature test is bound to ApiTestCase, which brings the JWT guard
+| helpers, the organisation-hierarchy builders and a freshly migrated
+| in-memory database with it. Binding it here rather than per file is what
+| Pest requires: a directory may only have one base test case, so a `uses()`
+| inside an individual file would collide with this one.
 |
 */
 
-uses(Tests\TestCase::class)->in('Feature');
+uses(ApiTestCase::class)->in('Feature');

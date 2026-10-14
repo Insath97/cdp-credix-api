@@ -11,6 +11,7 @@ use App\Models\Payment;
 use App\Models\Customer;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -20,13 +21,35 @@ use Illuminate\Support\Facades\DB;
 
 class AdminDashboardController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public static function middleware(): array
     {
         return [
             new Middleware('permission:Admin Dashboard Index', only: ['overview', 'recentTransactions', 'recentLoanApplications', 'targetIndex']),
         ];
+    }
+
+    /**
+     * The branch every figure on this screen is counted over.
+     *
+     * A branch officer is confined to their own posting, whatever branch_id
+     * they send: the dashboard was the one screen still totalling the whole
+     * company for them, so their customer list showed Colombo while the
+     * portfolio figure above it covered every branch.
+     *
+     * Head office (anyone with no branch posting) keeps the request filter, so
+     * branch_id stays a way to look at one branch at a time.
+     */
+    protected function resolveBranchId(Request $request): ?int
+    {
+        $ownBranchId = $this->userBranchId();
+
+        if ($ownBranchId !== null) {
+            return $ownBranchId;
+        }
+
+        return $request->filled('branch_id') ? (int) $request->branch_id : null;
     }
 
     /**
@@ -50,7 +73,7 @@ class AdminDashboardController extends Controller implements HasMiddleware
     {
         try {
             [$startDate, $endDate] = $this->resolveDateRange($request);
-            $branchId = $request->filled('branch_id') ? (int) $request->branch_id : null;
+            $branchId = $this->resolveBranchId($request);
             $periodDays = $startDate->diffInDays($endDate) + 1;
             $priorStart = $startDate->copy()->subDays($periodDays);
             $priorEnd = $startDate->copy()->subDay()->endOfDay();
@@ -120,9 +143,12 @@ class AdminDashboardController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
+            // Same confinement as overview(): the list must not reach past the
+            // officer's own branch just because it is a different endpoint.
+            $branchId = $this->resolveBranchId($request);
 
             $payments = Payment::with(['loanApplication.application', 'loanApplication.customer:'.Customer::SUMMARY_COLUMNS])
-                ->when($request->filled('branch_id'), fn ($q) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $request->branch_id)))
+                ->when($branchId, fn ($q) => $q->whereHas('loanApplication', fn ($q2) => $q2->where('branch_id', $branchId)))
                 ->orderByDesc('paid_at')
                 ->paginate($perPage);
 
@@ -150,9 +176,12 @@ class AdminDashboardController extends Controller implements HasMiddleware
     {
         try {
             $perPage = $request->get('per_page', 15);
+            // Same confinement as overview(): the list must not reach past the
+            // officer's own branch just because it is a different endpoint.
+            $branchId = $this->resolveBranchId($request);
 
             $applications = LoanApplication::with(['application', 'loanProduct', 'customer:'.Customer::SUMMARY_COLUMNS])
-                ->when($request->filled('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
                 ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
                 ->orderByDesc('applied_at')
                 ->paginate($perPage);
@@ -182,9 +211,12 @@ class AdminDashboardController extends Controller implements HasMiddleware
         try {
             $perPage = $request->get('per_page', 15);
 
+            // Targets are set per branch; an officer sees their own branch's.
+            $branchId = $this->resolveBranchId($request);
+
             $targets = AdminDashboard::with(['branch', 'createdBy:'.User::SUMMARY_COLUMNS])
                 ->when($request->has('metric'), fn ($q) => $q->where('metric', $request->metric))
-                ->when($request->has('branch_id'), fn ($q) => $q->where('branch_id', $request->branch_id))
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
                 ->orderByDesc('period_start')
                 ->paginate($perPage);
 

@@ -8,8 +8,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use App\Enums\LoanApplicationStatus;
 use App\Enums\LoanRevisionStatus;
+use App\Enums\LoanSecurityType;
 
 class LoanApplication extends Model
 {
@@ -55,6 +57,15 @@ class LoanApplication extends Model
         'verified_remarks',
         'approval_remarks',
         'rejection_reason',
+        'review_failure_reason',
+        'review_failed_at',
+        'resubmitted_at',
+        'resubmission_count',
+        // Set when verification sends the file back for a second look.
+        'verify_failure_reason',
+        'verify_failed_at',
+        'reverify_count',
+
         'applied_at',
         'reviewed_at',
         'verified_at',
@@ -103,6 +114,11 @@ class LoanApplication extends Model
         'reviewed_by'         => 'integer',
         'verified_by'         => 'integer',
         'approved_by'         => 'integer',
+        'review_failed_at'    => 'datetime',
+        'resubmitted_at'      => 'datetime',
+        'resubmission_count'  => 'integer',
+        'verify_failed_at'    => 'datetime',
+        'reverify_count'      => 'integer',
         'applied_at'          => 'datetime',
         'reviewed_at'         => 'datetime',
         'verified_at'         => 'datetime',
@@ -128,13 +144,6 @@ class LoanApplication extends Model
     /**
      * The reference a person should be shown for this loan: the application_no
      * off the parent Application row.
-     *
-     * Notifications and any other customer- or staff-facing text must use this
-     * rather than the primary key. The two are close enough to be mistaken for
-     * each other -- loan 353 carries application_id 354, and loan 354 exists as
-     * well -- so quoting the id sends people to the wrong file. Falls back to
-     * "#id" only for a loan with no application attached, which nothing in the
-     * normal flow creates.
      */
     public function reference(): string
     {
@@ -235,35 +244,71 @@ class LoanApplication extends Model
     }
 
     /**
-     * Relationship with pledged fixed assets (via the pivot).
+     * The securities pledged against this application (CDP Investment,
+     * Property Mortgage or Vehicle). Present on secured loans -- see
+     * requiresSecurity() -- and normally more than one of them, since a loan
+     * larger than any single asset can be worth is secured by several:
+     * two properties, an investment and a vehicle, and so on. Each row is an
+     * independent item with its own details, value and papers.
      */
-    public function loanApplicationFixedAssets(): HasMany
+    public function securities(): HasMany
     {
-        return $this->hasMany(LoanApplicationFixedAsset::class);
+        return $this->hasMany(LoanApplicationSecurity::class);
     }
 
     /**
-     * Relationship with pledged moving assets (via the pivot).
+     * The CDP Investments pledged against this application. Split out because
+     * these are the ones with a rule the others do not have: a policy may back
+     * only one live loan at a time, wherever it sits (holdingPolicy()).
+     *
+     * @return HasMany
      */
-    public function loanApplicationMovingAssets(): HasMany
+    public function cdpInvestmentSecurities(): HasMany
     {
-        return $this->hasMany(LoanApplicationMovingAsset::class);
+        return $this->securities()
+            ->where('security_type', LoanSecurityType::CdpInvestment->value);
     }
 
     /**
-     * Relationship with linked liabilities (via the pivot).
+     * What every one of this loan's securities is worth together, and the most
+     * they can secure between them at their own configured percentages
+     * (LoanSecurityLtvService). Null when the loan has no securities yet, which
+     * is different from zero.
+     *
+     * @return array{security_count: int, valued_count: int, total_pledged_value: float, total_eligible_security_value: float}|null
      */
-    public function loanApplicationLiabilities(): HasMany
+    public function securityCoverage(): ?array
     {
-        return $this->hasMany(LoanApplicationLiability::class);
+        if (!$this->relationLoaded('securities')) {
+            $this->load('securities');
+        }
+
+        if ($this->securities->isEmpty()) {
+            return null;
+        }
+
+        $values  = $this->securities->map(fn (LoanApplicationSecurity $s) => $s->value());
+        $eligible = $this->securities->map(fn (LoanApplicationSecurity $s) => $s->eligibleValue());
+
+        return [
+            'security_count'                => $this->securities->count(),
+            'valued_count'                  => $values->filter(fn ($v) => $v !== null)->count(),
+            'total_pledged_value'           => round((float) $values->sum(), 2),
+            'total_eligible_security_value' => round((float) $eligible->sum(), 2),
+        ];
     }
 
     /**
-     * Relationship with linked bank details (via the pivot).
+     * Whether this application must carry a loan security: a Standard
+     * Borrowing loan under the General term (LoanProduct::requiresSecurity()),
+     * Individual or Joint. Group loans never do -- they are created through
+     * their own endpoint, which takes no security.
      */
-    public function loanApplicationBankDetails(): HasMany
+    public function requiresSecurity(): bool
     {
-        return $this->hasMany(LoanApplicationBankDetail::class);
+        $this->loadMissing('loanProduct');
+
+        return !$this->isGroupLoan() && (bool) $this->loanProduct?->requiresSecurity();
     }
 
     /**
@@ -309,6 +354,20 @@ class LoanApplication extends Model
     {
         $this->loadMissing('loanProduct');
 
+        // KNOWN LIMITATION, left deliberately as it is.
+        //
+        // `?:` treats 0 as "not set", so a product whose grace period is 0 gets
+        // the installment_due_period_days setting (30) instead of no grace at
+        // all. There is therefore no way to configure a product that is chased
+        // from the day a payment is missed.
+        //
+        // Changing this to `??` is a one-word fix, but it is not only a fix: the
+        // column is NOT NULL DEFAULT 0, so every product left untouched reads as
+        // 0, and two live products here are in exactly that state. Making zero
+        // mean zero would start chasing their borrowers and charging late fees a
+        // month earlier than today, without anyone having asked for it. The
+        // change therefore needs the affected products given an explicit grace
+        // period first, which is a configuration decision rather than a code one.
         return (int) ($this->loanProduct?->grace_period_days
             ?: Setting::get('installment_due_period_days', 30));
     }
@@ -422,9 +481,40 @@ class LoanApplication extends Model
      * papers (an NIC copy uploaded at registration) carry no
      * loan_application_id and belong to the customer's permanent file instead.
      */
+    /** The legal agreements drawn up against this application. */
+    public function legalDocuments(): HasMany
+    {
+        return $this->hasMany(LegalDocument::class);
+    }
+
+    /**
+     * Documents uploaded against this application specifically. Does NOT
+     * include the borrower's own papers, which carry only a customer_id --
+     * use loanDocuments()/checklistDocuments() for the application's whole file.
+     */
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
+    }
+
+    /** The document links for this application, carrying its review stamps. */
+    public function loanDocuments(): HasMany
+    {
+        return $this->hasMany(LoanDocument::class);
+    }
+
+    /**
+     * Every document that forms part of this application's file -- the ones
+     * uploaded for it and the borrower's own -- each carrying the review and
+     * verify stamp this application recorded against it.
+     *
+     * LoanDocumentService::syncForApplication() is what populates the link.
+     */
+    public function checklistDocuments(): BelongsToMany
+    {
+        return $this->belongsToMany(Document::class, 'loan_documents')
+            ->withPivot(['reviewed_by', 'reviewed_at', 'verified_by', 'verified_at'])
+            ->withTimestamps();
     }
 
     /**
@@ -446,7 +536,7 @@ class LoanApplication extends Model
      */
     public function statusHistory(): HasMany
     {
-        return $this->hasMany(LoanApplicationStatusHistory::class)->orderBy('created_at');
+        return $this->hasMany(LoanApplicationStatusHistory::class)->orderBy('changed_at')->orderBy('id');
     }
 
     /**
@@ -498,6 +588,35 @@ class LoanApplication extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
+    }
+
+    /**
+     * Loans that still hold their borrowers -- see
+     * LoanApplicationStatus::holdsBorrowers(). Reads the status column, not
+     * is_active: is_active can be toggled by hand and is not the truth.
+     */
+    /**
+     * Live loans secured by this CDP Core policy. Normally zero or one: a
+     * policy may back only one live loan at a time, and CDP Core asks this
+     * before paying the policy out.
+     *
+     * Goes through securities(), so it finds the policy wherever it sits on a
+     * loan that has more than one security.
+     */
+    public function scopeHoldingPolicy(Builder $query, string $policyNumber): Builder
+    {
+        return $query->live()
+            ->whereHas('securities', fn (Builder $q) => $q
+                ->where('security_type', LoanSecurityType::CdpInvestment->value)
+                ->whereRaw('UPPER(TRIM(policy_number)) = ?', [strtoupper(trim($policyNumber))]));
+    }
+
+    public function scopeLive(Builder $query): Builder
+    {
+        return $query->whereNotIn(
+            'status',
+            array_map(fn (LoanApplicationStatus $s) => $s->value, LoanApplicationStatus::releasingBorrowers())
+        );
     }
 
     /**

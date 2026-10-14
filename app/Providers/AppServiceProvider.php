@@ -28,6 +28,20 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Referenced by routes/v1.php as throttle:login. It was defined here
+        // when that middleware was added, then dropped in b2bbe57 while the
+        // route kept pointing at it -- which made every POST /login throw
+        // MissingRateLimiterException and answer 500 before the controller ran.
+        //
+        // Deliberately loose: AuthController does the real work with a
+        // per-account key that counts only FAILED attempts, so this is just an
+        // outer ceiling on request volume from one address. Tightening it would
+        // lock out a whole office behind a single NAT address on successful
+        // logins alone.
+        RateLimiter::for('login', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip());
+        });
+
         // Triggers an SMS send (costs gateway credits) - keep tight.
         RateLimiter::for('otp-request', function (Request $request) {
             return Limit::perMinute(3)->by($request->ip());
@@ -36,6 +50,13 @@ class AppServiceProvider extends ServiceProvider
         // Guards brute-forcing the 6-digit OTP.
         RateLimiter::for('otp-verify', function (Request $request) {
             return Limit::perMinute(5)->by($request->ip());
+        });
+
+        // Login form/auth endpoint throttle so attackers cannot spray the
+        // password without tripping a block. Keyed on email (when present) so a
+        // distributed attack on one account hits a shared, per-minute cap.
+        RateLimiter::for('login', function (Request $request) {
+            return Limit::perMinute(5)->by($request->input('username', $request->ip()));
         });
     }
 }

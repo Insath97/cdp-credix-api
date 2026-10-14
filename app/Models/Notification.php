@@ -19,6 +19,7 @@ class Notification extends Model
         'recipient',
         'subject',
         'message',
+        'message_hash',
         'status',
         'error',
         'sent_at',

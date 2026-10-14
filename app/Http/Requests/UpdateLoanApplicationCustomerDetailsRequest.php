@@ -3,8 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Models\LoanApplicationCustomer;
-use App\Traits\FriendlyValidationErrors;
+use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Rule;
 
 /**
@@ -21,8 +22,6 @@ use Illuminate\Validation\Rule;
  */
 class UpdateLoanApplicationCustomerDetailsRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     public function authorize(): bool
     {
         return true;
@@ -44,7 +43,7 @@ class UpdateLoanApplicationCustomerDetailsRequest extends FormRequest
                 'max:100',
                 Rule::unique('customers', 'id_number')->ignore($customerId),
             ],
-            'date_of_birth'   => 'sometimes|required|date',
+            'date_of_birth'   => 'sometimes|required|date|before:today',
             'phone_primary'   => 'sometimes|required|string|max:20',
             'phone_secondary' => 'sometimes|nullable|string|max:20',
             'email'           => 'sometimes|required|email|max:255',
@@ -58,6 +57,13 @@ class UpdateLoanApplicationCustomerDetailsRequest extends FormRequest
             'ds_division' => 'sometimes|nullable|string|max:255',
             'district'    => 'sometimes|nullable|string|max:255',
             'province'    => 'sometimes|nullable|string|max:255',
+
+            // Group loan member snapshot (per-group copy, never the shared
+            // customer record). Sent by the group loan form for existing members.
+            'member_name'   => 'sometimes|nullable|string|max:500',
+            'nic'           => 'sometimes|nullable|string|max:100',
+            'address'       => 'sometimes|nullable|string|max:500',
+            'phone_number'  => 'sometimes|nullable|string|max:20',
         ];
     }
 
@@ -71,5 +77,25 @@ class UpdateLoanApplicationCustomerDetailsRequest extends FormRequest
     public function attributes(): array
     {
         return ['id_number' => 'NIC/ID number'];
+    }
+
+    protected function failedValidation(Validator $validator)
+    {
+        $errorMessages = $validator->errors();
+        $fieldErrors = collect($errorMessages->getMessages())->map(function ($messages, $field) {
+            return [
+                'field' => $field,
+                'messages' => $messages,
+            ];
+        })->values();
+
+        $message = $fieldErrors->count() > 1
+            ? 'There are multiple validation errors. Please review the form and correct the issues.'
+            : 'There is an issue with the input for ' . $fieldErrors->first()['field'] . '.';
+
+        throw new HttpResponseException(response()->json([
+            'message' => $message,
+            'errors' => $fieldErrors,
+        ], 422));
     }
 }

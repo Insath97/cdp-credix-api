@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('loan_product_id')->constrained('loan_products')->cascadeOnDelete();
             $table->foreignId('branch_id')->nullable()->constrained('branches')->nullOnDelete();
 
-            $table->string('group_name');
+            $table->string('group_name')->nullable();
             $table->unsignedInteger('number_of_members');
             $table->string('competency');
 
@@ -43,6 +43,16 @@ return new class extends Migration
             $table->text('verified_remarks')->nullable();
             $table->text('approval_remarks')->nullable();
             $table->text('rejection_reason')->nullable();
+
+            $table->text('review_failure_reason')->nullable();
+            $table->timestamp('review_failed_at')->nullable();
+            $table->timestamp('resubmitted_at')->nullable();
+            $table->unsignedInteger('resubmission_count')->default(0);
+
+
+            $table->text('verify_failure_reason')->nullable();
+            $table->timestamp('verify_failed_at')->nullable();
+            $table->unsignedInteger('reverify_count')->default(0);
 
             $table->timestamp('applied_at')->useCurrent();
             $table->timestamp('reviewed_at')->nullable();

@@ -109,6 +109,73 @@ class Employee extends Model
     }
 
     /**
+     * Snapshot an employee's identifying details for the recommender columns
+     * carried by customers and loan applications.
+     *
+     * The recommender fields store both an employee id and a snapshot of the
+     * name, employee code, NIC and phone. Keeping the snapshot rows means the
+     * customer or loan stays readable after the employee is deactivated or
+     * their details change — the record always shows who recommended it.
+     *
+     * The per-record callers (customer / loan application controllers) send
+     * the four snapshot values from the picker already; this helper is the
+     * fallback so an API consumer that only sends recommended_by_employee_id
+     * still stores the complete set.
+     */
+    public static function recommenderSnapshot(?int $id): array
+    {
+        if (!$id) {
+            return [];
+        }
+
+        $employee = self::find($id);
+
+        if (!$employee) {
+            return [];
+        }
+
+        return [
+            'recommended_by_employee_id' => $employee->id,
+            'recommender_name'           => $employee->full_name,
+            'recommender_employee_code'  => $employee->employee_code,
+            'recommender_nic'            => $employee->id_number,
+            'recommender_phone'          => $employee->phone ?: $employee->phone_primary,
+        ];
+    }
+
+    /**
+     * Fill any missing recommender snapshot fields on a validated payload.
+     *
+     * Values the client actually sent always win; the snapshot only stands in
+     * for blank ones. Passing recommended_by_employee_id as null/empty clears
+     * the carried snapshot columns too, so a recommender that is deliberately
+     * removed from a customer or loan stops being displayed.
+     */
+    public static function mergeRecommenderSnapshot(array $data): array
+    {
+        $id = $data['recommended_by_employee_id'] ?? null;
+
+        if ($id === null || $id === '') {
+            if (array_key_exists('recommended_by_employee_id', $data)) {
+                $data['recommender_name']          = null;
+                $data['recommender_employee_code'] = null;
+                $data['recommender_nic']           = null;
+                $data['recommender_phone']         = null;
+            }
+
+            return $data;
+        }
+
+        foreach (self::recommenderSnapshot((int) $id) as $key => $value) {
+            if (($data[$key] ?? null) === null || ($data[$key] ?? '') === '') {
+                $data[$key] = $value;
+            }
+        }
+
+        return $data;
+    }
+
+    /**
      * Get the user account associated with the employee.
      */
     public function user(): HasOne

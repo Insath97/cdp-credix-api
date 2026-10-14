@@ -21,11 +21,11 @@ class LoanTermController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Loan Term Index', ['only' => ['index', 'show']]),
-            new Middleware('permission:Loan Term Create', ['only' => ['store']]),
-            new Middleware('permission:Loan Term Update', ['only' => ['update']]),
-            new Middleware('permission:Loan Term Delete', ['only' => ['destroy']]),
-            new Middleware('permission:Loan Term Toggle Status', ['only' => ['toggleStatus']]),
+            new Middleware('permission:Loan Term Index', only: ['index', 'show']),
+            new Middleware('permission:Loan Term Create', only: ['store']),
+            new Middleware('permission:Loan Term Update', only: ['update']),
+            new Middleware('permission:Loan Term Delete', only: ['destroy']),
+            new Middleware('permission:Loan Term Toggle Status', only: ['toggleStatus']),
         ];
     }
 

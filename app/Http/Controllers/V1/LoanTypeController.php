@@ -21,11 +21,11 @@ class LoanTypeController extends Controller implements HasMiddleware
     public static function middleware(): array
     {
         return [
-            new Middleware('permission:Loan Type Index', ['only' => ['index', 'show']]),
-            new Middleware('permission:Loan Type Create', ['only' => ['store']]),
-            new Middleware('permission:Loan Type Update', ['only' => ['update']]),
-            new Middleware('permission:Loan Type Delete', ['only' => ['destroy']]),
-            new Middleware('permission:Loan Type Toggle Status', ['only' => ['toggleStatus']]),
+            new Middleware('permission:Loan Type Index', only: ['index', 'show']),
+            new Middleware('permission:Loan Type Create', only: ['store']),
+            new Middleware('permission:Loan Type Update', only: ['update']),
+            new Middleware('permission:Loan Type Delete', only: ['destroy']),
+            new Middleware('permission:Loan Type Toggle Status', only: ['toggleStatus']),
         ];
     }
 

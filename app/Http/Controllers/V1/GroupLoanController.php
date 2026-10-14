@@ -9,30 +9,40 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Models\Application;
 use App\Models\Branch;
+use App\Models\Employee;
 use App\Models\GroupLoan;
+use App\Models\Guarantor;
+use App\Models\LoanApplication;
+use App\Models\LoanApplicationStatusHistory;
 use App\Models\Setting;
 use App\Models\Customer;
+use App\Models\Document;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\CreateGroupLoanRequest;
 use App\Http\Requests\UpdateGroupLoanRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
+use App\Exceptions\CustomerHasLiveLoanException;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
+use App\Services\CustomerLoanEligibilityService;
 use App\Services\GroupLoanWorkflowService;
+use App\Services\LoanDocumentService;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Validator;
 use Spatie\Permission\Models\Role;
 
 class GroupLoanController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected GroupLoanWorkflowService $workflowService,
         protected NotificationService $notificationService,
+        protected LoanDocumentService $loanDocumentService,
     ) {
     }
 
@@ -44,10 +54,14 @@ class GroupLoanController extends Controller implements HasMiddleware
             new Middleware('permission:Group Loan Update', only: ['update']),
             new Middleware('permission:Group Loan Toggle Status', only: ['toggleStatus', 'activate', 'deactivate']),
             new Middleware('permission:Group Loan Delete', only: ['destroy']),
-            new Middleware('permission:Group Loan Review', only: ['review']),
-            new Middleware('permission:Group Loan Verify', only: ['verify']),
+            new Middleware('permission:Group Loan Review', only: ['review', 'reviewFail']),
+            new Middleware('permission:Group Loan Resubmit', only: ['resubmit']),
+            new Middleware('permission:Group Loan Verify', only: ['verify', 'verifyFail']),
+            new Middleware('permission:Group Loan Reverify', only: ['reverify']),
             new Middleware('permission:Group Loan Approve', only: ['approve']),
             new Middleware('permission:Group Loan Reject', only: ['reject']),
+            new Middleware('permission:Group Loan Reopen', only: ['reopen']),
+            new Middleware('permission:Group Loan Offer Response', only: ['holdOffer', 'acceptOffer', 'declineOffer']),
             new Middleware('permission:Group Loan Disburse', only: ['disburse']),
             new Middleware('permission:Group Loan Cancel', only: ['cancel']),
         ];
@@ -85,6 +99,9 @@ class GroupLoanController extends Controller implements HasMiddleware
 
                 $query->status($status);
             }
+
+            // A branch officer sees their own branch's rows only.
+            $this->scopeToUserBranch($query);
 
             $groupLoans = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
@@ -132,7 +149,8 @@ class GroupLoanController extends Controller implements HasMiddleware
     public function statusCounts()
     {
         try {
-            $counts = GroupLoan::query()
+
+            $counts = $this->scopeToUserBranch(GroupLoan::query())
                 ->selectRaw('status, COUNT(*) as total')
                 ->groupBy('status')
                 ->pluck('total', 'status');
@@ -214,31 +232,63 @@ class GroupLoanController extends Controller implements HasMiddleware
         try {
             $data = $request->validated();
 
+            $data = Employee::mergeRecommenderSnapshot($data);
+
             $groupLoan = DB::transaction(function () use ($data) {
                 $items = collect($data['items'])->map(function ($item) {
                     $item['line_total'] = round($item['quantity'] * $item['unit_price'], 2);
                     return $item;
                 });
 
-                // The loan amount is always backend-computed from the
-                // requested items — never trusted from the client.
+
                 $requestedAmount = round($items->sum('line_total'), 2);
 
-                // Group Loan uses a service charge in place of interest, always
-                // taken from System Settings — there is no per-application
-                // override, and no interest rate is involved at any point.
+
                 $serviceChargePercentage = (float) Setting::get('group_loan_service_charge_percentage', 0);
 
-                $memberCustomerIds = collect($data['members'])
+
+                $resolvedMembers = collect($data['members'])->map(function ($member) use ($data) {
+                    if (!empty($member['customer_id'])) {
+                        $member['customer_id'] = (int) $member['customer_id'];
+                        return $member;
+                    }
+
+                    $customer = Customer::create([
+                        'full_name'      => $member['member_name'] ?? null,
+                        'id_type'        => 'NIC',
+                        'id_number'      => $member['nic'] ?? null,
+                        'address_line_1' => $member['address'] ?? null,
+                        'phone_primary'  => $member['phone_number'] ?? null,
+                        'branch_id'      => $data['branch_id'] ?? null,
+                    ]);
+
+                    $customer->customerDetail()->create([
+                        'gn_division' => $member['gn_division'] ?? null,
+                        'ds_division' => $member['ds_division'] ?? null,
+                    ]);
+
+                    $member['customer_id'] = $customer->id;
+                    return $member;
+                });
+
+                $memberCustomerIds = $resolvedMembers
                     ->pluck('customer_id')
-                    ->filter()
-                    ->unique()
                     ->values();
+
+                // One live loan per customer, re-checked under a row lock so
+                // two submissions racing for the same person cannot both pass.
+                // A typed-in member's new customer row is matched to any older
+                // row by NIC inside the service.
+                CustomerLoanEligibilityService::assertEligible(
+                    $resolvedMembers->mapWithKeys(fn ($m, $i) => [
+                        "members.{$i}." . (empty($data['members'][$i]['customer_id']) ? 'nic' : 'customer_id') => $m['customer_id'],
+                    ])->all()
+                );
 
                 $groupLoan = GroupLoan::create([
                     'loan_product_id'           => $data['loan_product_id'],
                     'branch_id'                 => $data['branch_id'] ?? null,
-                    'group_name'                => $data['group_name'],
+                    'group_name'                => $data['group_name'] ?? null,
                     'number_of_members'         => $memberCustomerIds->count(),
                     'competency'                => $data['competency'],
                     'requested_amount'          => $requestedAmount,
@@ -272,9 +322,6 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'loan_product_id'  => $data['loan_product_id'],
                     'branch_id'        => $data['branch_id'] ?? null,
                     'requested_amount' => $requestedAmount,
-                    // A Group Loan has no interest rate. Repayment is derived
-                    // solely from the group's service charge percentage, which
-                    // lives on the group_loans header.
                     'interest_rate'    => null,
                     'interest_type'    => null,
                     'term_months'      => $data['term_months'],
@@ -288,31 +335,53 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'recommender_phone'          => $data['recommender_phone'] ?? null,
                 ]);
 
+                LoanApplicationStatusHistory::record(
+                    $loanApplication,
+                    LoanApplicationStatus::Submitted,
+                    Auth::id(),
+                    'Group loan application submitted'
+                );
+
                 foreach ($memberCustomerIds as $customerId) {
-                    $loanApplication->loanApplicationCustomers()->create([
+                    $pivot = $loanApplication->loanApplicationCustomers()->create([
                         'customer_id' => $customerId,
+                    ]);
+                    $pivot->setRelation('customer', Customer::find($customerId));
+                    $pivot->snapshotFromCustomer();
+                }
+
+                foreach ($data['guarantors'] ?? [] as $guarantorData) {
+                    $guarantor = Guarantor::create(array_merge($guarantorData, [
+                        'customer_id' => $memberCustomerIds->first(),
+                    ]));
+
+                    $loanApplication->loanApplicationGuarantors()->create([
+                        'guarantor_id'   => $guarantor->id,
+                        'guarantor_type' => $guarantorData['type'],
+                        'status'         => 'pending',
                     ]);
                 }
 
                 return $groupLoan;
             });
 
+            // Index the file's documents, the same as an individual loan.
+            // Every member's own papers count towards the group's file, and
+            // they are attached by now.
+            if ($application = $groupLoan->loanApplication) {
+                $this->loanDocumentService->syncForApplication($application);
+            }
+
             $this->logActivity('CREATE', 'GroupLoan', "Created group loan ID: {$groupLoan->id}", $data);
 
-            $staffRole = Role::where('name', config('notifications.staff_role'))->first();
-            if ($staffRole) {
-                foreach ($staffRole->users as $staffUser) {
-                    $staffPhone = $staffUser->employee?->phone_primary;
-                    if (!empty($staffPhone)) {
-                        $this->notificationService->sendSms(
-                            'group_loan_submitted',
-                            $staffPhone,
-                            'CDP Credix: New group loan application pending for review.',
-                            ['user_id' => $staffUser->id]
-                        );
-                    }
-                }
-            }
+            $this->notificationService->sendSystemToStaff(
+                'group_loan_submitted',
+                'CDP Capital: New group loan application pending for review.',
+                // Names the loan so the appended reference can reach it;
+                // without this the reviewer was told a group loan was
+                // waiting but not which one.
+                ['loan_application_id' => $groupLoan->loanApplication?->id]
+            );
 
             return response()->json([
                 'status'  => 'success',
@@ -322,10 +391,13 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'branch',
                     'items',
                     'loanApplication.loanApplicationCustomers.customer.customerDetail',
+                    'loanApplication.loanApplicationGuarantors.guarantor',
                     'appliedByUser:'.User::SUMMARY_COLUMNS,
                 ]),
             ], 201);
 
+        } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
@@ -364,9 +436,6 @@ class GroupLoanController extends Controller implements HasMiddleware
             return response()->json([
                 'status'  => 'success',
                 'message' => 'Group loan retrieved successfully',
-                // `members` carries each member's own share of the group's
-                // money — including their individual monthly installment —
-                // derived from the single loan application, never stored.
                 'data'    => array_merge($groupLoan->toArray(), [
                     'members' => $groupLoan->memberBreakdown(),
                 ]),
@@ -398,12 +467,6 @@ class GroupLoanController extends Controller implements HasMiddleware
                 ], 404);
             }
 
-            // Editable only while Available, for the same reason the member
-            // list is frozen after approval: once the group loan is Locked the
-            // approved amount has been split across exactly these members on
-            // exactly these terms, and rewriting the header afterwards would
-            // silently disagree with the per-member loan applications and the
-            // schedules already generated from them.
             if ($groupLoan->status !== GroupLoanStatus::Available) {
                 return response()->json([
                     'status'  => 'error',
@@ -418,6 +481,8 @@ class GroupLoanController extends Controller implements HasMiddleware
             $data = $request->validated();
 
             $groupLoan->update($data);
+
+            $this->workflowService->syncAmounts($groupLoan->refresh());
 
             $this->logActivity('UPDATE', 'GroupLoan', "Updated group loan ID: {$groupLoan->id}", $data);
 
@@ -457,8 +522,6 @@ class GroupLoanController extends Controller implements HasMiddleware
                 ], 404);
             }
 
-            // Toggling a finished group loan back on would show it as "Active".
-            // Only block turning it ON — turning it off is always fine.
             if (!$groupLoan->is_active && ($terminal = $this->terminalStatusResponse($groupLoan))) {
                 return $terminal;
             }
@@ -573,8 +636,33 @@ class GroupLoanController extends Controller implements HasMiddleware
 
     /**
      * Verify a group loan after review and cascade to every member.
+     *
+     * Only from Reviewed. A group loan that already failed verification is
+     * sitting in Reverify and belongs to reverify() instead — see the same
+     * split in LoanApplicationController.
      */
     public function verify(Request $request, string $id)
+    {
+        return $this->runVerification($request, $id, false);
+    }
+
+    /**
+     * Verify a group loan that was sent back for a second look.
+     *
+     * The clearing of the old failure reason and the bump of reverify_count
+     * happen in GroupLoanWorkflowService::verify(), so the group and
+     * individual paths cannot drift apart.
+     */
+    public function reverify(Request $request, string $id)
+    {
+        return $this->runVerification($request, $id, true);
+    }
+
+    /**
+     * The body behind verify() and reverify(). One implementation because it
+     * is one check; only the starting status and the wording differ.
+     */
+    private function runVerification(Request $request, string $id, bool $isReverification)
     {
         try {
             $validator = Validator::make($request->all(), [
@@ -598,6 +686,25 @@ class GroupLoanController extends Controller implements HasMiddleware
                 ], 404);
             }
 
+            // The stage lives on the group's single application, not on the
+            // header — the header stays Available right through review and
+            // verification — so that is what decides which route applies.
+            $awaitingReverification = $groupLoan->loanApplication?->status === LoanApplicationStatus::Reverify;
+
+            if ($isReverification && !$awaitingReverification) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This group loan is not awaiting re-verification. Use the verify action instead.',
+                ], 422);
+            }
+
+            if (!$isReverification && $awaitingReverification) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This group loan failed verification and is awaiting re-verification. Use the re-verify action instead.',
+                ], 422);
+            }
+
             $extra = [
                 'verified_by' => Auth::id(),
                 'verified_at' => now(),
@@ -611,13 +718,24 @@ class GroupLoanController extends Controller implements HasMiddleware
 
             $groupLoan = $this->workflowService->verify($groupLoan, Auth::id(), $request->input('remarks'), $extra);
 
-            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} verified", [
+            $this->markCheckedDocuments(
+                $groupLoan,
+                $request->has('verified_document_ids') ? (array) $request->input('verified_document_ids', []) : null,
+                'verified_by',
+                'verified_at'
+            );
+
+            $verb = $isReverification ? 're-verified' : 'verified';
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} {$verb}", [
                 'group_loan_id' => $groupLoan->id,
             ]);
 
             return response()->json([
                 'status'  => 'success',
-                'message' => 'Group loan verified successfully',
+                'message' => $isReverification
+                    ? 'Group loan re-verified successfully'
+                    : 'Group loan verified successfully',
                 'data'    => $groupLoan,
             ], 200);
 
@@ -629,7 +747,9 @@ class GroupLoanController extends Controller implements HasMiddleware
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Failed to verify group loan',
+                'message' => $isReverification
+                    ? 'Failed to re-verify group loan'
+                    : 'Failed to verify group loan',
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
@@ -640,6 +760,23 @@ class GroupLoanController extends Controller implements HasMiddleware
      * approval. Records who reviewed it and cascades the stage to the group's
      * single loan application; the header itself stays Available.
      */
+    /**
+     * Record which of the group's documents an officer ticked off.
+     *
+     * A group loan's paperwork hangs off its loan application, exactly like an
+     * individual one's, so the stamp lands in loan_documents against that
+     * application. Members' own documents are shared with any other loan they
+     * hold, which is precisely why the stamp cannot live on the document row.
+     */
+    private function markCheckedDocuments(GroupLoan $groupLoan, ?array $documentIds, string $byColumn, string $atColumn): void
+    {
+        if (!$application = $groupLoan->loanApplication) {
+            return;
+        }
+
+        $this->loanDocumentService->markChecked($application, $documentIds, $byColumn, $atColumn);
+    }
+
     public function review(Request $request, string $id)
     {
         try {
@@ -677,6 +814,13 @@ class GroupLoanController extends Controller implements HasMiddleware
 
             $groupLoan = $this->workflowService->review($groupLoan, Auth::id(), $request->input('remarks'), $extra);
 
+            $this->markCheckedDocuments(
+                $groupLoan,
+                $request->has('reviewed_document_ids') ? (array) $request->input('reviewed_document_ids', []) : null,
+                'reviewed_by',
+                'reviewed_at'
+            );
+
             $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} reviewed", [
                 'group_loan_id' => $groupLoan->id,
             ]);
@@ -702,6 +846,244 @@ class GroupLoanController extends Controller implements HasMiddleware
     }
 
     /**
+     * Fail the verification of a reviewed group loan.
+     *
+     * The mirror of LoanApplicationController::verifyFail, for the loan a
+     * group borrows as one. Not a rejection — the file lands in Reverify for a
+     * second look, every member is told why by SMS, and verification runs
+     * again.
+     */
+    public function verifyFail(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+
+                'reason' => 'required|string|min:5|max:1000',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $groupLoan = GroupLoan::find($id);
+
+            if (!$groupLoan) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan not found',
+                ], 404);
+            }
+
+            $reason = $request->input('reason');
+
+            $groupLoan = $this->workflowService->verifyFail($groupLoan, Auth::id(), $reason, [
+                'verify_failure_reason' => $reason,
+                'verify_failed_at'      => now(),
+            ]);
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} failed verification", [
+                'group_loan_id' => $groupLoan->id,
+            ]);
+
+            $application = $groupLoan->loanApplication;
+
+            foreach ($application?->notifiableCustomers() ?? collect() as $customer) {
+                $message = "Your group loan application verification is failed.\nReason: {$reason}";
+                $context = ['loan_application_id' => $application->id, 'customer_id' => $customer->id];
+
+                if (!empty($customer->phone_primary)) {
+                    $this->notificationService->sendSms('group_loan_verify_failed', $customer->phone_primary, $message, $context);
+                }
+
+                if (!empty($customer->email)) {
+                    $this->notificationService->sendEmail('group_loan_verify_failed', $customer->email, 'Group Loan Verification Failed', $message, $context);
+                }
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Group loan verification failed. It is now awaiting re-verification and the members have been notified.',
+                'data'    => $groupLoan,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to fail the verification of this group loan',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    public function reviewFail(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+
+                'reason' => 'required|string|min:5|max:300',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $groupLoan = GroupLoan::find($id);
+
+            if (!$groupLoan) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan not found',
+                ], 404);
+            }
+
+            $reason = $request->input('reason');
+
+            $groupLoan = $this->workflowService->reviewFail($groupLoan, Auth::id(), $reason, [
+                'review_failure_reason' => $reason,
+                'review_failed_at'      => now(),
+            ]);
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} failed review", [
+                'group_loan_id' => $groupLoan->id,
+            ]);
+
+            $application = $groupLoan->loanApplication;
+
+            foreach ($application?->notifiableCustomers() ?? collect() as $customer) {
+                $message = "Your group loan application has been reviewed but it failed.\nReason: {$reason}\nPlease resubmit your loan application documents again.";
+                $context = ['loan_application_id' => $application->id, 'customer_id' => $customer->id];
+
+                if (!empty($customer->phone_primary)) {
+                    $this->notificationService->sendSms('group_loan_review_failed', $customer->phone_primary, $message, $context);
+                }
+
+                if (!empty($customer->email)) {
+                    $this->notificationService->sendEmail('group_loan_review_failed', $customer->email, 'Group Loan Review Failed', $message, $context);
+                }
+            }
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Group loan review failed. The members have been notified to resubmit documents.',
+                'data'    => $groupLoan,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to fail the review of this group loan',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Put a failed group loan back in the review queue once its documents have
+     * been reuploaded.
+     *
+     * The failure reason is cleared — it described the old document set and
+     * would otherwise sit on screen next to the new one — but the count is
+     * kept and bumped. The previous failure stays readable in
+     * loan_application_status_history.
+     */
+    public function resubmit(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $groupLoan = GroupLoan::find($id);
+
+            if (!$groupLoan) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan not found',
+                ], 404);
+            }
+
+            $application = $groupLoan->loanApplication;
+
+            if (!$application) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'This group loan has no loan application attached.',
+                ], 422);
+            }
+
+            if (!Document::where('loan_application_id', $application->id)->exists()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Upload the requested documents before resubmitting this group loan.',
+                ], 422);
+            }
+
+            $groupLoan = $this->workflowService->resubmit(
+                $groupLoan,
+                Auth::id(),
+                // No fallback wording any more: remarks are required, so the
+                // trail records what the group actually said rather than a
+                // sentence the server made up on their behalf.
+                $request->input('remarks'),
+                [
+                    'review_failure_reason' => null,
+                    'review_failed_at'      => null,
+                    'resubmitted_at'        => now(),
+                    'resubmission_count'    => (int) $groupLoan->resubmission_count + 1,
+                ]
+            );
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} resubmitted for review", [
+                'group_loan_id' => $groupLoan->id,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Group loan resubmitted for review successfully',
+                'data'    => $groupLoan,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to resubmit group loan',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
      * Approve a group loan under review.
      */
     public function approve(Request $request, string $id)
@@ -716,10 +1098,6 @@ class GroupLoanController extends Controller implements HasMiddleware
                 ], 404);
             }
 
-            // Same ceiling as Individual Loan: a group can be approved for
-            // less than it requested, never more. The requested amount is
-            // itself computed from the group's items, so approving above it
-            // would lend money against nothing.
             $validator = Validator::make($request->all(), [
                 'approved_amount' => [
                     'nullable',
@@ -727,6 +1105,7 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'min:0.01',
                     'max:' . (float) $groupLoan->requested_amount,
                 ],
+                'remarks'         => 'required|string|min:3',
             ], [
                 'approved_amount.max' => 'The approved amount cannot be more than the requested amount of '
                     . number_format((float) $groupLoan->requested_amount, 2)
@@ -846,6 +1225,160 @@ class GroupLoanController extends Controller implements HasMiddleware
     }
 
     /**
+     * Put a rejected group loan back into play.
+     *
+     * The group-loan counterpart of LoanApplicationController::reopen(). The
+     * individual endpoint refuses group loans (groupLoanGuardResponse), so
+     * this is the only way to reopen one. Every member is checked against the
+     * one-live-loan rule first -- see GroupLoanWorkflowService::reopen().
+     */
+    public function reopen(Request $request, string $id)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $groupLoan = GroupLoan::find($id);
+
+            if (!$groupLoan) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan not found',
+                ], 404);
+            }
+
+            $groupLoan = $this->workflowService->reopen($groupLoan, $request->input('remarks'), Auth::id());
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} reopened after rejection", [
+                'group_loan_id' => $groupLoan->id,
+                'reopened_by'   => Auth::id(),
+                'remarks'       => $request->input('remarks'),
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Group loan reopened successfully. It can be edited and sent for review again.',
+                'data'    => $groupLoan,
+            ], 200);
+
+        } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to reopen group loan',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Record the group's answer to an approved offer.
+     *
+     * The mirror of LoanApplicationController::respondToOffer, for the loan a
+     * group borrows as one. Approving less than was asked for is an offer, and
+     * the group may take it, ask for time, or refuse -- and disbursement waits
+     * for that answer either way.
+     *
+     * One method behind three routes: they differ only in the status they land
+     * on and whether a reason is required.
+     */
+    private function respondToOffer(Request $request, string $id, LoanApplicationStatus $to)
+    {
+        try {
+
+            $rules = ['remarks' => 'required|string|min:3|max:1000'];
+
+            if ($to === LoanApplicationStatus::Declined) {
+                $rules['decline_reason'] = 'required|string|in:' . implode(',', array_keys(LoanApplication::OFFER_DECLINE_REASONS));
+            }
+
+            $validator = Validator::make($request->all(), $rules);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => $validator->errors()->first(),
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
+            $groupLoan = GroupLoan::find($id);
+
+            if (!$groupLoan) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Group loan not found',
+                ], 404);
+            }
+
+            $groupLoan = $this->workflowService->respondToOffer(
+                $groupLoan,
+                $to,
+                Auth::id(),
+                $request->input('remarks'),
+                $request->input('decline_reason')
+            );
+
+            $this->logActivity('UPDATE', 'GroupLoan', "Group loan ID: {$groupLoan->id} offer {$to->value}", [
+                'group_loan_id'  => $groupLoan->id,
+                'decline_reason' => $to === LoanApplicationStatus::Declined ? $request->input('decline_reason') : null,
+            ]);
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => match ($to) {
+                    LoanApplicationStatus::OnHold   => 'Offer put on hold for the group',
+                    LoanApplicationStatus::Accepted => 'Group accepted the approved offer',
+                    default                         => 'Group declined the offer — the group loan has been cancelled',
+                },
+                'data'    => $groupLoan,
+            ], 200);
+
+        } catch (InvalidLoanApplicationTransitionException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Failed to record the offer response',
+                'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    public function holdOffer(Request $request, string $id)
+    {
+        return $this->respondToOffer($request, $id, LoanApplicationStatus::OnHold);
+    }
+
+    public function acceptOffer(Request $request, string $id)
+    {
+        return $this->respondToOffer($request, $id, LoanApplicationStatus::Accepted);
+    }
+
+    public function declineOffer(Request $request, string $id)
+    {
+        return $this->respondToOffer($request, $id, LoanApplicationStatus::Declined);
+    }
+
+    /**
      * Disburse an approved group loan.
      */
     public function disburse(string $id)
@@ -908,6 +1441,18 @@ class GroupLoanController extends Controller implements HasMiddleware
     public function cancel(Request $request, string $id)
     {
         try {
+            $validator = Validator::make($request->all(), [
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => 'Validation failed',
+                    'errors'  => $validator->errors(),
+                ], 422);
+            }
+
             $groupLoan = GroupLoan::find($id);
 
             if (!$groupLoan) {
@@ -956,6 +1501,17 @@ class GroupLoanController extends Controller implements HasMiddleware
                     'status'  => 'error',
                     'message' => 'Group loan not found',
                 ], 404);
+            }
+
+            if (!in_array($groupLoan->status, [GroupLoanStatus::Available, GroupLoanStatus::Cancelled, GroupLoanStatus::Rejected], true)) {
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "This group loan is {$groupLoan->status->value} and can no longer be deleted. Cancel it instead.",
+                    'errors'  => [
+                        'group_loan_id' => $groupLoan->id,
+                        'status'        => $groupLoan->status->value,
+                    ],
+                ], 422);
             }
 
             $groupLoan->delete();

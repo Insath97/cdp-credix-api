@@ -12,6 +12,7 @@ use App\Models\LoanApplication;
 use App\Models\Customer;
 use App\Services\CreditScoreService;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\CreateLoanInstallmentRequest;
 use App\Http\Requests\UpdateLoanInstallmentRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -19,7 +20,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class LoanInstallmentController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected CreditScoreService $creditScoreService,
@@ -60,6 +61,9 @@ class LoanInstallmentController extends Controller implements HasMiddleware
             if ($request->has('status')) {
                 $query->where('status', $request->status);
             }
+
+            // A branch officer sees their own branch's installments only.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id']);
 
             $installments = $query->orderBy('due_date')->paginate($perPage);
 
@@ -120,6 +124,10 @@ class LoanInstallmentController extends Controller implements HasMiddleware
             if ($request->boolean('payable')) {
                 $query->payable();
             }
+
+            // Same confinement as index(): naming a loan_application_id from
+            // another branch must not open its schedule.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id']);
 
             if ($request->has('per_page')) {
                 $installments = $query->orderBy('due_date')->paginate($request->get('per_page'));

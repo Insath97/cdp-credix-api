@@ -64,7 +64,7 @@ class SendOverdueSmsReminders extends Command
                     continue;
                 }
 
-                $overdueMessage = "CDP Credix: Your loan installment is {$daysOverdue} day(s) overdue. Please make your payment as soon as possible to avoid recovery action.";
+                $overdueMessage = "Your loan installment is {$daysOverdue} day(s) overdue. Please make your payment as soon as possible to avoid recovery action.";
 
                 foreach ($arrears['customers'] as $customer) {
                     if (empty($customer->phone_primary)) {

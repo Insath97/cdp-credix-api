@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
+use App\Enums\LegalDocumentType;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
@@ -10,8 +10,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class CreateLoanProductRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -29,17 +27,13 @@ class CreateLoanProductRequest extends FormRequest
             'name' => 'required|string|max:255',
             'code' => 'nullable|string|max:50|unique:loan_products,code',
             'loan_type_id' => 'required|integer|exists:loan_types,id',
-            'loan_term_id' => 'nullable|integer|exists:loan_terms,id',
+            'loan_term_id' => 'required|integer|exists:loan_terms,id',
             'description' => 'nullable|string',
-            // A Group Loan product has no interest rate at all — repayment is
-            // derived from the service charge percentage in System Settings.
-            // Every other product still needs one, since approve() computes
-            // interest from it.
             'interest_rate' => [
                 'nullable',
                 'numeric',
                 'min:0',
-                'max:999.999',
+                'max:99.999',
                 Rule::requiredIf(fn () => !$this->boolean('is_group_loan')),
             ],
             'interest_type' => 'nullable|string|in:flat,reducing',
@@ -54,6 +48,19 @@ class CreateLoanProductRequest extends FormRequest
             'is_active' => 'nullable|boolean',
             'is_islamic' => 'nullable|boolean',
             'is_group_loan' => 'nullable|boolean',
+
+            // The legal documents this product's loans need. When sent, the
+            // list replaces the product's current one.
+            'legal_document_types'   => 'sometimes|array',
+            'legal_document_types.*' => ['string', 'distinct', Rule::in(LegalDocumentType::values())],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'legal_document_types.*.in'       => 'Unknown legal document type. Use: ' . implode(', ', LegalDocumentType::values()) . '.',
+            'legal_document_types.*.distinct' => 'A legal document type is listed twice.',
         ];
     }
 

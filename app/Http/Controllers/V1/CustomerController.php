@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\V1;
 
 use App\Traits\ActivityLogTrait;
+use App\Traits\FileUploadTrait;
+use App\Traits\GuardsCustomerLoanRecords;
+use App\Traits\ScopesToUserBranch;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateCustomerRequest;
@@ -11,23 +14,24 @@ use App\Http\Requests\UpdateCustomerRequest;
 use App\Models\Application;
 use App\Models\Customer;
 use App\Models\Document;
+use App\Models\Employee;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationStatusHistory;
 use App\Models\User;
 use App\Enums\LoanApplicationStatus;
+use App\Services\CustomerVerificationService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 
 class CustomerController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, FileUploadTrait, GuardsCustomerLoanRecords, ScopesToUserBranch;
 
     public function __construct(protected NotificationService $notificationService)
     {
@@ -65,12 +69,7 @@ class CustomerController extends Controller implements HasMiddleware
                 $query->where('branch_id', $request->branch_id);
             }
 
-            $currentUser = Auth::guard('api')->user();
-            if ($currentUser && $currentUser->user_type === 'staff') {
-                if ($currentUser->employee && $currentUser->employee->branch_id) {
-                    $query->where('branch_id', $currentUser->employee->branch_id);
-                }
-            }
+            $this->scopeToUserBranch($query);
 
             $customers = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
@@ -100,6 +99,8 @@ class CustomerController extends Controller implements HasMiddleware
         try {
             $currentUser = Auth::guard('api')->user();
             $data = $request->validated();
+
+            $data = Employee::mergeRecommenderSnapshot($data);
 
             $customer = Customer::create($data);
 
@@ -136,42 +137,31 @@ class CustomerController extends Controller implements HasMiddleware
                 }
             }
 
-            if (!empty($data['create_user_account']) && !empty($data['user_username'])) {
-                $plainPassword = $data['user_password'] ?? Str::random(10);
-                $user = User::create([
-                    'name' => $customer->full_name,
-                    'username' => $data['user_username'],
-                    'email' => $customer->email,
-                    'password' => Hash::make($plainPassword),
-                    'user_type' => 'customer',
-                    'customer_id' => $customer->id,
-                    'is_active' => true,
-                    'can_login' => true,
-                ]);
-            } else {
-                $plainPassword = Str::random(10);
-                $user = User::create([
-                    'name' => $customer->full_name,
-                    'username' => $customer->customer_code,
-                    'email' => $customer->email,
-                    'password' => Hash::make($plainPassword),
-                    'user_type' => 'customer',
-                    'customer_id' => $customer->id,
-                    'is_active' => true,
-                    'can_login' => true,
-                ]);
-            }
+            $plainPassword = User::generateTemporaryPassword();
+            $user = User::create([
+                'name' => $customer->full_name,
+                'username' => !empty($data['create_user_account']) && !empty($data['user_username'])
+                    ? $data['user_username']
+                    : $customer->customer_code,
+                'email' => $customer->email,
+                'password' => Hash::make($plainPassword),
+                'password_changed_at' => null,
+                'password_expires_at' => now()->addDays(User::TEMPORARY_PASSWORD_DAYS),
+                'user_type' => 'customer',
+                'customer_id' => $customer->id,
+                'is_active' => true,
+                'can_login' => true,
+            ]);
+
             if (!empty($data['guarantors'])) {
-                foreach ($data['guarantors'] as $guarantorData) {
-                    // Documents ride in on the guarantor payload but belong to
-                    // the documents table, so they are pulled out before the
-                    // guarantor row is written.
+                foreach ($data['guarantors'] as $guarantorIndex => $guarantorData) {
+                    
                     $guarantorDocuments = $guarantorData['documents'] ?? [];
                     unset($guarantorData['documents']);
 
                     $guarantor = $customer->guarantors()->create($guarantorData);
 
-                    foreach ($guarantorDocuments as $doc) {
+                    foreach ($guarantorDocuments as $docIndex => $doc) {
                         if (empty($doc['file']) && empty($doc['file_path'])) {
                             continue;
                         }
@@ -187,7 +177,7 @@ class CustomerController extends Controller implements HasMiddleware
                             'guarantor_id'  => $guarantor->id,
                             'customer_id'   => $customer->id,
                             'file_path'     => !empty($doc['file'])
-                                ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                                ? $this->handleFileUpload($request, "guarantors.{$guarantorIndex}.documents.{$docIndex}.file", null, 'documents', $customer->id . '_' . $documentName)
                                 : $doc['file_path'],
                         ]);
                     }
@@ -195,7 +185,7 @@ class CustomerController extends Controller implements HasMiddleware
             }
 
             if (!empty($data['documents'])) {
-                foreach ($data['documents'] as $doc) {
+                foreach ($data['documents'] as $docIndex => $doc) {
                     if (empty($doc['file']) && empty($doc['file_path'])) {
                         continue;
                     }
@@ -207,7 +197,7 @@ class CustomerController extends Controller implements HasMiddleware
                         'is_active' => $doc['is_active'] ?? true,
                         'uploaded_at' => now(),
                         'file_path' => !empty($doc['file'])
-                            ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                            ? $this->handleFileUpload($request, "documents.{$docIndex}.file", null, 'documents', $customer->id . '_' . $documentName)
                             : $doc['file_path'],
                     ]);
                 }
@@ -226,7 +216,7 @@ class CustomerController extends Controller implements HasMiddleware
                     'monthly_repayment_date' => $data['monthly_repayment_date'] ?? null,
                 ]);
 
-                LoanApplication::create([
+                $loanApplication = LoanApplication::create([
                     'application_id' => $application->id,
                     'customer_id' => $customer->id,
                     'loan_product_id' => $data['loan_product_id'],
@@ -241,19 +231,29 @@ class CustomerController extends Controller implements HasMiddleware
                     'status' => LoanApplicationStatus::Submitted->value,
                     'is_active' => true,
                 ]);
+
+                LoanApplicationStatusHistory::record(
+                    $loanApplication,
+                    LoanApplicationStatus::Submitted,
+                    Auth::id(),
+                    'Loan application submitted at customer registration'
+                );
             }
 
             DB::commit();
 
             $customer->load(['customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents']);
 
-            $credentialsMessage = "Welcome! Your CDP Credix account has been created.\nUsername: {$user->username}\nPassword: {$plainPassword}\nPlease keep this information secure and change your password after logging in.";
+            $credentialsMessage = "Welcome! Your account has been created.\n"
+                . "Username: {$user->username}\n"
+                . "Temporary Password: {$plainPassword}\n"
+                . 'This password must be changed within ' . User::TEMPORARY_PASSWORD_DAYS . ' days.';
 
             if (!empty($customer->email)) {
                 $emailNotification = $this->notificationService->sendEmail(
                     'customer_registration_credentials',
                     $customer->email,
-                    'Your CDP Credix Account Credentials',
+                    'Your CDP Capital Account Credentials',
                     $credentialsMessage,
                     ['customer_id' => $customer->id, 'user_id' => $user->id],
                     'Login credentials email sent to customer.'
@@ -331,7 +331,18 @@ class CustomerController extends Controller implements HasMiddleware
     public function show(string $id)
     {
         try {
-            $customer = Customer::with(['user', 'customerDetail', 'bankDetails', 'fixedAssets', 'movingAssets', 'liabilities', 'guarantors', 'documents'])->find($id);
+            $customer = Customer::with([
+                'user',
+                'customerDetail',
+                'bankDetails',
+                'fixedAssets',
+                'movingAssets',
+                'liabilities',
+                'guarantors',
+                'documents',
+                'loanApplications.loanProduct',
+                'loanApplications.securities.lendingMortgage',
+            ])->find($id);
 
             if (!$customer) {
                 return response()->json([
@@ -356,18 +367,39 @@ class CustomerController extends Controller implements HasMiddleware
 
     public function update(UpdateCustomerRequest $request, string $id)
     {
+        // The lookup happens BEFORE the transaction opens.
+        //
+        // Opening it first meant the not-found branch returned its 404 without
+        // ever rolling back, leaving an open transaction -- and its locks --
+        // held for the rest of the request. Nothing here needs a transaction in
+        // order to decide whether the row exists.
+        $customer = Customer::find($id);
+
+        if (!$customer) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Customer not found'
+            ], 404);
+        }
+
         DB::beginTransaction();
         try {
-            $customer = Customer::find($id);
+            $data = $request->validated();
 
-            if (!$customer) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Customer not found'
-                ], 404);
+            // Keep the recommender snapshot in lock-step with the chosen
+            // employee (see Employee::mergeRecommenderSnapshot).
+            $data = Employee::mergeRecommenderSnapshot($data);
+
+            // Only the record lists that really changed are rewritten, and
+            // while the customer is on a live loan only a user with the
+            // live-loan override permission may change them
+            // (GuardsCustomerLoanRecords).
+            $changedLists = $this->changedCustomerRecordLists($customer, $data);
+            if ($changedLists && ($locked = $this->customerRecordsLocked($customer->id))) {
+                DB::rollBack();
+                return $locked;
             }
 
-            $data = $request->validated();
             $customer->update($data);
 
             if (array_filter($data, fn ($key) => in_array($key, ['gn_division', 'ds_division', 'district', 'province']) && !empty($data[$key]), ARRAY_FILTER_USE_KEY)) {
@@ -380,33 +412,33 @@ class CustomerController extends Controller implements HasMiddleware
             }
 
             // Bank Details
-            $customer->bankDetails()->delete();
-            if (!empty($data['bank_details'])) {
-                foreach ($data['bank_details'] as $bankDetail) {
+            if (in_array('bank_details', $changedLists, true)) {
+                $customer->bankDetails()->delete();
+                foreach ($data['bank_details'] ?? [] as $bankDetail) {
                     $customer->bankDetails()->create($bankDetail);
                 }
             }
 
             // Fixed Assets
-            $customer->fixedAssets()->delete();
-            if (!empty($data['fixed_assets'])) {
-                foreach ($data['fixed_assets'] as $fixedAsset) {
+            if (in_array('fixed_assets', $changedLists, true)) {
+                $customer->fixedAssets()->delete();
+                foreach ($data['fixed_assets'] ?? [] as $fixedAsset) {
                     $customer->fixedAssets()->create($fixedAsset);
                 }
             }
 
             // Moving Assets
-            $customer->movingAssets()->delete();
-            if (!empty($data['moving_assets'])) {
-                foreach ($data['moving_assets'] as $movingAsset) {
+            if (in_array('moving_assets', $changedLists, true)) {
+                $customer->movingAssets()->delete();
+                foreach ($data['moving_assets'] ?? [] as $movingAsset) {
                     $customer->movingAssets()->create($movingAsset);
                 }
             }
 
             // Liabilities
-            $customer->liabilities()->delete();
-            if (!empty($data['liabilities'])) {
-                foreach ($data['liabilities'] as $liability) {
+            if (in_array('liabilities', $changedLists, true)) {
+                $customer->liabilities()->delete();
+                foreach ($data['liabilities'] ?? [] as $liability) {
                     $customer->liabilities()->create($liability);
                 }
             }
@@ -424,7 +456,7 @@ class CustomerController extends Controller implements HasMiddleware
                 $customer->guarantors()->delete();
             }
             if (!empty($data['guarantors'])) {
-                foreach ($data['guarantors'] as $guarantorData) {
+                foreach ($data['guarantors'] as $guarantorIndex => $guarantorData) {
                     // Documents ride in on the guarantor payload but belong to
                     // the documents table, so they are pulled out before the
                     // guarantor row is written.
@@ -433,7 +465,7 @@ class CustomerController extends Controller implements HasMiddleware
 
                     $guarantor = $customer->guarantors()->create($guarantorData);
 
-                    foreach ($guarantorDocuments as $doc) {
+                    foreach ($guarantorDocuments as $docIndex => $doc) {
                         if (empty($doc['file']) && empty($doc['file_path'])) {
                             continue;
                         }
@@ -454,7 +486,7 @@ class CustomerController extends Controller implements HasMiddleware
                             'guarantor_id'  => $guarantor->id,
                             'customer_id'   => $customer->id,
                             'file_path'     => !empty($doc['file'])
-                                ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                                ? $this->handleFileUpload($request, "guarantors.{$guarantorIndex}.documents.{$docIndex}.file", null, 'documents', $customer->id . '_' . $documentName)
                                 : $doc['file_path'],
                         ]);
                     }
@@ -473,7 +505,7 @@ class CustomerController extends Controller implements HasMiddleware
                 ->whereNull('guarantor_id')
                 ->delete();
             if (!empty($data['documents'])) {
-                foreach ($data['documents'] as $doc) {
+                foreach ($data['documents'] as $docIndex => $doc) {
                     if (empty($doc['file']) && empty($doc['file_path'])) {
                         continue;
                     }
@@ -485,11 +517,14 @@ class CustomerController extends Controller implements HasMiddleware
                         'is_active' => $doc['is_active'] ?? true,
                         'uploaded_at' => now(),
                         'file_path' => !empty($doc['file'])
-                            ? $this->storeDocumentFile($doc['file'], $customer->id, $documentName)
+                            ? $this->handleFileUpload($request, "documents.{$docIndex}.file", $doc['file_path'] ?? null, 'documents', $customer->id . '_' . $documentName)
                             : $doc['file_path'],
                     ]);
                 }
             }
+
+            // Edited KYC details need a fresh OTP verification.
+            app(CustomerVerificationService::class)->invalidateIfChanged($customer);
 
             DB::commit();
 
@@ -678,7 +713,12 @@ class CustomerController extends Controller implements HasMiddleware
             // If no customer_code, return all
             $perPage = request()->get('per_page', 15);
             $customers = Customer::with([
-                'bankDetails:id,customer_id,bank_name,branch_name,account_number,payment_method',
+                'bankDetails:id,
+                 customer_id,
+                 bank_name,
+                 branch_name,
+                 account_number,
+                 payment_method',
             ])
                 ->select('id', 'customer_code', 'full_name', 'email', 'phone_primary', 'id_type', 'id_number')
                 ->orderBy('id', 'asc')
@@ -698,30 +738,4 @@ class CustomerController extends Controller implements HasMiddleware
         }
     }
 
-    private function storeDocumentFile($file, int $customerId, ?string $documentName): string
-    {
-        $directory = 'uploads/documents';
-
-        if (!File::exists(public_path($directory))) {
-            File::makeDirectory(public_path($directory), 0755, true);
-        }
-
-        $extension = $file->getClientOriginalExtension();
-        $clean = preg_replace('/[^\p{L}\p{N}\-_.]+/u', '_', trim($documentName ?? 'document'));
-        $clean = trim($clean, '._');
-        if ($clean === '') {
-            $clean = 'document';
-        }
-        $clean = mb_substr($clean, 0, 80);
-
-        $fileName = $customerId . '_' . $clean . '.' . $extension;
-        $i = 1;
-        while (File::exists(public_path($directory . '/' . $fileName))) {
-            $fileName = $customerId . '_' . $clean . '_' . (++$i) . '.' . $extension;
-        }
-
-        $file->move(public_path($directory), $fileName);
-
-        return $directory . '/' . $fileName;
-    }
 }

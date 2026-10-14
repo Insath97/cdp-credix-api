@@ -2,14 +2,46 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use App\Enums\LoanApplicationStatus;
+use App\Models\LoanApplication;
+use App\Models\LoanProduct;
+use App\Traits\GuardsLoanWorkflowFields;
+use App\Traits\ValidatesLoanSecurity;
 
 class UpdateLoanApplicationRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
+    use GuardsLoanWorkflowFields, ValidatesLoanSecurity;
+
+    /**
+     * The statuses in which the loan security may still be changed: up to
+     * approval. Approval is a lending decision taken on that security, so
+     * from then on it is part of the record, the way the documents become
+     * part of it at disbursement.
+     */
+    public const SECURITY_EDITABLE_STATUSES = [
+        LoanApplicationStatus::Submitted,
+        LoanApplicationStatus::Reviewed,
+        LoanApplicationStatus::ReviewFailed,
+        LoanApplicationStatus::Verified,
+        LoanApplicationStatus::Reverify,
+        LoanApplicationStatus::Reopened,
+    ];
+
+    /**
+     * Refused on update but legitimately accepted on create.
+     *
+     * A loan is born inactive-or-active and at a status, so the create request
+     * takes both. Changing either afterwards is a different act with its own
+     * endpoint and its own guard, and letting a generic edit do it would walk
+     * past that guard -- so they are refused here rather than quietly dropped.
+     */
+    private const REFUSED_ON_UPDATE = [
+        'is_active' => 'the activate, deactivate and toggle-status actions',
+        'status'    => 'the workflow actions (review, verify, approve, reject, ...)',
+    ];
 
     /**
      * Determine if the user is authorized to make this request.
@@ -20,11 +52,19 @@ class UpdateLoanApplicationRequest extends FormRequest
     }
 
     /**
+     * Prepare inputs for validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        $this->normalizeSecuritiesInput();
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      */
     public function rules(): array
     {
-        return [
+        return array_merge($this->workflowOwnedRules(self::REFUSED_ON_UPDATE), [
             'application_id'         => 'nullable|integer|exists:applications,id',
             'customer_id'            => 'nullable|integer|exists:customers,id',
             'loan_product_id'        => 'nullable|integer|exists:loan_products,id',
@@ -49,14 +89,74 @@ class UpdateLoanApplicationRequest extends FormRequest
             'recommender_nic'            => 'nullable|string|max:255',
             'recommender_phone'          => 'nullable|string|max:255',
 
-            // is_active is deliberately not accepted here: it has its own
-            // activate/deactivate/toggle-status endpoints, which refuse to
-            // reactivate a cancelled, rejected or closed loan. Allowing it
-            // through a generic update would bypass that guard and let a
-            // finished loan display as "Active" again.
-        ];
+            // See the note on the create request: an assignment, not a
+            // record of something that already happened.
+            'assigned_reviewer_id'   => 'nullable|integer|exists:users,id',
+
+
+
+        // The loan security, sent whole to replace it. Left out, the one the
+        // loan already has stays as it is.
+        ], $this->loanSecurityRules());
     }
 
+
+    /**
+     * Custom messages for the workflow-owned fields, so a caller that sends
+     * one is told which endpoint to use instead of just "is prohibited".
+     */
+    public function messages(): array
+    {
+        return array_merge($this->workflowOwnedMessages(self::REFUSED_ON_UPDATE), $this->loanSecurityMessages());
+    }
+
+    public function attributes(): array
+    {
+        return $this->loanSecurityAttributes();
+    }
+
+    /**
+     * The loan securities against the loan as it will stand after this edit.
+     *
+     * The product is the loan's own unless this edit changes it, so securities
+     * are required when the edit moves the loan onto a secured product and
+     * refused when it moves it off one. Changing them -- replacing the list, or
+     * dropping it along with the product that needed it -- is allowed only
+     * until approval.
+     */
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            $this->assertNoEmptySecurities($validator);
+
+            $loanApplication = LoanApplication::with(['loanProduct', 'securities'])->find($this->route('loan_application'));
+
+            // Not found, or a group loan: the controller answers both.
+            if (!$loanApplication || $loanApplication->isGroupLoan()) {
+                return;
+            }
+
+            $product = $this->filled('loan_product_id')
+                ? LoanProduct::find($this->input('loan_product_id'))
+                : $loanApplication->loanProduct;
+
+            $hasSecurities = $loanApplication->securities->isNotEmpty();
+
+            $this->checkSecuritiesAgainstProduct($validator, $product, $hasSecurities);
+            $this->checkMortgageTypeMismatch($validator);
+
+            $sent = $this->filled('securities') && is_array($this->input('securities')) && $this->input('securities') !== [];
+            $drops = $product && !$product->requiresSecurity() && $hasSecurities;
+
+            if (($sent || $drops)
+                && !in_array($loanApplication->status, self::SECURITY_EDITABLE_STATUSES, true)) {
+                $validator->errors()->add(
+                    'securities',
+                    "The loan securities can no longer be changed: this loan application is {$loanApplication->status->value}, and the security is part of what it was approved on."
+                );
+            }
+        });
+    }
 
     protected function failedValidation(Validator $validator)
     {

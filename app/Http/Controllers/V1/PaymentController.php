@@ -21,6 +21,7 @@ use App\Services\LoanApplicationWorkflowService;
 use App\Services\NotificationService;
 use App\Services\RecoveryCaseService;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\CreatePaymentRequest;
 use App\Http\Requests\UpdatePaymentRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -30,7 +31,7 @@ use Spatie\Permission\Models\Role;
 
 class PaymentController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected LoanApplicationWorkflowService $workflowService,
@@ -69,6 +70,10 @@ class PaymentController extends Controller implements HasMiddleware
                 'receivedBy:' . User::SUMMARY_COLUMNS,
             ]);
 
+            if ($request->filled('search')) {
+                $query->search($request->search);
+            }
+
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id);
             }
@@ -76,6 +81,10 @@ class PaymentController extends Controller implements HasMiddleware
             if ($request->has('loan_installment_id')) {
                 $query->where('loan_installment_id', $request->loan_installment_id);
             }
+
+            // A branch officer sees their own branch's rows only;
+            // the branch is reached through the parent records.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id']);
 
             $payments = $query->orderByDesc('paid_at')->paginate($perPage);
 
@@ -101,22 +110,43 @@ class PaymentController extends Controller implements HasMiddleware
     }
 
     /**
+     * Who hears about this payment.
+     *
+     * A Group Loan's members each owe their own share and pay it separately,
+     * so a receipt belongs to the one member who paid -- the same per-member
+     * rule arrearsGroups(), SendInstallmentDueReminders::recipientsFor() and
+     * the per-member recovery cases already follow. Texting the whole group
+     * meant a five-member loan sent every member five identical "Payment
+     * received" messages a cycle, one for each sibling's instalment.
+     *
+     * Individual and Joint Loans fall through to every attached customer:
+     * there the loan itself is the debtor and co-borrowers are jointly liable,
+     * so all of them are entitled to the receipt.
+     */
+    protected function paymentRecipients(Payment $payment, LoanApplication $loanApplication): \Illuminate\Support\Collection
+    {
+        if ($loanApplication->isGroupLoan() && $payment->customer_id) {
+            $payer = $loanApplication->notifiableCustomers()
+                ->firstWhere('id', $payment->customer_id);
+
+            if ($payer) {
+                return collect([$payer]);
+            }
+        }
+
+        return $loanApplication->notifiableCustomers();
+    }
+
+    /**
      * Store a newly created payment and apply it to the installment/loan balance.
      */
     /**
-     * SMS the staff role that a payment landed: who paid, how much, when, and
-     * whether it closed a live recovery case. Reaches staff through their
-     * employee record, the same way every other staff notification does, so a
-     * staff user with no employee phone is simply skipped.
+     * Notify staff in-app that a payment landed: who paid, how much, when, and
+     * whether it closed a live recovery case. A system notification on the
+     * admin dashboard, not an SMS.
      */
     protected function notifyStaffOfPayment(Payment $payment, LoanApplication $loanApplication, int $casesResolved, string $paidOn): void
     {
-        $staffRole = Role::where('name', config('notifications.staff_role'))->first();
-
-        if (!$staffRole) {
-            return;
-        }
-
         $payer = $payment->customer?->full_name
             ?? $loanApplication->customer?->full_name
             ?? 'the customer';
@@ -125,39 +155,31 @@ class PaymentController extends Controller implements HasMiddleware
             ? " Recovery case(s) resolved: {$casesResolved}."
             : '';
 
+        // No loan number spelled out here: NotificationService appends it to
+        // every notification from the context, so naming it again would print
+        // it twice.
         $message = sprintf(
-            'CDP Credix: Payment %s received. %s paid %s on %s against loan %s.%s',
+            'CDP Capital: Payment %s received. %s paid %s on %s.%s',
             $payment->receipt_no,
             $payer,
             number_format((float) $payment->amount, 2),
             $paidOn,
-            $loanApplication->reference(),
             $caseLine
         );
 
-        foreach ($staffRole->users as $staffUser) {
-            $staffPhone = $staffUser->employee?->phone_primary;
-
-            if (empty($staffPhone)) {
-                continue;
-            }
-
-            try {
-                $this->notificationService->sendSms(
-                    'payment_received_staff',
-                    $staffPhone,
-                    $message,
-                    ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
-                );
-            } catch (\Throwable $th) {
-                // The payment is already recorded; a failed staff SMS must not
-                // turn a successful receipt into an error response.
-                Log::warning('Failed to notify staff of a payment', [
-                    'payment_id' => $payment->id,
-                    'user_id'    => $staffUser->id,
-                    'error'      => $th->getMessage(),
-                ]);
-            }
+        try {
+            $this->notificationService->sendSystemToStaff(
+                'payment_received_staff',
+                $message,
+                ['loan_application_id' => $loanApplication->id]
+            );
+        } catch (\Throwable $th) {
+            // The payment is already recorded; a failed staff notification
+            // must not turn a successful receipt into an error response.
+            Log::warning('Failed to notify staff of a payment', [
+                'payment_id' => $payment->id,
+                'error'      => $th->getMessage(),
+            ]);
         }
     }
 
@@ -352,7 +374,7 @@ class PaymentController extends Controller implements HasMiddleware
                 // Tell the back office the money came in, and say so on the
                 // same run that closed the case -- otherwise the only record an
                 // admin has of a recovery case going quiet is the case list
-                // changing colour. Mirrors the staff SMS fan-out in
+                // changing colour. Mirrors the staff notification fan-out in
                 // RecoveryCaseService::notifyStaffOfUnassignedCase().
                 if ($notify) {
                     $this->notifyStaffOfPayment($payment, $loanApplication, $casesResolved, $paidOn);
@@ -360,7 +382,7 @@ class PaymentController extends Controller implements HasMiddleware
 
                 $isJoint = $loanApplication->isJointLoan();
 
-                foreach ($notify ? $loanApplication->notifiableCustomers() : collect() as $notifyCustomer) {
+                foreach ($notify ? $this->paymentRecipients($payment, $loanApplication) : collect() as $notifyCustomer) {
                     $receivedMessage = "Payment received successfully.\nAmount: {$payment->amount}\nThank you for your payment.";
 
                     if (!empty($notifyCustomer->phone_primary)) {
@@ -387,7 +409,7 @@ class PaymentController extends Controller implements HasMiddleware
                     // stage -- has to be told it is over too. Without this the
                     // last word they ever hear on it is the escalation SMS.
                     if ($casesResolved > 0) {
-                        $recoveryClosedMessage = "CDP Credix: Thank you. Your overdue amount has been settled and the recovery action on your loan account ({$loanApplication->reference()}) is now closed.";
+                        $recoveryClosedMessage = "Thank you. Your overdue amount has been settled and the recovery action on your loan account is now closed.";
 
                         if (!empty($notifyCustomer->phone_primary)) {
                             $this->notificationService->sendSms(
@@ -584,7 +606,24 @@ class PaymentController extends Controller implements HasMiddleware
 
                 $loanApplication = $payment->loanApplication()->lockForUpdate()->first();
                 if ($loanApplication && $loanApplication->outstanding_balance !== null) {
-                    $loanApplication->outstanding_balance += $payment->amount;
+                    // Rebuilt from the installments, not `+= $payment->amount`.
+                    //
+                    // Posting subtracts with a floor -- max(0, outstanding -
+                    // amount) -- so an overpayment removes less than its face
+                    // value, but the reversal added the whole face value back
+                    // and the two were not inverses. A loan owing 120,000 paid
+                    // with 125,000 went to 0, and deleting that receipt took it
+                    // to 125,000: the borrower ended up owing 5,000 that never
+                    // existed.
+                    //
+                    // The installment rows above have just been restored to
+                    // exactly what they were, and each one's balance already
+                    // carries its own penalty, so their sum is the truthful
+                    // figure however the receipt was applied.
+                    $loanApplication->outstanding_balance = round(
+                        (float) $loanApplication->installments()->sum('balance'),
+                        2
+                    );
                     $loanApplication->save();
                 }
 

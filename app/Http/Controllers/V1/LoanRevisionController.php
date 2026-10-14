@@ -10,6 +10,7 @@ use App\Models\LoanRevision;
 use App\Models\Customer;
 use App\Models\User;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Traits\FileUploadTrait;
 use App\Http\Requests\CreateLoanRevisionRequest;
 use Illuminate\Routing\Controllers\HasMiddleware;
@@ -19,10 +20,11 @@ use App\Exceptions\InvalidLoanRevisionTransitionException;
 use App\Services\LoanRevisionService;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\File;
 
 class LoanRevisionController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait, FileUploadTrait;
+    use ActivityLogTrait, FileUploadTrait, ScopesToUserBranch;
 
     public function __construct(
         protected LoanRevisionService $revisionService,
@@ -62,6 +64,10 @@ class LoanRevisionController extends Controller implements HasMiddleware
             if ($request->filled('status')) {
                 $query->where('status', $request->status);
             }
+
+            // A branch officer sees their own branch's rows only;
+            // the branch is reached through the parent records.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id']);
 
             $revisions = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
@@ -362,7 +368,7 @@ class LoanRevisionController extends Controller implements HasMiddleware
 
             $absolutePath = public_path($revision->document);
 
-            if (!is_file($absolutePath)) {
+            if (!File::exists($absolutePath)) {
                 return response()->json([
                     'status'  => 'error',
                     'message' => 'Document file is missing',

@@ -18,6 +18,8 @@ return new class extends Migration
             $table->string('email')->nullable()->unique();
             $table->string('password');
             $table->timestamp('password_changed_at')->nullable();
+            $table->timestamp('password_expires_at')->nullable();
+            $table->timestamp('password_locked_at')->nullable();
             $table->timestamp('two_factor_verified_at')->nullable();
             $table->enum('user_type', ['admin', 'staff','customer'])->default('admin');
             $table->foreignId('employee_id')->nullable()->constrained('employees')->nullOnDelete();
@@ -28,12 +30,6 @@ return new class extends Migration
             $table->string('last_login_ip')->nullable();
             $table->rememberToken();
             $table->timestamps();
-        });
-
-        Schema::create('password_reset_tokens', function (Blueprint $table) {
-            $table->string('email')->primary();
-            $table->string('token');
-            $table->timestamp('created_at')->nullable();
         });
 
         Schema::create('sessions', function (Blueprint $table) {
@@ -52,7 +48,6 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('users');
-        Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');
     }
 };

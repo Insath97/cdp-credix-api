@@ -10,6 +10,7 @@ use App\Models\Customer;
 use App\Models\User;
 use App\Services\NotificationService;
 use App\Traits\ActivityLogTrait;
+use App\Traits\ScopesToUserBranch;
 use App\Http\Requests\CreateRecoveryCaseAgentRequest;
 use App\Http\Requests\CreateRecoveryCaseRequest;
 use App\Http\Requests\UpdateRecoveryCaseRequest;
@@ -19,7 +20,7 @@ use Illuminate\Routing\Controllers\Middleware;
 
 class RecoveryCaseController extends Controller implements HasMiddleware
 {
-    use ActivityLogTrait;
+    use ActivityLogTrait, ScopesToUserBranch;
 
     public function __construct(
         protected NotificationService $notificationService,
@@ -45,7 +46,7 @@ class RecoveryCaseController extends Controller implements HasMiddleware
         try {
             $perPage = $request->get('per_page', 15);
             $query = RecoveryCase::with([
-                
+
                 'customer:'.Customer::SUMMARY_COLUMNS,
                 'loanApplication.customer:'.Customer::SUMMARY_COLUMNS,
 
@@ -70,6 +71,10 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             if ($request->has('assigned_agent_id')) {
                 $query->where('assigned_agent_id', $request->assigned_agent_id);
             }
+
+            // A branch officer sees their own branch's rows only;
+            // the branch is reached through the parent records.
+            $this->scopeToUserBranchVia($query, ['loanApplication' => 'loan_application_id', 'customer' => 'customer_id']);
 
             $cases = $query->orderByDesc('opened_at')->paginate($perPage);
 
@@ -113,9 +118,9 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             $case->load(['loanApplication.application', 'loanApplication.customer:'.Customer::CONTACT_COLUMNS, 'assignedAgent.employee', 'openedBy:'.User::SUMMARY_COLUMNS]);
 
             if ($case->loanApplication) {
-                $recoveryMessage = "CDP Credix: Your loan account ({$case->loanApplication->reference()}) has become overdue. Please contact us immediately to avoid further recovery actions.";
+                $recoveryMessage = "Your loan account has become overdue. Please contact us immediately to avoid further recovery actions.";
 
-                foreach ($case->loanApplication->notifiableCustomers() as $notifyCustomer) {
+                foreach ($this->caseRecipients($case) as $notifyCustomer) {
                     if (!empty($notifyCustomer->phone_primary)) {
                         $this->notificationService->sendSms(
                             'recovery_case_opened_customer',
@@ -138,10 +143,15 @@ class RecoveryCaseController extends Controller implements HasMiddleware
             }
 
             if ($case->assignedAgent && !empty($case->assignedAgent->employee?->phone_primary)) {
+                // The case number and the customer's name, not their row ids.
+                // An agent cannot look a borrower up by "Customer ID: 3", and
+                // the loan number is appended by NotificationService anyway.
+                $agentCustomerName = $case->loanApplication?->customer?->full_name ?? 'the customer';
+
                 $this->notificationService->sendSms(
                     'recovery_case_opened_agent',
                     $case->assignedAgent->employee->phone_primary,
-                    "CDP Credix: A new overdue recovery case (Case ID: {$case->id}, Customer ID: {$case->loanApplication->customer_id}) has been assigned to you. Please follow up with the customer.",
+                    "CDP Capital: A new overdue recovery case ({$case->case_no}) has been assigned to you. Customer: {$agentCustomerName}. Please follow up.",
                     ['loan_application_id' => $case->loan_application_id, 'user_id' => $case->assigned_agent_id]
                 );
             }
@@ -159,6 +169,36 @@ class RecoveryCaseController extends Controller implements HasMiddleware
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
+    }
+
+    /**
+     * Who the case itself is opened against.
+     *
+     * A Group Loan case names one member (customer_id), because members fall
+     * behind independently and get their own case -- so only that member is
+     * told their account has gone to recovery. Texting the whole group meant
+     * every member was warned about somebody else's arrears, once per sibling
+     * case opened. Individual and Joint loans carry no customer_id on the case
+     * (the loan is the debtor), so they still notify every attached customer.
+     */
+    protected function caseRecipients(RecoveryCase $case): \Illuminate\Support\Collection
+    {
+        $loanApplication = $case->loanApplication;
+
+        if (!$loanApplication) {
+            return collect();
+        }
+
+        if ($case->customer_id) {
+            $member = $loanApplication->notifiableCustomers()
+                ->firstWhere('id', $case->customer_id);
+
+            if ($member) {
+                return collect([$member]);
+            }
+        }
+
+        return $loanApplication->notifiableCustomers();
     }
 
     /**
@@ -197,6 +237,11 @@ class RecoveryCaseController extends Controller implements HasMiddleware
                 'external_agent_id' => $data['external_agent_id'] ?? $case->external_agent_id,
             ]);
 
+            // Read before save(), while the original attributes are still
+            // there. isDirty() rather than a === on the ids, so a validated
+            // "5" against a stored 5 does not read as a change.
+            $agentChanged = $case->isDirty(['assigned_agent_id', 'external_agent_id']);
+
             // Picking up a case is what moves it out of the untouched 'open'
             // state — nothing else in the app ever set in_progress.
             if ($case->status === 'open') {
@@ -209,7 +254,13 @@ class RecoveryCaseController extends Controller implements HasMiddleware
 
             $case->save();
 
-            $this->recoveryCaseService->notifyAssignedAgent($case);
+            // Only when the case actually changed hands. Re-saving the same
+            // assignment -- an admin appending remarks, re-picking the agent
+            // already on it, or a double-submitted form -- used to text that
+            // agent the identical "assigned to you" SMS all over again.
+            if ($agentChanged) {
+                $this->recoveryCaseService->notifyAssignedAgent($case);
+            }
 
             $this->logActivity('UPDATE', 'RecoveryCase', "Assigned an agent to recovery case {$case->case_no}", [
                 'recovery_case_id'  => $case->id,

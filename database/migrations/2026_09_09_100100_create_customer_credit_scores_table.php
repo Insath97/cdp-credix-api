@@ -14,11 +14,10 @@ return new class extends Migration
             $table->foreignId('customer_id')->constrained('customers')->cascadeOnDelete();
             $table->foreignId('loan_application_id')->constrained('loan_applications')->cascadeOnDelete();
 
-            $table->decimal('total_points', 10, 2)->default(0);
             $table->unsignedInteger('installments_counted')->default(0);
             $table->unsignedInteger('on_time_count')->default(0);
             $table->unsignedInteger('late_count')->default(0);
-            $table->decimal('average_points', 8, 2)->nullable();
+           
             $table->decimal('final_score', 8, 2)->nullable();
             $table->timestamp('computed_at')->nullable();
             $table->timestamp('finalized_at')->nullable();

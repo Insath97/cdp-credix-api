@@ -2,14 +2,13 @@
 
 namespace App\Models;
 
-use App\Enums\LoanApplicationStatus;
+use App\Traits\UsedForCustomerLoan;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class FixedAssests extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, UsedForCustomerLoan;
 
     protected $table = 'fixed_assests';
 
@@ -55,29 +54,6 @@ class FixedAssests extends Model
     public function customer()
     {
         return $this->belongsTo(Customer::class);
-    }
-
-    /**
-     * Loan applications this asset has been pledged against.
-     */
-    public function loanApplications(): BelongsToMany
-    {
-        return $this->belongsToMany(LoanApplication::class, 'loan_application_fixed_assets', 'fixed_assest_id', 'loan_application_id');
-    }
-
-    /**
-     * Whether this asset is currently pledged to a loan application that
-     * hasn't reached a terminal (released) status.
-     */
-    public function getUsedForLoanAttribute(): bool
-    {
-        return $this->loanApplications()
-            ->whereNotIn('status', [
-                LoanApplicationStatus::Rejected->value,
-                LoanApplicationStatus::Cancelled->value,
-                LoanApplicationStatus::Closed->value,
-            ])
-            ->exists();
     }
 
     public function scopeActive($query)

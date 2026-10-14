@@ -1,0 +1,146 @@
+app/Console/Commands/BackfillApprovalReferences.php:25:    protected $signature = 'loans:backfill-approval-references {--dry-run : Show what would be issued without writing}';
+app/Console/Commands/EscalateExternalRecoveryCases.php:20:    protected $signature = 'recovery:escalate-external';
+app/Console/Commands/EscalateInternalRecoveryCases.php:20:    protected $signature = 'recovery:escalate-internal';
+app/Console/Commands/LockExpiredTemporaryPasswords.php:31:    protected $signature = 'passwords:lock-expired';
+app/Console/Commands/MarkOverdueLoanApplications.php:20:    protected $signature = 'loans:mark-overdue';
+app/Console/Commands/MoveUploadsOutOfWebRoot.php:20:    protected $signature = 'uploads:move-out-of-web-root {--dry-run : List what would move without touching anything}';
+app/Console/Commands/RecomputeCreditScores.php:23:    protected $signature = 'credit-score:recompute
+app/Console/Commands/SendInstallmentDueReminders.php:17:    protected $signature = 'installments:send-due-reminders';
+app/Console/Commands/SendOverdueSmsReminders.php:20:    protected $signature = 'installments:send-overdue-sms';
+app/Exceptions/LegalSignatureException.php:9: * A signature can't be captured or cleared, or a signed legal document can't
+app/Exceptions/LegalSignatureException.php:12:class LegalSignatureException extends Exception
+app/Http/Controllers/V1/LegalDocumentController.php:7:use App\Exceptions\LegalSignatureException;
+app/Http/Controllers/V1/LegalDocumentController.php:16:use App\Services\LegalDocumentSignatureService;
+app/Http/Controllers/V1/LegalDocumentController.php:40:    public function __construct(protected LegalDocumentSignatureService $signatures)
+app/Http/Controllers/V1/LegalDocumentController.php:289:            $this->signatures->assertEditable($document, $data);
+app/Http/Controllers/V1/LegalDocumentController.php:341:        } catch (LegalSignatureException $e) {
+app/Http/Controllers/V1/LegalDocumentController.php:364:            $this->signatures->assertDeletable($document);
+app/Http/Controllers/V1/LegalDocumentController.php:375:        } catch (LegalSignatureException $e) {
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:5:use App\Exceptions\LegalSignatureException;
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:7:use App\Http\Requests\CaptureLegalSignatureRequest;
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:8:use App\Http\Requests\ClearLegalSignaturesRequest;
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:10:use App\Services\LegalDocumentSignatureService;
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:17: * E-signatures on a legal document, drawn on screen at the branch: the lines
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:20:class LegalDocumentSignatureController extends Controller implements HasMiddleware
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:24:    public function __construct(protected LegalDocumentSignatureService $signatures)
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:33:            new Middleware('permission:Legal Document Clear Signatures', only: ['clear']),
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:49:                'message' => 'Legal document signatures retrieved successfully',
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:50:                'data'    => $this->signatures->status($document),
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:55:                'message' => 'Failed to retrieve legal document signatures',
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:61:    public function store(CaptureLegalSignatureRequest $request, string $id)
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:70:            $signature = $this->signatures->capture(
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:73:                $request->file('signature') ?? $request->input('signature')
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:76:            $this->logActivity('SIGN', 'LegalDocument', "Captured the {$signature->signer_key} signature on legal document {$document->reference_no}", [
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:78:                'signature_id'      => $signature->id,
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:79:                'signer_key'        => $signature->signer_key,
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:80:                'signer_name'       => $signature->signer_name,
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:85:                'message' => "{$signature->signer_name} has signed",
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:86:                'data'    => $this->signatures->status($document->fresh()),
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:88:        } catch (LegalSignatureException $e) {
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:93:                'message' => 'Failed to save the signature',
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:99:    public function clear(ClearLegalSignaturesRequest $request, string $id)
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:108:            $count = $this->signatures->clear($document, $request->input('signer'), $request->input('reason'));
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:110:            $this->logActivity('CLEAR_SIGNATURES', 'LegalDocument', "Cleared {$count} signature(s) on legal document {$document->reference_no}", [
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:118:                'message' => "Cleared {$count} signature(s)",
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:119:                'data'    => $this->signatures->status($document->fresh()),
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:121:        } catch (LegalSignatureException $e) {
+app/Http/Controllers/V1/LegalDocumentSignatureController.php:126:                'message' => 'Failed to clear the signatures',
+app/Http/Requests/CaptureLegalSignatureRequest.php:9:class CaptureLegalSignatureRequest extends FormRequest
+app/Http/Requests/CaptureLegalSignatureRequest.php:19:            // The line being signed, as GET .../signatures lists it: borrower, guarantor_1, witness_2 ...
+app/Http/Requests/CaptureLegalSignatureRequest.php:22:            // The drawing from the signature pad: a PNG/JPEG upload, or a data:image/...;base64 URI.
+app/Http/Requests/CaptureLegalSignatureRequest.php:23:            // Content, size and blankness are checked by LegalDocumentSignatureService.
+app/Http/Requests/CaptureLegalSignatureRequest.php:24:            'signature' => $this->hasFile('signature')
+app/Http/Requests/CaptureLegalSignatureRequest.php:33:            'signer.required'    => 'Choose the signature line being signed.',
+app/Http/Requests/CaptureLegalSignatureRequest.php:34:            'signature.required' => 'Draw the signature before saving it.',
+app/Http/Requests/ClearLegalSignaturesRequest.php:9:class ClearLegalSignaturesRequest extends FormRequest
+app/Http/Requests/ClearLegalSignaturesRequest.php:19:            // One line to clear; without it, every signature on the document.
+app/Http/Requests/ClearLegalSignaturesRequest.php:28:            'reason.required' => 'Give a reason for clearing the signatures.',
+app/Models/LegalDocument.php:76:    /** The signatures standing on this document; cleared ones are voided. */
+app/Models/LegalDocument.php:77:    public function signatures(): HasMany
+app/Models/LegalDocument.php:79:        return $this->hasMany(LegalDocumentSignature::class)->whereNull('voided_at');
+app/Models/LegalDocumentSignature.php:10:class LegalDocumentSignature extends Model
+app/Models/LegalDocumentSignature.php:12:    /** The private disk: signature images are never served from the web root. */
+app/Models/LegalDocumentSignature.php:24:        'signature_path',
+app/Models/LegalDocumentSignature.php:25:        'signature_mime',
+app/Models/LegalDocumentSignature.php:26:        'signature_sha256',
+app/Models/LegalDocumentSignature.php:37:    protected $hidden = ['signature_path'];
+app/Models/LegalDocumentSignature.php:69:        return $disk->exists($this->signature_path) ? $disk->get($this->signature_path) : null;
+app/Services/LegalDocumentSignatureService.php:6:use App\Exceptions\LegalSignatureException;
+app/Services/LegalDocumentSignatureService.php:8:use App\Models\LegalDocumentSignature;
+app/Services/LegalDocumentSignatureService.php:19: * E-signatures on legal documents, drawn on screen at the branch.
+app/Services/LegalDocumentSignatureService.php:22: * the CDP Capital officer, the guarantors and the witnesses. Each signature
+app/Services/LegalDocumentSignatureService.php:24: * is locked until the signatures are cleared.
+app/Services/LegalDocumentSignatureService.php:26:class LegalDocumentSignatureService
+app/Services/LegalDocumentSignatureService.php:32:    /** The document fields a signature covers. */
+app/Services/LegalDocumentSignatureService.php:36:     * The signature lines of a document, in print order. A line whose
+app/Services/LegalDocumentSignatureService.php:130:        $signed  = $document->signatures()->with('capturer:' . User::SUMMARY_COLUMNS)->get()->keyBy('signer_key');
+app/Services/LegalDocumentSignatureService.php:131:        $changed = $signed->contains(fn (LegalDocumentSignature $s) => $s->document_hash !== $hash);
+app/Services/LegalDocumentSignatureService.php:134:            $signature = $signed->get($line['key']);
+app/Services/LegalDocumentSignatureService.php:135:            $bytes = $signature?->imageBytes();
+app/Services/LegalDocumentSignatureService.php:138:                'signed'    => $signature !== null,
+app/Services/LegalDocumentSignatureService.php:139:                'signature' => $signature ? [
+app/Services/LegalDocumentSignatureService.php:140:                    'id'           => $signature->id,
+app/Services/LegalDocumentSignatureService.php:141:                    'signer_name'  => $signature->signer_name,
+app/Services/LegalDocumentSignatureService.php:142:                    'signer_nic'   => $signature->signer_nic,
+app/Services/LegalDocumentSignatureService.php:143:                    'signed_at'    => $signature->signed_at,
+app/Services/LegalDocumentSignatureService.php:144:                    'captured_by'  => $signature->capturer,
+app/Services/LegalDocumentSignatureService.php:145:                    'image'        => $bytes !== null ? "data:{$signature->signature_mime};base64," . base64_encode($bytes) : null,
+app/Services/LegalDocumentSignatureService.php:147:                    'image_intact' => $bytes !== null && hash('sha256', $bytes) === $signature->signature_sha256,
+app/Services/LegalDocumentSignatureService.php:173:     * Put one signature on one line.
+app/Services/LegalDocumentSignatureService.php:177:    public function capture(LegalDocument $document, string $key, UploadedFile|string $image): LegalDocumentSignature
+app/Services/LegalDocumentSignatureService.php:186:                throw new LegalSignatureException('Finish preparing the document (status Created) before anyone signs it.', 'status');
+app/Services/LegalDocumentSignatureService.php:189:                throw new LegalSignatureException("This document is inactive, so it can't be signed.", 'status');
+app/Services/LegalDocumentSignatureService.php:197:                throw new LegalSignatureException(sprintf(
+app/Services/LegalDocumentSignatureService.php:198:                    '"%s" is not a signature line on this document. Its lines are: %s.', $key, $lines->keys()->implode(', ')
+app/Services/LegalDocumentSignatureService.php:202:                throw new LegalSignatureException($line['missing']);
+app/Services/LegalDocumentSignatureService.php:205:            $signed = $document->signatures()->get();
+app/Services/LegalDocumentSignatureService.php:207:                throw new LegalSignatureException("{$line['label']} has already signed. Clear that signature to sign again.");
+app/Services/LegalDocumentSignatureService.php:211:            if ($signed->contains(fn (LegalDocumentSignature $s) => $s->document_hash !== $hash)) {
+app/Services/LegalDocumentSignatureService.php:212:                throw new LegalSignatureException(
+app/Services/LegalDocumentSignatureService.php:213:                    'The document or its loan has changed since the first signature. Clear the signatures and sign again.',
+app/Services/LegalDocumentSignatureService.php:214:                    'signatures'
+app/Services/LegalDocumentSignatureService.php:218:            $path = sprintf('legal-signatures/%d/%s-%s.%s', $document->id, $key, Str::uuid(), self::IMAGE_TYPES[$mime]);
+app/Services/LegalDocumentSignatureService.php:219:            $disk = Storage::disk(LegalDocumentSignature::DISK);
+app/Services/LegalDocumentSignatureService.php:223:                $signature = $document->signatures()->create([
+app/Services/LegalDocumentSignatureService.php:231:                    'signature_path'     => $path,
+app/Services/LegalDocumentSignatureService.php:232:                    'signature_mime'     => $mime,
+app/Services/LegalDocumentSignatureService.php:233:                    'signature_sha256'   => hash('sha256', $bytes),
+app/Services/LegalDocumentSignatureService.php:249:            return $signature;
+app/Services/LegalDocumentSignatureService.php:254:     * Clear the signatures, all of them or one line's. They are voided, not
+app/Services/LegalDocumentSignatureService.php:262:            $count = $document->signatures()
+app/Services/LegalDocumentSignatureService.php:267:                throw new LegalSignatureException(
+app/Services/LegalDocumentSignatureService.php:268:                    $key !== null ? "There is no signature on the \"{$key}\" line to clear." : 'This document has no signatures to clear.',
+app/Services/LegalDocumentSignatureService.php:269:                    $key !== null ? 'signer' : 'signatures'
+app/Services/LegalDocumentSignatureService.php:281:     * same values is fine; anything else needs the signatures cleared first.
+app/Services/LegalDocumentSignatureService.php:285:        $count = $document->signatures()->count();
+app/Services/LegalDocumentSignatureService.php:298:                throw new LegalSignatureException(
+app/Services/LegalDocumentSignatureService.php:299:                    "This document has {$count} signature(s). Clear the signatures before changing it.",
+app/Services/LegalDocumentSignatureService.php:308:        if ($document->signatures()->exists()) {
+app/Services/LegalDocumentSignatureService.php:309:            throw new LegalSignatureException('This document has been signed. Clear the signatures before deleting it.', 'signatures');
+app/Services/LegalDocumentSignatureService.php:404:            throw new LegalSignatureException('Send the signature as a PNG or JPEG image, or as a data:image/png;base64 URI.', 'signature');
+app/Services/LegalDocumentSignatureService.php:408:            throw new LegalSignatureException('The signature image is larger than 1 MB.', 'signature');
+app/Services/LegalDocumentSignatureService.php:413:            throw new LegalSignatureException('The signature is not a readable PNG or JPEG image.', 'signature');
+app/Services/LegalDocumentSignatureService.php:416:            throw new LegalSignatureException('The signature image must be between 50×20 and 3000×3000 pixels.', 'signature');
+app/Services/LegalDocumentSignatureService.php:419:            throw new LegalSignatureException('The signature is blank. Ask the signer to sign again.', 'signature');
+app/Services/NotificationService.php:33:    private const SIGNATURE = "Best Wishes,\nCDP Capital (PVT) LTD.";
+app/Services/NotificationService.php:196:            . "\n\n" . self::SIGNATURE;
+composer.lock:538:                "ext-sodium": "Support EdDSA (Ed25519) signatures",
+composer.lock:539:                "paragonie/sodium_compat": "Support EdDSA (Ed25519) signatures when libsodium is not present"
+composer.lock:1712:            "description": "A simple library to work with JSON Web Token and JSON Web Signature",
+composer.lock:2517:                "JSON Web Signature",
+composer.lock:3304:                "signature",
+database/migrations/2026_09_11_140100_create_legal_documents_table.php:37:            // Set when the last required signature is captured; cleared with them.
+database/migrations/2026_10_02_100000_create_legal_document_signatures_table.php:10:     * One signature on one signature line of a legal document, drawn on
+database/migrations/2026_10_02_100000_create_legal_document_signatures_table.php:11:     * screen at the branch. Cleared signatures are voided, not deleted, so
+database/migrations/2026_10_02_100000_create_legal_document_signatures_table.php:12:     * the audit trail keeps every signature ever captured.
+database/migrations/2026_10_02_100000_create_legal_document_signatures_table.php:16:        Schema::create('legal_document_signatures', function (Blueprint $table) {
+database/migrations/2026_10_02_100000_create_legal_document_signatures_table.php:30:            $table->string('signature_path', 500);
+database/migrations/2026_10_02_100000_create_legal_document_signatures_table.php:31:            $table->string('signature_mime', 30);
+database/migrations/2026_10_02_100000_create_legal_document_signatures_table.php:32:            $table->char('signature_sha256', 64);
+database/migrations/2026_10_02_100000_create_legal_document_signatures_table.php:48:            $table->index(['legal_document_id', 'signer_key', 'voided_at'], 'legal_signatures_document_line_index');
+database/migrations/2026_10_02_100000_create_legal_document_signatures_table.php:54:        Schema::dropIfExists('legal_document_signatures');
+database/seeders/PermissionsSeeder.php:211:            ['name' => 'Legal Document Clear Signatures', 'group_name' => 'Legal Management Permissions'],
+routes/v1.php:35:use App\Http\Controllers\V1\LegalDocumentSignatureController;
+routes/v1.php:301:        Route::get('{id}/signatures', [LegalDocumentSignatureController::class, 'index']);
+routes/v1.php:302:        Route::post('{id}/signatures', [LegalDocumentSignatureController::class, 'store']);
+routes/v1.php:303:        Route::post('{id}/signatures/clear', [LegalDocumentSignatureController::class, 'clear']);

@@ -2,15 +2,12 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
 class CreateCustomerRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -32,19 +29,32 @@ class CreateCustomerRequest extends FormRequest
         'name_with_initials'=>'required|string|max:255',
         'customer_code' => 'nullable|string|max:255|unique:customers,customer_code',
         'id_type'=>'required',
-        'id_number'=>'required|unique:customers,id_number',
+        'id_number'=>[
+            'required',
+            'unique:customers,id_number',
+            // Mirrors the NIC_REGEX the registration form applies. Without
+            // this the form rejected a malformed number and the API took it,
+            // so anything posting straight to the API skipped the check.
+            function ($attribute, $value, $fail) {
+                if (strtoupper(trim((string) $this->input('id_type'))) === 'NIC'
+                    && !preg_match('/^(\d{9}[vx]|\d{12})$/i', trim((string) $value))) {
+                    $fail('The NIC number must be 9 digits followed by V or X, or 12 digits (e.g. 980000111V or 199800001111).');
+                }
+            },
+        ],
         'address_line_1'=>'required',
         'address_line_2'=>'nullable',
         'landmark'=>'nullable|string|max:255',
-        'city'=>'nullable|string|max:255',
+        'city'=>'required|string|max:255',
         'state'=>'nullable|string|max:255',
         'country'=>'required|string|max:255',
         'postal_code'=>'nullable|string|max:255',
-        'gn_division'=>'nullable|string|max:255',
-        'ds_division'=>'nullable|string|max:255',
-        'district'=>'nullable|string|max:255',
-        'province'=>'nullable|string|max:255',
-        'date_of_birth'=>'required|date',
+        'gn_division'=>'required|string|max:255',
+        'ds_division'=>'required|string|max:255',
+        'district'=>'required|string|max:255',
+        'province'=>'required|string|max:255',
+        // A birth date in the future is not a person. `date` alone let one through.
+        'date_of_birth'=>'required|date|before:today',
         'phone_primary'=>'required|string|max:20',
         'phone_secondary'=>'nullable|string|max:20',
         'email'=>'nullable|email|max:255|unique:users,email',
@@ -130,7 +140,7 @@ class CreateCustomerRequest extends FormRequest
         'guarantors.*.type' => 'required_with:guarantors|string|in:guarantor_1,guarantor_2',
         'guarantors.*.id_type' => 'required_with:guarantors|string|max:100',
         'guarantors.*.id_number' => 'required_with:guarantors|string|max:100',
-        'guarantors.*.date_of_birth' => 'nullable|date',
+        'guarantors.*.date_of_birth' => 'nullable|date|before:today',
         'guarantors.*.phone_primary' => 'nullable|string|max:20',
         'guarantors.*.occupation' => 'nullable|string|max:255',
         'guarantors.*.employer_name' => 'nullable|string|max:255',
@@ -164,8 +174,16 @@ class CreateCustomerRequest extends FormRequest
 
         // User Account Validation
         'create_user_account' => 'nullable|boolean',
-        'user_username' => 'nullable|string|max:255|unique:users,username',
-        'user_password' => 'nullable|string|min:6|max:255',
+        'user_username' => 'required_if:create_user_account,1,true|nullable|string|max:255|unique:users,username',
+        // Eight, like every other password the system takes: CreateUserRequest,
+        // UpdateUserRequest, the password change and the forgotten-password
+        // reset all ask for eight. A customer login created through this form
+        // signs in to the same system, so a shorter one here was the only way
+        // round the policy.
+        // No user_password. The account is opened with a temporary password
+        // the system generates and the customer must replace within three
+        // days, so there is nothing for an operator to type -- and a password
+        // typed by staff is a password staff know.
 
         // Loan Application Validation
         'loan_product_id' => 'nullable|integer|exists:loan_products,id',
@@ -197,5 +215,3 @@ class CreateCustomerRequest extends FormRequest
         ], 422));
     }
 }
-
-

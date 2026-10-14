@@ -31,16 +31,30 @@ class Setting extends Model
      */
     public static function get(string $key, $default = null)
     {
-        return Cache::rememberForever(static::cacheKey($key), function () use ($key, $default) {
-            $setting = static::where('key', $key)->first();
+        $cacheKey = static::cacheKey($key);
 
-            if (!$setting) {
-                return $default;
-            }
+        if (Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
 
+        $setting = static::where('key', $key)->first();
+
+        // A key with no row is NOT cached.
+        //
+        // rememberForever() stored whatever the closure returned, the fallback
+        // included, and set() uses firstOrFail() so a missing key cannot be
+        // created through it either. Between them, a key read once before it
+        // was seeded went on answering with the fallback for the life of the
+        // cache, and seeding it afterwards changed nothing.
+        if (!$setting) {
+            return $default;
+        }
+
+        return Cache::rememberForever($cacheKey, function () use ($setting) {
             return match ($setting->type) {
                 'integer' => (int) $setting->value,
                 'boolean' => (bool) $setting->value,
+                'decimal' => (float) $setting->value,
                 'json' => json_decode($setting->value, true) ?? [],
                 default => $setting->value,
             };
@@ -69,6 +83,16 @@ class Setting extends Model
 
         if (is_bool($value)) {
             return (string) (int) $value;
+        }
+
+        // The words, as well as the type.
+        //
+        // get() casts a boolean setting with (bool), and in PHP only "" and "0"
+        // are falsy strings -- so "false" stored verbatim read back as TRUE and
+        // a switch that had been turned off stayed on. Callers that hand over
+        // the word rather than the value now land on "0" like everything else.
+        if (is_string($value) && in_array(strtolower(trim($value)), ['true', 'false'], true)) {
+            return strtolower(trim($value)) === 'true' ? '1' : '0';
         }
 
         return (string) $value;

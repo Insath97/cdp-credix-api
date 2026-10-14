@@ -18,15 +18,9 @@ class Customer extends Model
     /**
      * Columns to select when a customer is loaded as a nested reference — on a
      * loan, a payment, a recovery case — rather than as the record being viewed.
-     *
-     * Those screens only need to name the customer, so the NIC, date of birth,
-     * home address, income figures and employer/business details are never
-     * queried and so can never reach the browser. Endpoints whose subject IS the
-     * customer (CustomerController, CustomerProfileController) select normally.
-     *
      * Pass to a relation string: ->with('customer:'.Customer::SUMMARY_COLUMNS)
      */
-    public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,credit_score,credit_score_updated_at,is_active';
+    public const SUMMARY_COLUMNS = 'id,customer_id,customer_code,id_number,full_name,name_with_initials,phone_primary,branch_id,current_application_id,applicant_role,credit_score,credit_score_on_time_rate,credit_score_updated_at,is_active';
 
     /**
      * SUMMARY_COLUMNS plus the means to reach the customer — for recovery and
@@ -56,6 +50,11 @@ class Customer extends Model
             }
         });
     }
+
+    protected $attributes = [
+        'is_kyc_verified' => false,
+        'is_active'       => true,
+    ];
 
     protected $fillable = [
         'customer_id',
@@ -126,8 +125,14 @@ class Customer extends Model
 
         // repayment credit score (written only by CreditScoreService)
         'credit_score',
+        'credit_score_on_time_rate',
         'credit_score_updated_at',
         'is_active',
+
+        // KYC Verification (staff-assisted OTP & immutable snapshot)
+        'is_kyc_verified',
+        'kyc_verified_at',
+        'current_kyc_verification_id',
     ];
 
     protected $hidden = [
@@ -139,6 +144,9 @@ class Customer extends Model
     protected $casts = [
         'branch_id' => 'integer',
         'is_active' => 'boolean',
+        'is_kyc_verified' => 'boolean',
+        'kyc_verified_at' => 'datetime',
+        'current_kyc_verification_id' => 'integer',
         'date_of_birth' => 'date',
         'have_whatsapp' => 'boolean',
         'monthly_income' => 'decimal:2',
@@ -150,6 +158,7 @@ class Customer extends Model
         'total_monthly_expenses' => 'decimal:2',
         'recommended_by_employee_id' => 'integer',
         'credit_score' => 'decimal:2',
+        'credit_score_on_time_rate' => 'decimal:2',
         'credit_score_updated_at' => 'datetime',
     ];
 
@@ -161,7 +170,7 @@ class Customer extends Model
      * duplicating them in the frontend would let the two drift, and the scale
      * they are measured against is itself a System Setting.
      */
-    protected $appends = ['credit_score_band'];
+    protected $appends = ['credit_score_band', 'lending_mortgages'];
 
     public function scopeActive(Builder $query): Builder
     {
@@ -183,9 +192,19 @@ class Customer extends Model
         });
     }
 
-    public function user(): BelongsTo
+    /**
+     * The customer's own login account.
+     *
+     * hasOne, not belongsTo. The link is users.customer_id -> customers.id, so
+     * belongsTo pointed the wrong way and, worse, named the local column
+     * customer_id -- which on this table is the human reference 'CUST-0001',
+     * not a foreign key. It compiled to `users.id = 'CUST-0001'` and returned
+     * null for every customer that has ever existed, so the customer list and
+     * detail screens both showed no account even where one was sitting there.
+     */
+    public function user(): HasOne
     {
-        return $this->belongsTo(User::class, 'customer_id');
+        return $this->hasOne(User::class, 'customer_id');
     }
 
     public function branch(): BelongsTo
@@ -223,11 +242,6 @@ class Customer extends Model
         return $this->hasMany(Liability::class, 'customer_id');
     }
 
-    public function applicationHistories(): HasMany
-    {
-        return $this->hasMany(ApplicationHistory::class);
-    }
-
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
@@ -238,13 +252,13 @@ class Customer extends Model
         return $this->hasOne(CustomerDetail::class);
     }
 
+    public function loanApplications(): HasMany
+    {
+        return $this->hasMany(LoanApplication::class);
+    }
+
     /**
      * The CDP employee who introduced this customer.
-     *
-     * The standing introducer on the file. A particular loan can have been put
-     * forward by someone else -- that one lives on
-     * LoanApplication::recommendedByEmployee(). Read the snapshot columns for
-     * display; this relation is for walking back to the employee's file.
      */
     public function recommendedByEmployee(): BelongsTo
     {
@@ -261,31 +275,53 @@ class Customer extends Model
         return $this->hasMany(CreditScoreEvent::class);
     }
 
-    /**
-     * The score's plain-language band: excellent / good / fair / poor /
-     * very_poor, or null.
-     *
-     * Null covers two cases the UI must not conflate with a bad score: a
-     * customer with no repayment history at all, and a query that did not
-     * select the credit_score column in the first place.
-     */
     public function getCreditScoreBandAttribute(): ?string
     {
-        if (!array_key_exists('credit_score', $this->attributes) || $this->credit_score === null) {
+
+        if (!array_key_exists('credit_score_on_time_rate', $this->attributes)
+            || $this->credit_score_on_time_rate === null) {
             return null;
         }
 
-        return app(CreditScoreService::class)->band((float) $this->credit_score);
+        return app(CreditScoreService::class)->band((float) $this->credit_score_on_time_rate);
     }
 
-    /**
-     * Whether this customer has ever had an installment judged.
-     *
-     * Read this before showing the score anywhere: a null credit_score means
-     * "no repayment history yet", which must not be rendered as a zero.
-     */
+    
     public function hasCreditHistory(): bool
     {
         return $this->credit_score !== null;
+    }
+
+    /**
+     * Get all unique lending mortgages linked through the customer's loan applications.
+     */
+    public function getLendingMortgagesAttribute()
+    {
+        if (!$this->relationLoaded('loanApplications')) {
+            return [];
+        }
+
+        return $this->loanApplications
+            ->flatMap(fn ($loanApp) => $loanApp->securities ?? [])
+            ->map(fn ($security) => $security->lendingMortgage)
+            ->filter()
+            ->unique('id')
+            ->values();
+    }
+
+    /**
+     * All KYC verification records for this customer.
+     */
+    public function verifications(): HasMany
+    {
+        return $this->hasMany(CustomerVerification::class);
+    }
+
+    /**
+     * The active/current KYC verification record for this customer.
+     */
+    public function currentKycVerification(): BelongsTo
+    {
+        return $this->belongsTo(CustomerVerification::class, 'current_kyc_verification_id');
     }
 }

@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Models\LoanApplicationGuarantor;
 use App\Enums\LoanApplicationStatus;
+use App\Services\LoanDocumentService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationGuarantorRequest;
 use App\Http\Requests\UpdateLoanApplicationGuarantorRequest;
@@ -16,6 +17,11 @@ use Illuminate\Routing\Controllers\Middleware;
 class LoanApplicationGuarantorController extends Controller implements HasMiddleware
 {
     use ActivityLogTrait;
+
+    public function __construct(
+        protected LoanDocumentService $loanDocumentService,
+    ) {
+    }
 
     public static function middleware(): array
     {
@@ -84,6 +90,11 @@ class LoanApplicationGuarantorController extends Controller implements HasMiddle
             $data = $request->validated();
 
             $record = LoanApplicationGuarantor::create($data);
+
+            
+            if ($record->loanApplication) {
+                $this->loanDocumentService->syncForApplication($record->loanApplication);
+            }
 
             $this->logActivity('CREATE', 'LoanApplicationGuarantor', "Added guarantor ID {$record->guarantor_id} to loan application ID {$record->loan_application_id}", $data);
 
@@ -192,6 +203,12 @@ class LoanApplicationGuarantorController extends Controller implements HasMiddle
                     'status'  => 'error',
                     'message' => 'This is the last remaining guarantor and cannot be removed once the loan application has passed verification.',
                 ], 422);
+            }
+
+            // Their unreviewed papers leave the file with them. Anything an
+            // officer already stamped stays as the audit record it is.
+            if ($loanApplication) {
+                $this->loanDocumentService->detachGuarantorDocuments($loanApplication, (int) $record->guarantor_id);
             }
 
             $record->delete();

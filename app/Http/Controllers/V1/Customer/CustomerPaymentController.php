@@ -25,16 +25,19 @@ class CustomerPaymentController extends Controller
     {
         try {
             $customerId = $this->myCustomerId();
-            $perPage = $request->get('per_page', 15);
+            // Clamped through the base controller: an unclamped per_page lets any
+            // caller force a 500. A negative value is truthy, so nothing replaced
+            // it, and the query kept the OFFSET while dropping the LIMIT.
+            $perPage = $this->perPage($request);
 
             $query = Payment::whereHas('loanApplication', function ($q) use ($customerId) {
-                $q->where('customer_id', $customerId);
+                $q->forCustomer($customerId);
             })->with(['loanApplication.application', 'loanInstallment']);
 
             if ($request->has('loan_application_id')) {
                 $query->where('loan_application_id', $request->loan_application_id)
                     ->whereHas('loanApplication', function ($q) use ($customerId) {
-                        $q->where('customer_id', $customerId);
+                        $q->forCustomer($customerId);
                     });
             }
 
@@ -71,7 +74,7 @@ class CustomerPaymentController extends Controller
 
             $payment = Payment::where('id', $id)
                 ->whereHas('loanApplication', function ($q) use ($customerId) {
-                    $q->where('customer_id', $customerId);
+                    $q->forCustomer($customerId);
                 })
                 ->with(['loanApplication.application', 'loanInstallment', 'receivedBy:'.User::SUMMARY_COLUMNS])
                 ->first();

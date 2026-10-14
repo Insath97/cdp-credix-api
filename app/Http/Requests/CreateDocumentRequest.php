@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use App\Models\Document;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -12,8 +11,6 @@ use Illuminate\Validation\ValidationException;
 
 class CreateDocumentRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -34,8 +31,7 @@ class CreateDocumentRequest extends FormRequest
             'document_type' => ['nullable', 'string', Rule::in(array_keys(Document::TYPES))],
             'is_mandatory'  => 'nullable|boolean',
             'document_name' => 'required|string|max:255',
-            'file'          => 'required_without:file_path|file|mimes:pdf,jpg,jpeg,png|max:10240',
-            'file_path'     => 'required_without:file|string|max:1000',
+            'file'          => 'required|file|mimes:pdf,jpg,jpeg,png|max:15360',
             'remarks'       => 'nullable|string',
             'status'        => 'nullable|string|in:active,rejected,expired',
             'is_active'     => 'nullable|boolean',

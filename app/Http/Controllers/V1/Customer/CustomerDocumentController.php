@@ -5,13 +5,15 @@ namespace App\Http\Controllers\V1\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\Document;
 use App\Traits\ActivityLogTrait;
+use App\Traits\FileUploadTrait;
 use App\Traits\ResolvesAuthenticatedCustomerTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\File;
 
 class CustomerDocumentController extends Controller
 {
-    use ActivityLogTrait, ResolvesAuthenticatedCustomerTrait;
+    use ActivityLogTrait, FileUploadTrait, ResolvesAuthenticatedCustomerTrait;
 
     /**
      * List the customer's own uploaded documents.
@@ -20,7 +22,10 @@ class CustomerDocumentController extends Controller
     {
         try {
             $customerId = $this->myCustomerId();
-            $perPage = $request->get('per_page', 15);
+            // Clamped through the base controller: an unclamped per_page lets any
+            // caller force a 500. A negative value is truthy, so nothing replaced
+            // it, and the query kept the OFFSET while dropping the LIMIT.
+            $perPage = $this->perPage($request);
 
             $query = Document::where('customer_id', $customerId)->active();
 
@@ -60,9 +65,15 @@ class CustomerDocumentController extends Controller
     }
 
     /**
-     * Stream one of the customer's own documents. Files are stored under
-     * public/uploads/documents/ (via FileUploadTrait, not the Storage disk),
-     * so file_path is resolved relative to public_path().
+     * Stream one of the customer's own documents.
+     *
+     * Resolved through FileUploadTrait rather than public_path(), which is what
+     * this used to do. Two things changed underneath it: uploads now land in
+     * private storage instead of the web root, and the resolver refuses any
+     * path that escapes its base directory. The second matters even for files
+     * that are where they should be, because the stored path was reachable from
+     * the create endpoint until recently -- a row pointing at ../.env would
+     * otherwise have been streamed straight back here.
      */
     public function download(string $id)
     {
@@ -82,7 +93,7 @@ class CustomerDocumentController extends Controller
 
             $absolutePath = public_path($document->file_path);
 
-            if (!is_file($absolutePath)) {
+            if (!File::exists($absolutePath)) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Document file is missing',

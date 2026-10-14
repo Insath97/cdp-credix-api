@@ -2,15 +2,12 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
 
 class UpdateLoanTermRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -27,8 +24,8 @@ class UpdateLoanTermRequest extends FormRequest
         $id = $this->route('loan_term');
 
         return [
-            'code' => 'sometimes|string|max:50|unique:loan_terms,code,' . $id,
-            'title' => 'sometimes|string|max:255',
+            'code' => 'sometimes|required|string|max:50|unique:loan_terms,code,' . $id,
+            'title' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
             'is_active' => 'sometimes|boolean',
             'loan_type_ids' => 'sometimes|array',

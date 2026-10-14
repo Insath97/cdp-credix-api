@@ -282,11 +282,10 @@ class RecoveryCaseService
         $customer = $case->customer ?? $loanApplication?->customer;
 
         $summary = sprintf(
-            'CDP Credix: Recovery case %s is now %s and no longer needs follow-up. Loan %s%s. %s',
+            'CDP Capital: Recovery case %s is now %s and no longer needs follow-up.%s %s',
             $case->case_no,
             $status === 'closed' ? 'closed -- the loan is fully repaid' : 'resolved',
-            $loanApplication?->reference() ?? '-',
-            $customer ? ", {$customer->full_name}" : '',
+            $customer ? " Customer: {$customer->full_name}." : '',
             $reason
         );
 
@@ -325,36 +324,21 @@ class RecoveryCaseService
     }
 
     /**
-     * Tell the staff role a case has been opened and still needs an agent.
-     * Without this an auto-created case would sit unassigned indefinitely,
-     * since nothing else surfaces it. Mirrors the staff SMS fan-out in
+     * Tell staff a case has been opened and still needs an agent. Without
+     * this an auto-created case would sit unassigned indefinitely, since
+     * nothing else surfaces it. Mirrors the staff system notification in
      * LoanApplicationController::store().
      */
     public function notifyStaffOfUnassignedCase(RecoveryCase $case, LoanApplication $loanApplication, string $stageLabel): void
     {
-        $staffRole = Role::where('name', config('notifications.staff_role'))->first();
-
-        if (!$staffRole) {
-            return;
-        }
-
         $customerName = $loanApplication->customer?->full_name ?? 'a customer';
-        $message = "CDP Credix: {$case->case_no} opened for {$stageLabel} ({$loanApplication->reference()}, {$customerName}). Please assign an agent.";
+        $message = "CDP Capital: {$case->case_no} opened for {$stageLabel} ({$customerName}). Please assign an agent.";
 
-        foreach ($staffRole->users as $staffUser) {
-            $staffPhone = $staffUser->employee?->phone_primary;
-
-            if (empty($staffPhone)) {
-                continue;
-            }
-
-            $this->notificationService->sendSms(
-                'recovery_case_needs_agent',
-                $staffPhone,
-                $message,
-                ['loan_application_id' => $loanApplication->id, 'user_id' => $staffUser->id]
-            );
-        }
+        $this->notificationService->sendSystemToStaff(
+            'recovery_case_needs_agent',
+            $message,
+            ['loan_application_id' => $loanApplication->id]
+        );
     }
 
     /**
@@ -371,9 +355,8 @@ class RecoveryCaseService
         $customer = $loanApplication?->customer;
 
         $summary = sprintf(
-            'CDP Credix: Recovery case %s has been assigned to you. Loan %s, overdue %s.%s',
+            'CDP Capital: Recovery case %s has been assigned to you. Overdue %s.%s',
             $case->case_no,
-            $loanApplication?->reference() ?? '-',
             number_format((float) $case->overdue_amount, 2),
             $customer ? " Customer: {$customer->full_name} {$customer->phone_primary}." : ''
         );

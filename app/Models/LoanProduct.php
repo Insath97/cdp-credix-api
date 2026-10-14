@@ -13,6 +13,15 @@ class LoanProduct extends Model
 {
     use HasFactory, SoftDeletes;
 
+    /**
+     * Which loans are secured -- must carry a loan security (a mortgage):
+     * the Standard Borrowing loans under the General loan term, Individual
+     * and Joint alike. Matched by code, the same way group loans are tied to
+     * DEVELOPMENT_FUND, so there is no per-product flag to keep in step.
+     */
+    public const SECURED_LOAN_TYPE_CODE = 'STANDARD_BORROWING';
+    public const SECURED_LOAN_TERM_CODE = 'GENERAL';
+
     protected $fillable = [
         'name',
         'code',
@@ -38,6 +47,14 @@ class LoanProduct extends Model
         'created_at',
         'updated_at',
         'deleted_at',
+    ];
+
+    /**
+     * requires_security is derived from the loan type, not stored; it is
+     * appended so the wizard can still read it off the product.
+     */
+    protected $appends = [
+        'requires_security',
     ];
 
     protected $casts = [
@@ -80,6 +97,54 @@ class LoanProduct extends Model
         return $query->where('is_group_loan', true);
     }
 
+    /**
+     * Whether loans on this product must carry a loan security: its loan type
+     * is Standard Borrowing under the General term. The product's term is
+     * always its type's (LoanProductController derives one from the other).
+     */
+    public function requiresSecurity(): bool
+    {
+        // Through the relations when they are already loaded; otherwise asked
+        // without loading them, so serialising a product does not drag its
+        // type and term into the JSON as a side effect.
+        if ($this->relationLoaded('loanType') && $this->relationLoaded('loanTerm')) {
+            return $this->loanType?->code === self::SECURED_LOAN_TYPE_CODE
+                && $this->loanTerm?->code === self::SECURED_LOAN_TERM_CODE;
+        }
+
+        return self::isSecuredLoanType($this->loan_type_id);
+    }
+
+    /**
+     * The same rule for a loan type that has no product yet -- what the
+     * product create and update requests need.
+     */
+    public static function isSecuredLoanType(int|string|null $loanTypeId): bool
+    {
+        if (empty($loanTypeId)) {
+            return false;
+        }
+
+        $type = LoanType::with('loanTerm')->find($loanTypeId);
+
+        return $type?->code === self::SECURED_LOAN_TYPE_CODE
+            && $type?->loanTerm?->code === self::SECURED_LOAN_TERM_CODE;
+    }
+
+    /**
+     * requires_security as the product JSON carries it. Null when the product
+     * was loaded without its type and term (a narrow select such as
+     * 'loanProduct:id,name'), where the honest answer is "unknown".
+     */
+    public function getRequiresSecurityAttribute(): ?bool
+    {
+        if (!array_key_exists('loan_type_id', $this->attributes) || !array_key_exists('loan_term_id', $this->attributes)) {
+            return null;
+        }
+
+        return $this->requiresSecurity();
+    }
+
     public function loanApplications(): HasMany
     {
         return $this->hasMany(LoanApplication::class);
@@ -99,6 +164,31 @@ class LoanProduct extends Model
     public function loanTerm(): BelongsTo
     {
         return $this->belongsTo(LoanTerm::class);
+    }
+
+    /** The legal documents this product's loans are drawn up with. */
+    public function legalDocuments(): HasMany
+    {
+        return $this->hasMany(LoanProductLegalDocument::class);
+    }
+
+    /** @return array<int, string> the LegalDocumentType values this product uses */
+    public function legalDocumentTypes(): array
+    {
+        return $this->legalDocuments->map(fn (LoanProductLegalDocument $document) => $document->document_type->value)->all();
+    }
+
+    /** Replace this product's legal documents with the given types. */
+    public function syncLegalDocuments(array $types): void
+    {
+        $types = array_values(array_unique($types));
+
+        $this->legalDocuments()->whereNotIn('document_type', $types)->delete();
+        foreach ($types as $type) {
+            $this->legalDocuments()->firstOrCreate(['document_type' => $type]);
+        }
+
+        $this->unsetRelation('legalDocuments');
     }
 
     public function scopeSearch(Builder $query, ?string $search): Builder

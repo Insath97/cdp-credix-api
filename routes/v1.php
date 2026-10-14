@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\V1\CdpCustomerVerificationController;
+use App\Http\Controllers\V1\GlobalSearchController;
 use App\Http\Controllers\V1\AuthController;
 use App\Http\Controllers\V1\ActivityController;
 use App\Http\Controllers\V1\PermissionController;
@@ -15,26 +17,32 @@ use App\Http\Controllers\V1\DesignationController;
 use App\Http\Controllers\V1\CountryController;
 use App\Http\Controllers\V1\GroupController;
 use App\Http\Controllers\V1\CustomerController;
+use App\Http\Controllers\V1\CustomerVerificationController;
+use App\Http\Controllers\V1\LoanCustomerConfirmationController;
+use App\Http\Controllers\V1\Public\LoanReviewController;
+use App\Http\Controllers\V1\CustomerLoanEligibilityController;
+use App\Http\Controllers\V1\CustomerInvestmentController;
+use App\Http\Controllers\V1\External\CorePolicyHoldController;
 use App\Http\Controllers\V1\CustomerBankDetailController;
 use App\Http\Controllers\V1\GuarantorController;
 use App\Http\Controllers\V1\LiabilityController;
 use App\Http\Controllers\V1\ApplicationController;
-use App\Http\Controllers\V1\ApplicationHistoryController;
 use App\Http\Controllers\V1\FixedAssestsController;
 use App\Http\Controllers\V1\MovingAssestsController;
 use App\Http\Controllers\V1\DocumentController;
 use App\Http\Controllers\V1\LoanTermController;
 use App\Http\Controllers\V1\LoanTypeController;
 use App\Http\Controllers\V1\LoanProductController;
+use App\Http\Controllers\V1\LegalDocumentController;
+use App\Http\Controllers\V1\LegalDocumentTemplateController;
 use App\Http\Controllers\V1\LoanApplicationController;
+use App\Http\Controllers\V1\LoanApplicationStatusHistoryController;
 use App\Http\Controllers\V1\GroupLoanController;
 use App\Http\Controllers\V1\GroupLoanItemController;
 use App\Http\Controllers\V1\LoanApplicationGuarantorController;
 use App\Http\Controllers\V1\LoanApplicationCustomerController;
-use App\Http\Controllers\V1\LoanApplicationFixedAssetController;
-use App\Http\Controllers\V1\LoanApplicationMovingAssetController;
-use App\Http\Controllers\V1\LoanApplicationLiabilityController;
-use App\Http\Controllers\V1\LoanApplicationBankDetailController;
+use App\Http\Controllers\V1\LoanSecurityController;
+use App\Http\Controllers\V1\LendingMortgageController;
 use App\Http\Controllers\V1\LoanInstallmentController;
 use App\Http\Controllers\V1\LoanRevisionController;
 use App\Http\Controllers\V1\PaymentController;
@@ -60,25 +68,46 @@ use Illuminate\Support\Facades\Route;
 /* public routes */
 
 Route::prefix('v1')->group(function () {
-    Route::post('login', [AuthController::class, 'login']);
+    Route::post('login', [AuthController::class, 'login'])->middleware('throttle:login');
     Route::post('login/verify-otp', [AuthController::class, 'verifyOtp'])->middleware('throttle:otp-verify');
     Route::post('forgot-password', [PasswordChangeController::class, 'forgotPassword'])->middleware('throttle:otp-request');
     Route::post('reset-forgot-password', [PasswordChangeController::class, 'resetForgotPassword'])->middleware('throttle:otp-verify');
+
+    // Customer loan review (OTP 2) -- reached from the SMS link, no login.
+    Route::prefix('public/loan-review/{token}')->group(function () {
+        Route::get('/', [LoanReviewController::class, 'show'])->middleware('throttle:60,1');
+        Route::post('request-otp', [LoanReviewController::class, 'requestOtp'])->middleware('throttle:otp-request');
+        Route::post('confirm', [LoanReviewController::class, 'confirm'])->middleware('throttle:otp-verify');
+    });
 });
 
 /* protected routes */
-Route::middleware(['auth:api'])->prefix('v1')->group(function () {
+// password.changed holds anyone who has never set a password of their own at
+// the door, letting through only the change itself, /me and logout.
+Route::middleware(['auth:api', 'password.changed'])->prefix('v1')->group(function () {
 
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
+    Route::match(['put', 'patch'], 'me', [AuthController::class, 'updateProfile']);
 
     // Password
     Route::prefix('password')->group(function () {
         Route::post('request-change', [PasswordChangeController::class, 'requestChange'])->middleware('throttle:otp-request');
         Route::post('change-with-otp', [PasswordChangeController::class, 'changeWithOtp'])->middleware('throttle:otp-verify');
+        Route::post('change', [PasswordChangeController::class, 'changeWithCurrentPassword'])->middleware('throttle:otp-verify');
     });
 
-    /*ActivityLog*/
+    // Global Search
+    Route::get('global-search/id-types', [GlobalSearchController::class, 'idTypes']);
+    Route::get('global-search', [GlobalSearchController::class, 'search']);
+
+    // CDP Connect verification 
+    Route::get('cdp/verify-customer', [CdpCustomerVerificationController::class, 'checkCustomer']);
+    Route::post('cdp/verify-customer', [CdpCustomerVerificationController::class, 'checkCustomer']);
+
+
+    //ActivityLog
+    Route::get('activities/filter-options', [ActivityController::class, 'filterOptions']);
     Route::apiResource('activities', ActivityController::class);
 
     /*Permissions*/
@@ -156,13 +185,29 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     Route::apiResource('groups', GroupController::class);
 
     // Customers
-    Route::apiResource('customers', CustomerController::class);
     Route::prefix('customers')->group(function () {
         Route::get('list', [CustomerController::class, 'index']);
+        Route::get('loan-eligibility', [CustomerLoanEligibilityController::class, 'show']);
+        Route::get('{id}/investments', [CustomerInvestmentController::class, 'index']);
         Route::get('list/public/{customer_code?}', [CustomerController::class, 'getPublicDetails']);
         Route::patch('{id}/toggle-status', [CustomerController::class, 'toggleStatus']);
         Route::post('{id}/restore', [CustomerController::class, 'restore']);
         Route::delete('{id}/force-delete', [CustomerController::class, 'forceDelete']);
+    });
+    Route::apiResource('customers', CustomerController::class);
+
+    // Customer KYC Verification (Pre-loan Customer Consent & Verification with JWT + OTP)
+    Route::prefix('customers/{customerId}/verification')->group(function () {
+        Route::get('status', [CustomerVerificationController::class, 'status']);
+        Route::post('initiate', [CustomerVerificationController::class, 'initiate']);
+        Route::post('verify-otp', [CustomerVerificationController::class, 'verifyOtp'])->middleware('throttle:otp-verify');
+        Route::post('resend-otp', [CustomerVerificationController::class, 'resendOtp'])->middleware('throttle:otp-request');
+    });
+
+    Route::prefix('customer-verifications')->group(function () {
+        Route::post('initiate', [CustomerVerificationController::class, 'initiateWithCustomer']);
+        Route::post('verify-otp', [CustomerVerificationController::class, 'verifyOtp'])->middleware('throttle:otp-verify');
+        Route::post('resend-otp', [CustomerVerificationController::class, 'resendOtp'])->middleware('throttle:otp-request');
     });
 
     // Customer Bank Details
@@ -178,9 +223,6 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     // Applications
     Route::apiResource('applications', ApplicationController::class);
 
-    // Application Histories
-    Route::apiResource('application-histories', ApplicationHistoryController::class);
-
     // Fixed Assets
     Route::apiResource('fixed-assests', FixedAssestsController::class);
 
@@ -194,11 +236,8 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     });
 
     // Documents
-    //
-    // 'documents/applications' is registered BEFORE the apiResource, or
-    // documents/{document} swallows it and Laravel tries to look up a document
-    // with the id "applications".
     Route::get('documents/applications', [DocumentController::class, 'applications']);
+    Route::get('documents/file', [DocumentController::class, 'file']);
     Route::apiResource('documents', DocumentController::class);
 
     // Loan Terms
@@ -230,18 +269,62 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/activate', [LoanApplicationController::class, 'activate']);
         Route::patch('{id}/deactivate', [LoanApplicationController::class, 'deactivate']);
         Route::patch('{id}/review', [LoanApplicationController::class, 'review']);
+        Route::patch('{id}/review-fail', [LoanApplicationController::class, 'reviewFail']);
+        Route::patch('{id}/resubmit', [LoanApplicationController::class, 'resubmit']);
         Route::patch('{id}/verify', [LoanApplicationController::class, 'verify']);
+        Route::patch('{id}/verify-fail', [LoanApplicationController::class, 'verifyFail']);
+        Route::patch('{id}/reverify', [LoanApplicationController::class, 'reverify']);
         Route::patch('{id}/approve', [LoanApplicationController::class, 'approve']);
         Route::patch('{id}/reject', [LoanApplicationController::class, 'reject']);
-        // The borrower's answer to an approved offer. Disburse only works
-        // once accept-offer has been recorded.
         Route::patch('{id}/hold-offer', [LoanApplicationController::class, 'holdOffer']);
         Route::patch('{id}/accept-offer', [LoanApplicationController::class, 'acceptOffer']);
         Route::patch('{id}/decline-offer', [LoanApplicationController::class, 'declineOffer']);
+        Route::patch('{id}/reopen', [LoanApplicationController::class, 'reopen']);
         Route::patch('{id}/disburse', [LoanApplicationController::class, 'disburse']);
         Route::patch('{id}/cancel', [LoanApplicationController::class, 'cancel']);
+        Route::get('{id}/customer-confirmation', [LoanCustomerConfirmationController::class, 'status']);
+        Route::post('{id}/customer-confirmation/send-link', [LoanCustomerConfirmationController::class, 'sendLink'])->middleware('throttle:otp-request');
     });
+
+    Route::prefix('loan-application-status-history')->group(function () {
+        Route::get('statuses', [LoanApplicationStatusHistoryController::class, 'statuses']);
+        Route::get('/', [LoanApplicationStatusHistoryController::class, 'index']);
+        Route::get('{loanApplicationId}', [LoanApplicationStatusHistoryController::class, 'show']);
+    });
+
     Route::apiResource('loan-applications', LoanApplicationController::class);
+
+    // Loan Security -- the wizard step for secured products. The securities
+    // themselves are saved with the loan application (its `securities` array);
+    // coverage is what the step reads on every change to work out what each
+    // security is worth as a loan and whether they cover the amount asked for.
+    Route::prefix('loan-securities')->group(function () {
+        Route::get('options', [LoanSecurityController::class, 'options']);
+        Route::post('coverage', [LoanSecurityController::class, 'coverage']);
+        Route::post('investment-lookup', [LoanSecurityController::class, 'investmentLookup']);
+    });
+
+    // Lending Mortgages -- plans filtered by security type for the frontend dropdown.
+    Route::prefix('lending-mortgages')->group(function () {
+        Route::get('/', [LendingMortgageController::class, 'plansBySecurityType']);
+        Route::get('plans', [LendingMortgageController::class, 'plansBySecurityType']);
+        Route::get('options', [LendingMortgageController::class, 'options']);
+    });
+
+    // Legal
+    Route::prefix('legal-document-templates')->group(function () {
+        Route::get('list', [LegalDocumentTemplateController::class, 'getActiveList']);
+        Route::get('application/{loanApplicationId}', [LegalDocumentTemplateController::class, 'forApplication']);
+        Route::patch('{id}/toggle-status', [LegalDocumentTemplateController::class, 'toggleStatus']);
+    });
+    Route::apiResource('legal-document-templates', LegalDocumentTemplateController::class);
+
+    Route::prefix('legal-documents')->group(function () {
+        Route::get('applications', [LegalDocumentController::class, 'applications']);
+        Route::patch('{id}/record-print', [LegalDocumentController::class, 'recordPrint']);
+        Route::patch('{id}/toggle-status', [LegalDocumentController::class, 'toggleStatus']);
+    });
+    Route::apiResource('legal-documents', LegalDocumentController::class);
 
     // Group Loans
     Route::prefix('group-loans')->group(function () {
@@ -251,39 +334,33 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::patch('{id}/activate', [GroupLoanController::class, 'activate']);
         Route::patch('{id}/deactivate', [GroupLoanController::class, 'deactivate']);
         Route::patch('{id}/review', [GroupLoanController::class, 'review']);
+        Route::patch('{id}/review-fail', [GroupLoanController::class, 'reviewFail']);
+        Route::patch('{id}/resubmit', [GroupLoanController::class, 'resubmit']);
         Route::patch('{id}/verify', [GroupLoanController::class, 'verify']);
+        Route::patch('{id}/verify-fail', [GroupLoanController::class, 'verifyFail']);
+        Route::patch('{id}/reverify', [GroupLoanController::class, 'reverify']);
         Route::patch('{id}/approve', [GroupLoanController::class, 'approve']);
         Route::patch('{id}/reject', [GroupLoanController::class, 'reject']);
+        Route::patch('{id}/reopen', [GroupLoanController::class, 'reopen']);
+        Route::patch('{id}/hold-offer', [GroupLoanController::class, 'holdOffer']);
+        Route::patch('{id}/accept-offer', [GroupLoanController::class, 'acceptOffer']);
+        Route::patch('{id}/decline-offer', [GroupLoanController::class, 'declineOffer']);
         Route::patch('{id}/disburse', [GroupLoanController::class, 'disburse']);
         Route::patch('{id}/cancel', [GroupLoanController::class, 'cancel']);
     });
     Route::apiResource('group-loans', GroupLoanController::class);
 
     // Group Loan Items
-    Route::apiResource('group-loan-items', GroupLoanItemController::class)->only(['index', 'store', 'show', 'destroy']);
+    Route::apiResource('group-loan-items', GroupLoanItemController::class)->only(['index', 'store', 'show', 'update', 'destroy']);
 
     // Loan Application Guarantors
     Route::apiResource('loan-application-guarantors', LoanApplicationGuarantorController::class);
 
-    // Loan Application Customers — Joint Loan co-borrowers and Group Loan
-    // members alike. Group members are only editable while the group loan is
-    // Available; the controller enforces that.
+    // Loan Application Customers
     Route::patch('loan-application-customers/{id}/customer-details', [LoanApplicationCustomerController::class, 'updateCustomerDetails']);
     Route::apiResource('loan-application-customers', LoanApplicationCustomerController::class)
         ->only(['index', 'store', 'show', 'destroy'])
         ->parameters(['loan-application-customers' => 'id']);
-
-    // Loan Application Fixed Assets (pledged assets)
-    Route::apiResource('loan-application-fixed-assets', LoanApplicationFixedAssetController::class)->only(['index', 'store', 'show', 'destroy']);
-
-    // Loan Application Moving Assets (pledged assets)
-    Route::apiResource('loan-application-moving-assets', LoanApplicationMovingAssetController::class)->only(['index', 'store', 'show', 'destroy']);
-
-    // Loan Application Liabilities (linked liabilities)
-    Route::apiResource('loan-application-liabilities', LoanApplicationLiabilityController::class)->only(['index', 'store', 'show', 'destroy']);
-
-    // Loan Application Bank Details (linked bank details)
-    Route::apiResource('loan-application-bank-details', LoanApplicationBankDetailController::class)->only(['index', 'store', 'show', 'destroy']);
 
     // Loan Installments
     Route::prefix('loan-installments')->group(function () {
@@ -335,6 +412,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
     // System Settings
     Route::prefix('settings')->group(function () {
         Route::get('list', [SettingController::class, 'list']);
+        Route::get('flags', [SettingController::class, 'flags']);
     });
     Route::get('settings', [SettingController::class, 'index']);
     Route::get('settings/{key}', [SettingController::class, 'show']);
@@ -354,6 +432,7 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
         Route::get('branch-wise', [ReportController::class, 'branchWise']);
         Route::get('customer-wise', [ReportController::class, 'customerWise']);
         Route::get('loan-portfolio', [ReportController::class, 'loanPortfolio']);
+        
 
         Route::get('recovery', [ReportController::class, 'recovery']);
         Route::get('recovery/{id}', [ReportController::class, 'recoveryShow']);
@@ -361,8 +440,13 @@ Route::middleware(['auth:api'])->prefix('v1')->group(function () {
 
 });
 
+/* server-to-server routes for CDP Core (X-Core-Key, no JWT) */
+Route::middleware(['core.key', 'throttle:60,1'])->prefix('v1/external/core')->group(function () {
+    Route::get('policy-hold', [CorePolicyHoldController::class, 'index']);
+});
+
 /* customer dashboard routes */
-Route::middleware(['auth:api', 'customer.auth'])->prefix('v1/my')->group(function () {
+Route::middleware(['auth:api', 'password.changed', 'customer.auth'])->prefix('v1/my')->group(function () {
     Route::get('dashboard', [CustomerDashboardController::class, 'overview']);
 
     Route::get('profile', [CustomerProfileController::class, 'show']);

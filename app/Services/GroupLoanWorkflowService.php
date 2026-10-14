@@ -7,6 +7,7 @@ use App\Enums\LoanApplicationStatus;
 use App\Exceptions\InvalidLoanApplicationTransitionException;
 use App\Models\GroupLoan;
 use App\Models\LoanApplication;
+use App\Models\LoanApplicationStatusHistory;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -168,6 +169,17 @@ class GroupLoanWorkflowService
      */
     public function verify(GroupLoan $groupLoan, ?int $actorId, ?string $remarks, array $extra = []): GroupLoan
     {
+        // Verifying a file that was sent back clears the reason it was sent
+        // back for, and bumps the count of how many looks it has taken. Done
+        // here rather than in the controller so the group and individual paths
+        // cannot drift apart. The failure itself stays readable in
+        // loan_application_status_history.
+        if ($this->applicationFor($groupLoan)->status === LoanApplicationStatus::Reverify) {
+            $extra['verify_failure_reason'] = null;
+            $extra['verify_failed_at']      = null;
+            $extra['reverify_count']        = (int) $groupLoan->reverify_count + 1;
+        }
+
         return $this->advanceStage($groupLoan, LoanApplicationStatus::Verified, 'verify', $actorId, $remarks, $extra);
     }
 
@@ -179,6 +191,53 @@ class GroupLoanWorkflowService
     public function review(GroupLoan $groupLoan, ?int $actorId, ?string $remarks, array $extra = []): GroupLoan
     {
         return $this->advanceStage($groupLoan, LoanApplicationStatus::Reviewed, 'review', $actorId, $remarks, $extra);
+    }
+
+    /**
+     * Fail the verification of a group loan.
+     *
+     * Verification is where the flow forks: pass and the file goes on to
+     * approval, fail and it lands in Reverify for a second look. The header
+     * stays Available either way, exactly as review() and verify() leave it —
+     * a group loan waiting to be checked again is still an open file.
+     */
+    public function verifyFail(GroupLoan $groupLoan, ?int $actorId, ?string $reason, array $extra = []): GroupLoan
+    {
+        return $this->advanceStage($groupLoan, LoanApplicationStatus::Reverify, 'fail the verification of', $actorId, $reason, $extra);
+    }
+
+    /**
+     * Fail the review of a group loan and send it back to the group.
+     *
+     * The mirror of the individual loan's review-fail, and not a rejection:
+     * rejection ends the file, this says the paperwork was not good enough to
+     * check. The group is told by SMS, fixes its documents and resubmits.
+     *
+     * The header stays Available throughout, exactly as review() and verify()
+     * leave it — a group loan waiting on better documents is still an open
+     * file as far as the lifecycle tabs are concerned, and only the
+     * application underneath it actually moves. advanceStage() is reused
+     * because its guard ("the header must be Available") and its cascade are
+     * both the right ones here; only the direction of travel differs, and
+     * LoanApplicationStatus' own map is what decides that.
+     */
+    public function reviewFail(GroupLoan $groupLoan, ?int $actorId, ?string $reason, array $extra = []): GroupLoan
+    {
+        return $this->advanceStage($groupLoan, LoanApplicationStatus::ReviewFailed, 'fail the review of', $actorId, $reason, $extra);
+    }
+
+    /**
+     * Put a failed group loan back in the review queue once its documents have
+     * been reuploaded.
+     *
+     * Goes back to Submitted so the file re-enters review from the top rather
+     * than skipping the stage it failed, and bumps the resubmission count on
+     * both the header and the application — the count is what tells an officer
+     * they are looking at a file on its fourth attempt.
+     */
+    public function resubmit(GroupLoan $groupLoan, ?int $actorId, ?string $remarks, array $extra = []): GroupLoan
+    {
+        return $this->advanceStage($groupLoan, LoanApplicationStatus::Submitted, 'resubmit', $actorId, $remarks, $extra);
     }
 
     /**
@@ -301,6 +360,160 @@ class GroupLoanWorkflowService
     }
 
     /**
+     * Put a rejected group loan back into play.
+     *
+     * The mirror of LoanApplicationController::reopen() for a group. The
+     * header goes Rejected -> Available and the group's application goes
+     * Rejected -> Reopened, so the file re-enters review exactly where a new
+     * one does. The rejection is not rewritten: it stays in
+     * loan_application_status_history and the reopen is a new row after it.
+     *
+     * While the file sat rejected its members were free to take another loan.
+     * If any of them did, reopening would put them on two live loans at once,
+     * so every member is checked under a row lock first.
+     *
+     * @throws \App\Exceptions\CustomerHasLiveLoanException
+     * @throws InvalidLoanApplicationTransitionException
+     */
+    public function reopen(GroupLoan $groupLoan, string $remarks, int $actorId): GroupLoan
+    {
+        return DB::transaction(function () use ($groupLoan, $remarks, $actorId) {
+            $groupLoan = GroupLoan::lockForUpdate()->find($groupLoan->id);
+
+            if ($groupLoan->status !== GroupLoanStatus::Rejected) {
+                throw new InvalidLoanApplicationTransitionException(
+                    "Only a rejected group loan can be reopened; this one is '{$groupLoan->status->value}'."
+                );
+            }
+
+            $application = $this->applicationFor($groupLoan);
+
+            $members = [];
+            foreach ($application->loanApplicationCustomers()->pluck('customer_id') as $i => $customerId) {
+                $members["members.{$i}.customer_id"] = $customerId;
+            }
+            if ($members === []) {
+                $members['customer_id'] = $application->customer_id;
+            }
+
+            CustomerLoanEligibilityService::assertEligible($members, $application->id);
+
+            // Read before the transition writes its own row, so this names the
+            // rejection being reversed rather than finding itself.
+            $rejection = LoanApplicationStatusHistory::where('loan_application_id', $application->id)
+                ->where('loan_application_status', LoanApplicationStatus::Rejected)
+                ->latest('id')
+                ->first();
+
+            // transition() keeps is_active as it is for a non-terminal target,
+            // and reject() forced it false -- so it is restored explicitly, or
+            // the reopened group loan stays off every working list.
+            $groupLoan = $this->transition($groupLoan, GroupLoanStatus::Available, $actorId, $remarks);
+            $groupLoan->update(['is_active' => true]);
+
+            // A group rejected while its application was still Submitted never
+            // moved the application (Submitted cannot go to Rejected), so there
+            // is nothing to reverse on it -- only the header comes back.
+            if ($application->status === LoanApplicationStatus::Rejected) {
+                $this->loanApplicationWorkflowService->transition(
+                    $application,
+                    LoanApplicationStatus::Reopened,
+                    $actorId,
+                    $remarks,
+                    ['is_active' => true],
+                    [
+                        'reopened_from'             => LoanApplicationStatus::Rejected->value,
+                        'reopened_by'               => $actorId,
+                        'reopened_at'               => now()->toDateTimeString(),
+                        'group_loan_id'             => $groupLoan->id,
+                        'rejection_history_id'      => $rejection?->id,
+                        'previous_rejection_reason' => $groupLoan->rejection_reason ?? $rejection?->remarks,
+                        'previously_rejected_at'    => $rejection?->changed_at?->toDateTimeString(),
+                        'previously_rejected_by'    => $rejection?->changed_by,
+                    ]
+                );
+            }
+
+            return $groupLoan->fresh(self::RESPONSE_RELATIONS);
+        });
+    }
+
+    /**
+     * Record the group's answer to an approved offer.
+     *
+     * Approving 400,000 against a request for 500,000 is an offer, not a
+     * conclusion -- and that is as true of a group as of one borrower. Until
+     * the group answers, the file waits: On Hold while they think, Accepted
+     * when they agree, or Declined, which carries the reason and takes the
+     * loan on to Cancelled.
+     *
+     * The answer is recorded on the application, not on the header. The header
+     * is deliberately coarse -- Available, Locked, Disbursed, Closed -- and an
+     * offer awaiting an answer is still a Locked group loan, exactly as an
+     * approved one is. Only a decline moves the header, because that ends it.
+     *
+     * Without this step a group loan could never legitimately be disbursed:
+     * Approved -> Disbursed is not a transition the state machine allows, so
+     * disburse() threw for every group loan that reached it.
+     */
+    public function respondToOffer(
+        GroupLoan $groupLoan,
+        LoanApplicationStatus $to,
+        int $actorId,
+        ?string $remarks,
+        ?string $declineReason = null
+    ): GroupLoan {
+        return DB::transaction(function () use ($groupLoan, $to, $actorId, $remarks, $declineReason) {
+            $groupLoan = GroupLoan::lockForUpdate()->find($groupLoan->id);
+
+            if ($groupLoan->status !== GroupLoanStatus::Locked) {
+                throw new InvalidLoanApplicationTransitionException(
+                    "Only an approved group loan has an offer to answer; this one is '{$groupLoan->status->value}'."
+                );
+            }
+
+            $application = $this->applicationFor($groupLoan);
+
+            $application = $this->loanApplicationWorkflowService->transition(
+                $application,
+                $to,
+                $actorId,
+                $remarks,
+                [
+                    'offer_responded_by'   => $actorId,
+                    'offer_responded_at'   => now(),
+                    'offer_remarks'        => $remarks,
+                    'offer_decline_reason' => $to === LoanApplicationStatus::Declined ? $declineReason : null,
+                ]
+            );
+
+            // A declined offer is the end of this group loan. Cancelling it
+            // here rather than leaving it for someone to notice keeps the
+            // pipeline honest, and both steps land in the status history.
+            if ($to === LoanApplicationStatus::Declined) {
+                $this->loanApplicationWorkflowService->transition(
+                    $application,
+                    LoanApplicationStatus::Cancelled,
+                    $actorId,
+                    'Cancelled: the group declined the approved offer'
+                );
+
+                // No cancelled_at column on group_loans, and cancel() does not
+                // invent one either -- the status and its history row are the
+                // record.
+                $groupLoan = $this->transition(
+                    $groupLoan,
+                    GroupLoanStatus::Cancelled,
+                    $actorId,
+                    'Cancelled: the group declined the approved offer'
+                );
+            }
+
+            return $groupLoan->fresh(self::RESPONSE_RELATIONS);
+        });
+    }
+
+    /**
      * Disburse the group loan: the two-step Disbursed -> Active transition on
      * its application is what fires InstallmentScheduleService::generate(),
      * producing one schedule for the whole group. The header itself stops at
@@ -316,18 +529,29 @@ class GroupLoanWorkflowService
 
             $application = $this->applicationFor($groupLoan);
 
+            // Money moves only after the group has said yes. The state machine
+            // enforces this too (Approved has no edge to Disbursed), but the
+            // message it would give names a status, not the thing that is
+            // actually missing.
+            if ($application->status !== LoanApplicationStatus::Accepted) {
+                throw new InvalidLoanApplicationTransitionException(
+                    'The group has not accepted the approved offer yet, so this loan cannot be disbursed.'
+                );
+            }
+
             $application = $this->loanApplicationWorkflowService->transition(
                 $application,
                 LoanApplicationStatus::Disbursed,
                 $actorId,
-                null,
+                'Group loan disbursed to the group',
                 ['disbursed_at' => now()]
             );
 
             $this->loanApplicationWorkflowService->transition(
                 $application,
                 LoanApplicationStatus::Active,
-                $actorId
+                $actorId,
+                'Group loan activated on disbursement'
             );
 
             return $groupLoan->fresh(self::RESPONSE_RELATIONS);

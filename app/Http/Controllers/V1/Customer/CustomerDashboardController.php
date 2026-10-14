@@ -25,12 +25,18 @@ class CustomerDashboardController extends Controller
 
             $activeStatuses = [LoanApplicationStatus::Active, LoanApplicationStatus::Overdue];
 
-            $activeLoans = LoanApplication::where('customer_id', $customerId)
+            // forCustomer(), not a bare customer_id match.
+            //
+            // A joint co-applicant is attached through loan_application_customers
+            // rather than being the loan's primary customer, so filtering on the
+            // column alone made a loan they are jointly liable for invisible here
+            // while My Loans, which uses this scope, showed it.
+            $activeLoans = LoanApplication::forCustomer($customerId)
                 ->whereIn('status', $activeStatuses)
                 ->get(['id', 'outstanding_balance']);
 
             $nextInstallment = LoanInstallment::whereHas('loanApplication', function ($query) use ($customerId) {
-                $query->where('customer_id', $customerId);
+                $query->forCustomer($customerId);
             })
                 ->whereNotIn('status', ['paid', 'waived', 'revised'])
                 ->orderBy('due_date')
@@ -38,7 +44,7 @@ class CustomerDashboardController extends Controller
                 ->first();
 
             $overdueInstallments = LoanInstallment::whereHas('loanApplication', function ($query) use ($customerId) {
-                $query->where('customer_id', $customerId);
+                $query->forCustomer($customerId);
             })
                 ->where('status', 'overdue')
                 ->orderBy('due_date')
@@ -48,7 +54,7 @@ class CustomerDashboardController extends Controller
             $earliestOverdue = $overdueInstallments->first();
             $overdueDays = $earliestOverdue?->daysOverdue();
 
-            $statusCounts = LoanApplication::where('customer_id', $customerId)
+            $statusCounts = LoanApplication::forCustomer($customerId)
                 ->select('status', DB::raw('count(*) as total'))
                 ->groupBy('status')
                 ->get();

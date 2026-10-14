@@ -56,6 +56,21 @@ class CustomerAuthMiddleware
             ], 403);
         }
 
+        // No borrower behind the account, no portal.
+        //
+        // ResolvesAuthenticatedCustomerTrait::myCustomer() raises this as a 404
+        // too, but it does so with abort() from inside each controller's
+        // blanket `catch (\Throwable)`, which caught the HttpException along
+        // with everything else and turned a deliberate 404 into a 500 carrying
+        // the internal message. Deciding it here, before any controller runs,
+        // means the answer is the intended one on every /my route at once.
+        if (!$user->customer) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Customer profile not found.',
+            ], 404);
+        }
+
         return $next($request);
     }
 }

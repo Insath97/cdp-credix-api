@@ -11,6 +11,9 @@ use App\Models\LoanApplicationCustomer;
 use App\Models\Customer;
 use App\Enums\GroupLoanStatus;
 use App\Enums\LoanApplicationStatus;
+use App\Enums\LoanSecurityType;
+use App\Exceptions\CustomerHasLiveLoanException;
+use App\Services\CustomerLoanEligibilityService;
 use App\Services\GroupLoanWorkflowService;
 use App\Traits\ActivityLogTrait;
 use App\Http\Requests\CreateLoanApplicationCustomerRequest;
@@ -85,6 +88,11 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     /**
      * Attach a customer to a loan application — a co-borrower, turning an
      * individual loan into a Joint Loan, or another member of a Group Loan.
+     *
+     * The member is usually an existing customer supplied by id. When the
+     * officer typed the member straight in (no customer_id), a Customer record
+     * is created from the snapshot detail fields so every member still points
+     * at a real customer record.
      */
     public function store(CreateLoanApplicationCustomerRequest $request)
     {
@@ -94,8 +102,17 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
             $record = DB::transaction(function () use ($data) {
                 $loanApplication = LoanApplication::with('groupLoan')->find($data['loan_application_id']);
 
-                // First co-borrower ever added: bring the loan's own primary customer
-                // into the pivot too, so it always holds the complete borrower set.
+                $typedIn = empty($data['customer_id']);
+
+                if ($typedIn) {
+                    $data['customer_id'] = $this->createCustomerFromMember($data, $loanApplication)->id;
+                }
+
+                CustomerLoanEligibilityService::assertEligible(
+                    [($typedIn ? 'nic' : 'customer_id') => $data['customer_id']],
+                    $loanApplication?->id
+                );
+
                 if ($loanApplication && $loanApplication->loanApplicationCustomers()->count() === 0) {
                     LoanApplicationCustomer::create([
                         'loan_application_id' => $loanApplication->id,
@@ -104,8 +121,9 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 }
 
                 $record = LoanApplicationCustomer::create($data);
+                $record->setRelation('customer', Customer::find($data['customer_id']));
+                $record->snapshotFromCustomer();
 
-                // A group loan's header tracks how many members it has.
                 if ($loanApplication?->groupLoan) {
                     $this->groupLoanWorkflowService->syncAmounts($loanApplication->groupLoan);
                 }
@@ -121,6 +139,8 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 'data'    => $record->load(['loanApplication', 'customer:'.Customer::SUMMARY_COLUMNS]),
             ], 201);
 
+        } catch (CustomerHasLiveLoanException $e) {
+            return $e->toResponse();
         } catch (\Throwable $th) {
             return response()->json([
                 'status'  => 'error',
@@ -128,6 +148,33 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 'error'   => config('app.debug') ? $th->getMessage() : 'Internal server error',
             ], 500);
         }
+    }
+
+    /**
+     * Create a Customer record from a member's typed-in detail fields, so a
+     * member the officer enters by hand still points at a real customer.
+     *
+     * The member's single `address` line is stored as the customer's primary
+     * address line. GN/DS divisions go to the customer_detail row, mirroring
+     * the Customer module.
+     */
+    protected function createCustomerFromMember(array $member, $loanApplication): Customer
+    {
+        $customer = Customer::create([
+            'full_name'      => $member['member_name'] ?? null,
+            'id_type'        => 'NIC',
+            'id_number'      => $member['nic'] ?? null,
+            'address_line_1' => $member['address'] ?? null,
+            'phone_primary'  => $member['phone_number'] ?? null,
+            'branch_id'      => $loanApplication?->branch_id,
+        ]);
+
+        $customer->customerDetail()->create([
+            'gn_division' => $member['gn_division'] ?? null,
+            'ds_division' => $member['ds_division'] ?? null,
+        ]);
+
+        return $customer;
     }
 
     /**
@@ -161,11 +208,15 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     }
 
     /**
-     * Edit an attached customer's personal details.
+     * Edit an attached member's details.
      *
-     * These fields live on the shared `customers` record, so the edit is
-     * refused when that customer is attached to any other loan — the Customer
-     * module is the right place for that, where the wider effect is visible.
+     * Group Loan members carry a per-group snapshot on the pivot, so their
+     * details are edited from the loan freely — the shared customer record is
+     * never touched, which is why a member on other loans can still be edited
+     * here. Joint Loan co-borrowers have no snapshot: those fields live on the
+     * shared `customers` record, so the edit is refused when that customer is
+     * attached to any other loan — the Customer module is the right place for
+     * that, where the wider effect is visible.
      */
     public function updateCustomerDetails(UpdateLoanApplicationCustomerDetailsRequest $request, string $id)
     {
@@ -189,6 +240,12 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                 ], 422);
             }
 
+            $data = $request->validated();
+
+            if ($loanApplication?->groupLoan) {
+                return $this->updateGroupMemberSnapshot($record, $data);
+            }
+
             $otherLoanCount = LoanApplication::forCustomer($record->customer_id)
                 ->where('id', '!=', $record->loan_application_id)
                 ->count();
@@ -206,8 +263,6 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
                     ],
                 ], 422);
             }
-
-            $data = $request->validated();
 
             $detailKeys = ['gn_division', 'ds_division', 'district', 'province'];
             $detailData = array_intersect_key($data, array_flip($detailKeys));
@@ -245,12 +300,56 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
     }
 
     /**
+     * Write a Group Loan member's edited details onto the pivot snapshot.
+     * Accepts the group form's own field names and the legacy shared-customer
+     * names, mapping the latter onto the snapshot so old callers keep working.
+     */
+    private function updateGroupMemberSnapshot(LoanApplicationCustomer $record, array $data)
+    {
+        $map = [
+            'full_name'      => 'member_name',
+            'id_number'      => 'nic',
+            'phone_primary'  => 'phone_number',
+            'address_line_1' => 'address',
+        ];
+        $snapshotKeys = ['member_name', 'nic', 'address', 'phone_number', 'gn_division', 'ds_division'];
+
+        $snapshot = [];
+        foreach ($data as $key => $value) {
+            $target = $map[$key] ?? (in_array($key, $snapshotKeys, true) ? $key : null);
+            if ($target !== null) {
+                $snapshot[$target] = $value === '' ? null : $value;
+            }
+        }
+
+        if (array_key_exists('nic', $snapshot)
+            && CustomerLoanEligibilityService::normalizeNic($snapshot['nic']) !== CustomerLoanEligibilityService::normalizeNic($record->nic)
+            && ($refusal = CustomerLoanEligibilityService::refusalForNic($snapshot['nic'], $snapshot['member_name'] ?? $record->member_name, $record->loan_application_id))) {
+            return (new CustomerHasLiveLoanException($refusal, 'nic'))->toResponse();
+        }
+
+        $record->update($snapshot ?: []);
+
+        $this->logActivity('UPDATE', 'LoanApplicationCustomer', "Updated group member details for loan application customer ID {$record->id}", [
+            'loan_application_id' => $record->loan_application_id,
+            'customer_id'         => $record->customer_id,
+            'fields'              => array_keys($snapshot),
+        ]);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Member details updated successfully',
+            'data'    => $record->fresh(['customer.customerDetail', 'loanApplication.groupLoan']),
+        ], 200);
+    }
+
+    /**
      * Remove a co-borrower or group member from the loan application.
      */
     public function destroy(string $id)
     {
         try {
-            $record = LoanApplicationCustomer::with('loanApplication.groupLoan')->find($id);
+            $record = LoanApplicationCustomer::with(['customer', 'loanApplication.groupLoan', 'loanApplication.cdpInvestmentSecurities'])->find($id);
 
             if (!$record) {
                 return $this->notFoundResponse();
@@ -261,6 +360,38 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
 
             if ($locked = $this->membersLockedResponse($loanApplication, 'Members can only be removed')) {
                 return $locked;
+            }
+
+            // A CDP Investment secures only a loan its owner is borrowing on, so
+            // its owner cannot leave while it does. Any of the loan's
+            // investments can be the one -- a joint loan may pledge one per
+            // borrower -- so all of them are checked.
+            $blocking = collect($loanApplication?->cdpInvestmentSecurities ?? [])
+                ->first(fn ($security) => in_array(
+                    CustomerLoanEligibilityService::normalizeNic($security->investment_nic),
+                    CustomerLoanEligibilityService::nicVariants($record->customer?->id_number),
+                    true
+                ));
+
+            if ($blocking) {
+                $name = $record->customer?->full_name ?: 'This customer';
+
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "{$name}'s CDP Investment (policy {$blocking->policy_number}) secures this loan, so they cannot be removed from it. Change the loan securities first.",
+                ], 422);
+            }
+
+            // The first member a group loan was created with is its leader
+            // (loan_applications.customer_id), and the leader stays for the
+            // life of the loan: the review link and OTP 2 go to them.
+            if ($groupLoan && (int) $loanApplication->customer_id === (int) $record->customer_id) {
+                $name = $record->member_name ?: ($record->customer?->full_name ?: 'This member');
+
+                return response()->json([
+                    'status'  => 'error',
+                    'message' => "{$name} is the group leader and cannot be removed from the group.",
+                ], 422);
             }
 
             // A group loan must keep enough members to still be a group.
@@ -280,9 +411,10 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
             DB::transaction(function () use ($record, $loanApplication, $groupLoan) {
                 $record->delete();
 
-                // The removed person may have been the primary applicant on the
-                // row itself; promote a remaining member so the loan never
-                // points at someone who is no longer on it.
+                // The removed person may have been the primary applicant on a
+                // joint loan; promote a remaining member so the loan never
+                // points at someone who is no longer on it. (A group leader
+                // never gets here -- refused above.)
                 if ($loanApplication && (int) $loanApplication->customer_id === (int) $record->customer_id) {
                     $replacement = $loanApplication->loanApplicationCustomers()->value('customer_id');
 
@@ -315,6 +447,9 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
         }
     }
 
+    /**
+     * Return a "not found" response.
+     */
     private function notFoundResponse()
     {
         return response()->json([
@@ -325,13 +460,6 @@ class LoanApplicationCustomerController extends Controller implements HasMiddlew
 
     /**
      * The shared "is this list still editable?" gate.
-     *
-     * A Group Loan's members may be added, removed and edited only while the
-     * group loan is Available — once approved (Locked) the list is frozen,
-     * because by then the approved amount has been split across exactly these
-     * members. A Joint Loan's co-borrowers keep the original Submitted rule.
-     *
-     * Returns a 422 response when the change is not allowed, or null when it is.
      */
     private function membersLockedResponse(?LoanApplication $loanApplication, string $action)
     {

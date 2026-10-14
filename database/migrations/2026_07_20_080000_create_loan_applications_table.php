@@ -23,9 +23,7 @@ return new class extends Migration
             $table->decimal('requested_amount', 15, 2);
             $table->decimal('approved_amount', 15, 2)->nullable();
 
-            // Nullable because a Group Loan has no interest rate at all — its
-            // repayment is derived purely from the group's service charge
-            // percentage (group_loans.service_charge_percentage).
+
             $table->decimal('interest_rate', 6, 3)->nullable();
             $table->string('interest_type')->nullable()->default('flat');
 
@@ -46,45 +44,32 @@ return new class extends Migration
             $table->text('approval_remarks')->nullable();
             $table->text('rejection_reason')->nullable();
 
+            $table->text('review_failure_reason')->nullable();
+            $table->timestamp('review_failed_at')->nullable();
+            $table->timestamp('resubmitted_at')->nullable();
+            $table->unsignedInteger('resubmission_count')->default(0);
+
+           
+            $table->text('verify_failure_reason')->nullable();
+            $table->timestamp('verify_failed_at')->nullable();
+            $table->unsignedInteger('reverify_count')->default(0);
+
             $table->timestamp('applied_at')->useCurrent();
             $table->timestamp('reviewed_at')->nullable();
             $table->timestamp('verified_at')->nullable();
             $table->timestamp('approved_at')->nullable();
             $table->timestamp('disbursed_at')->nullable();
 
-            // The borrower's answer to the approved offer.
-            //
-            // One set of columns, not one per outcome: the status says which
-            // answer it was, and these carry the latest one. The full
-            // sequence -- put on hold Tuesday, accepted Friday -- lives in
-            // loan_application_status_history like every other transition.
             $table->foreignId('offer_responded_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamp('offer_responded_at')->nullable();
-            // A code from LoanApplication::OFFER_DECLINE_REASONS, not free
-            // text: "why do borrowers walk away from what we approve" is a
-            // question the analytics module has to be able to group by.
+
             $table->string('offer_decline_reason', 60)->nullable();
             $table->text('offer_remarks')->nullable();
 
             $table->decimal('outstanding_balance', 15, 2)->nullable();
 
-            // Minted by ReferenceNumberService the first time this application
-            // reaches Approved: CDP-{BRANCH}-{000000001}. Null until then, and
-            // never regenerated -- a reference a customer has been given must
-            // survive the loan being reverted and re-approved.
             $table->string('approval_reference_no')->nullable()->unique();
 
-            // The CDP employee who recommends this customer. Every loan is
-            // introduced by someone, and when one goes bad the business needs
-            // to know who put it forward.
-            //
-            // The link and the four details are both stored on purpose. The
-            // link is what lets you list every loan an employee introduced;
-            // the snapshot is what the employee actually asserted on the day,
-            // and it has to survive them changing their phone number, being
-            // renamed, or leaving (the FK nulls out, the record does not).
-            // It also lets a recommender who is not yet on the payroll system
-            // be recorded at all.
             $table->foreignId('recommended_by_employee_id')->nullable()->constrained('employees')->nullOnDelete();
             $table->string('recommender_name')->nullable();
             $table->string('recommender_employee_code')->nullable();

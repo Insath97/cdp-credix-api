@@ -22,6 +22,15 @@ class RoleController extends Controller implements HasMiddleware
             new Middleware('permission:Role Create', only: ['store']),
             new Middleware('permission:Role Update', only: ['update']),
             new Middleware('permission:Role Delete', only: ['destroy']),
+
+            // Same gap as PermissionController::getPermissionList: this was in
+            // none of the lists above, so any authenticated principal could
+            // enumerate every role in the system. The user form is the other
+            // legitimate caller, hence the alternatives.
+            new Middleware(
+                'permission:Role Index|User Create|User Update',
+                only: ['getAvailableRoles'],
+            ),
         ];
     }
 
@@ -76,10 +85,19 @@ class RoleController extends Controller implements HasMiddleware
         try {
             $data = $request->validated();
 
+            // is_protected is deliberately NOT taken from the caller.
+            //
+            // It is the flag destroy() refuses on, so a role that could set it
+            // on itself would be a role nobody can delete, and one that could
+            // clear it could unprotect the seeded Super Admin. It used to read
+            // $data['is_protected'], which no rule in CreateRoleRequest ever
+            // allowed through, so the value could never arrive and the `?? false`
+            // fired every time. Every role made through the API is unprotected;
+            // protection is set by the seeder alone.
             $role = Role::create([
                 'name' => $data['name'],
                 'guard_name' => 'api',
-                'is_protected' => $data['is_protected'] ?? false,
+                'is_protected' => false,
             ]);
 
             if (isset($data['permissions']) && count($data['permissions']) > 0) {
@@ -153,9 +171,9 @@ class RoleController extends Controller implements HasMiddleware
                 $role->update(['name' => $data['name']]);
             }
 
-            if (isset($data['is_protected'])) {
-                $role->update(['is_protected' => $data['is_protected']]);
-            }
+            // No is_protected branch here either, for the reason given in
+            // store(): the flag guards deletion, so letting a request clear it
+            // would make the protection worth nothing.
 
             if (isset($data['permissions'])) {
                 $permissions = Permission::whereIn('id', $data['permissions'])->get();

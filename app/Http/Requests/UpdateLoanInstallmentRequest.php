@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Traits\FriendlyValidationErrors;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Contracts\Validation\Validator;
@@ -10,8 +9,6 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 
 class UpdateLoanInstallmentRequest extends FormRequest
 {
-    use FriendlyValidationErrors;
-
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -39,7 +36,7 @@ class UpdateLoanInstallmentRequest extends FormRequest
                 })->ignore($id),
             ],
             'due_date'               => 'nullable|date',
-            'amount_due'             => 'nullable|numeric|min:0',
+            'amount_due'             => 'sometimes|required|numeric|min:0',
             'amount_paid'            => 'nullable|numeric|min:0',
             'penalty_amount'         => 'nullable|numeric|min:0',
             'penalty_waived_by'      => 'nullable|integer|exists:users,id',
