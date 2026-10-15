@@ -82,10 +82,7 @@ class AuthController extends Controller
                 ], 422);
             }
 
-            // Everything below this point is cheap to ask for and answers in
-            // constant wording, which is exactly what makes it worth guessing
-            // against. Refuse before touching the database, so a locked-out
-            // key costs an attacker a query as well as a wait.
+
             $throttleKey = $this->loginThrottleKey($request);
 
             if (RateLimiter::tooManyAttempts($throttleKey, self::LOGIN_MAX_ATTEMPTS)) {
